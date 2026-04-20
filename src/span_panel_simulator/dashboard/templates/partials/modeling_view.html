@@ -249,6 +249,7 @@
 
   // -- Rate plan state --
   var currentRateLabel = null;
+  var currentRateUtility = null;
   var proposedRateLabel = null;
   var rateDialogTarget = 'current';
 
@@ -784,12 +785,14 @@
     fetch('rates/current').then(function(r) { return r.json(); }).then(function(data) {
       if (data.label) {
         currentRateLabel = data.label;
+        currentRateUtility = data.utility || null;
         currentDisplayEl.textContent = (data.utility || '') + ' \u2014 ' + (data.name || data.label);
         attributionBtn.style.display = '';
         refreshCurrentBtn.style.display = '';
         document.getElementById('btn-rate-current-configure').textContent = 'Change';
       } else {
         currentRateLabel = null;
+        currentRateUtility = null;
         currentDisplayEl.textContent = 'No rate plan selected';
         attributionBtn.style.display = 'none';
         refreshCurrentBtn.style.display = 'none';
@@ -803,13 +806,18 @@
     dialogError.style.display = 'none';
     dialogOverlay.style.display = 'flex';
     loadOpenEIConfig();
-    var opowerAcct = null;
-    var opowerDisplay = opowerDisplayEl.textContent;
-    if (opowerDisplay && opowerSectionEl.style.display !== 'none') {
-      var parts = opowerDisplay.split('\u2014');
-      if (parts.length > 0) opowerAcct = parts[0].trim();
+    // Prefer the current rate's utility (most common case: picking a
+    // proposed plan from the same provider). Fall back to the opower
+    // account's utility if no current rate is set.
+    var defaultUtility = currentRateUtility;
+    if (!defaultUtility) {
+      var opowerDisplay = opowerDisplayEl.textContent;
+      if (opowerDisplay && opowerSectionEl.style.display !== 'none') {
+        var parts = opowerDisplay.split('\u2014');
+        if (parts.length > 0) defaultUtility = parts[0].trim();
+      }
     }
-    loadUtilities(opowerAcct || null);
+    loadUtilities(defaultUtility || null);
   }
 
   function closeRateDialog() {
