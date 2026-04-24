@@ -75,7 +75,7 @@ ensure_venv() {
 generate_certs() {
     echo "==> Checking TLS certificates..."
     mkdir -p "${CERT_DIR}"
-    ADVERTISE_ADDRESS="${ADVERTISE_ADDR}" CERT_DIR="${CERT_DIR}" python3 -c "
+    ADVERTISE_ADDRESS="${ADVERTISE_ADDR}" CERT_DIR="${CERT_DIR}" "${VENV_DIR}/bin/python3" -c "
 import os
 from span_panel_simulator.certs import generate_certificates
 from pathlib import Path
