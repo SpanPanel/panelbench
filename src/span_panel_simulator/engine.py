@@ -767,8 +767,8 @@ class DynamicSimulationEngine:
         but the engine still needs to know whether one was declared for off-grid logic)."""
         if self._config is None:
             return False
-        bess = self._config.get("bess", {})
-        return bool(isinstance(bess, dict) and bess.get("enabled", False))
+        bess = self._config.get("bess") or {}
+        return bool(bess.get("enabled", False))
 
     # ------------------------------------------------------------------
     # Public properties & accessors

@@ -31,6 +31,10 @@ class PanelConfig(TypedDict):
     postal_code: NotRequired[str]  # ZIP / postal code, default "94103"
     time_zone: NotRequired[str]  # IANA timezone, default "America/Los_Angeles"
     history_db: NotRequired[str]  # path to companion SQLite history file (overrides convention)
+    display_name: NotRequired[str]  # Panel display name (defaults to "Span Panel")
+    service_voltage_v: NotRequired[float]  # service voltage (default 240.0)
+    line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
+    islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
 
 
 class CyclingPattern(TypedDict, total=False):
@@ -100,6 +104,7 @@ class BESSConfigYAML(TypedDict, total=False):
     """Top-level BESS configuration in the simulator YAML."""
 
     enabled: bool
+    vendor: str
     nameplate_capacity_kwh: float
     max_charge_w: float
     max_discharge_w: float
@@ -109,6 +114,51 @@ class BESSConfigYAML(TypedDict, total=False):
     charge_mode: Literal["self-consumption", "custom", "backup-only"]
     charge_hours: list[int]
     discharge_hours: list[int]
+    initial_soe_kwh: float
+    rate_label: str  # When charge_mode=="custom": pinned utility-rate label.
+    active_days: list[int]  # Days of week active (0=Mon..6=Sun); empty = all.
+
+
+class PVConfigYAML(TypedDict, total=False):
+    """Top-level PV configuration in the simulator YAML.
+
+    The simulator's PV physics live in the per-circuit producer templates;
+    this section carries device-identity metadata used to publish the PV
+    DeviceInstance and to decide whether the panel can island.
+    """
+
+    enabled: bool
+    vendor: str
+    nameplate_capacity_w: float
+    inverter_type: Literal["hybrid", "ac_coupled", "ac-coupled"]
+    firmware_version: str
+
+
+class EVSEConfigYAML(TypedDict, total=False):
+    """Top-level EVSE (EV-charger) configuration in the simulator YAML."""
+
+    enabled: bool
+    vendor: str
+    product: str
+    part_number: str
+    serial_number: str
+    firmware_version: str
+    max_current_a: float
+
+
+class BrokerConfigYAML(TypedDict, total=False):
+    """Optional ``broker:`` section in the simulator YAML.
+
+    When present, these values take precedence over CLI/env-supplied
+    broker connection parameters; this lets a clone configure its own
+    target broker independently of the simulator-app defaults.
+    """
+
+    host: str
+    port: int
+    username: str | None
+    password: str | None
+    ca_cert_path: str | None
 
 
 class CircuitTemplateExtended(CircuitTemplate, total=False):
@@ -121,6 +171,7 @@ class CircuitTemplateExtended(CircuitTemplate, total=False):
     hvac_type: str  # "central_ac", "heat_pump", "heat_pump_aux"
     monthly_factors: dict[int, float]  # month (1-12) -> multiplier (1.0 = peak month)
     breaker_rating: int  # Breaker rating in Amps (derived from power_range if not set)
+    breaker_rating_a: float  # Legacy alias for breaker_rating, used by older clones.
     recorder_entity: str  # HA entity ID for recorder replay (e.g. "sensor.span_panel_..._power")
     user_modified: bool  # True when user has edited profile → use synthetic instead of replay
 
@@ -174,3 +225,10 @@ class SimulationConfig(TypedDict):
     unmapped_tab_templates: NotRequired[dict[str, CircuitTemplateExtended]]
     tab_synchronizations: NotRequired[list[TabSynchronization]]
     panel_source: NotRequired[PanelSource]
+    bess: NotRequired[BESSConfigYAML | None]
+    pv: NotRequired[PVConfigYAML | None]
+    evse: NotRequired[EVSEConfigYAML | None]
+    broker: NotRequired[BrokerConfigYAML | None]
+    # Identity metadata that surfaces in the panel DeviceInstance.
+    firmware_version: NotRequired[str]
+    hardware_version: NotRequired[str]

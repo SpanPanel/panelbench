@@ -14,7 +14,7 @@ handlers (no producer-side setter wiring needed)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import aiomqtt
 from ebus_emitter import (
@@ -31,6 +31,10 @@ from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uui
 from span_panel_simulator.emitter_adapter.spec_generator import build_manifest
 
 if TYPE_CHECKING:
+    from span_panel_simulator.config_types import (
+        BESSConfigYAML,
+        BrokerConfigYAML,
+    )
     from span_panel_simulator.engine import DynamicSimulationEngine
 
 
@@ -105,22 +109,21 @@ class _AiomqttPublisher:
         await self._client.subscribe(topic)
 
 
-def _config_dict(engine: DynamicSimulationEngine) -> dict[str, Any]:
-    """``SimulationConfig`` is a TypedDict that doesn't enumerate optional keys
-    (bess/pv/evse/broker). The runtime YAML carries them, so cast for ad-hoc reads."""
-    return cast("dict[str, Any]", engine.config)
-
-
-def _bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | None:
+def bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | None:
     """Build the emitter-side BESSConfig from the engine's loaded clone profile.
     Returns None when the profile has no BESS enabled."""
-    bess = _config_dict(engine).get("bess") or {}
+    bess = engine.config.get("bess") or {}
+    return _build_bess_config(engine.serial_number, bess)
+
+
+def _build_bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig | None:
+    """Build a BESSConfig dataclass from a typed YAML section."""
     if not bess.get("enabled"):
         return None
     raw_mode = bess.get("charge_mode", "self-consumption")
     mode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
     return BESSConfig(
-        instance_id=f"{engine.serial_number}-bess",
+        instance_id=f"{serial_number}-bess",
         nameplate_capacity_kwh=float(bess.get("nameplate_capacity_kwh", 13.5)),
         max_charge_w=float(bess.get("max_charge_w", 3500.0)),
         max_discharge_w=float(bess.get("max_discharge_w", 3500.0)),
@@ -133,10 +136,24 @@ def _bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | No
     )
 
 
+def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) -> None:
+    """Apply a fresh BESS config to a running emitter without restart.
+
+    Mutates the engine's loaded config so subsequent reads see the new
+    values, rebuilds the emitter-side ``BESSConfig`` from the YAML, and
+    swaps it on the emitter (SOC/SOE state is preserved across the swap).
+    """
+    runtime.engine.config["bess"] = bess_yaml
+    new_cfg = bess_config_from_engine(runtime.engine)
+    if new_cfg is None:
+        return
+    runtime.emitter.update_bess_config(new_cfg)
+
+
 def _load_shedding_config_from_engine(
     engine: DynamicSimulationEngine,
 ) -> LoadSheddingConfig:
-    panel_cfg = _config_dict(engine).get("panel_config", {})
+    panel_cfg = engine.config["panel_config"]
     return LoadSheddingConfig(
         soc_threshold_pct=float(panel_cfg.get("soc_shed_threshold", 20.0)),
     )
@@ -158,8 +175,7 @@ async def start_clone(
         1. ``broker:`` section in the YAML config (config explicitness wins).
         2. Explicit ``broker_*`` arguments (typically passed by ``SimulatorApp``).
         3. Default 127.0.0.1:1883 anonymous."""
-    cfg = _config_dict(engine)
-    manifest = build_manifest(cfg)
+    manifest = build_manifest(engine.config)
 
     uuid_to_circuit_id = {stable_circuit_uuid(c["id"]): c["id"] for c in engine.config["circuits"]}
 
@@ -175,7 +191,7 @@ async def start_clone(
         retain=lwt_retain,
     )
 
-    broker_cfg = cfg.get("broker", {}) or {}
+    broker_cfg: BrokerConfigYAML = engine.config.get("broker") or {}
     host = broker_cfg.get("host") or broker_host or "127.0.0.1"
     port_value = broker_cfg.get("port") if broker_cfg.get("port") is not None else broker_port
     port = int(port_value) if port_value is not None else 1883
@@ -196,7 +212,7 @@ async def start_clone(
         manifest,
         setters,
         mqtt,
-        bess_config=_bess_config_from_engine(engine),
+        bess_config=bess_config_from_engine(engine),
         load_shedding_config=_load_shedding_config_from_engine(engine),
     )
 

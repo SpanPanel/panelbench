@@ -40,6 +40,7 @@ from span_panel_simulator.schema import HomieSchemaRegistry, load_schema, render
 
 if TYPE_CHECKING:
     from span_panel_simulator.certs import CertificateBundle
+    from span_panel_simulator.config_types import BESSConfigYAML
     from span_panel_simulator.engine import DynamicSimulationEngine
     from span_panel_simulator.ha_api.client import HAClient, HAConnectionConfig
     from span_panel_simulator.supervisor_discovery import SupervisorDiscovery
@@ -209,7 +210,7 @@ class SimulatorApp:
                 return summary
         return None
 
-    def apply_bess_config_live(self, filename: str, bess_yaml: dict[str, Any]) -> bool:
+    def apply_bess_config_live(self, filename: str, bess_yaml: BESSConfigYAML) -> bool:
         """Apply a fresh BESS config to the running panel for ``filename`` without
         restarting it. SOC/SOE persists across the swap. Refreshes the cached
         config hash so the reload watcher doesn't see the on-disk YAML change as

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from ebus_emitter import EbusBatterySnapshot
 
+    from span_panel_simulator.config_types import BESSConfigYAML
     from span_panel_simulator.emitter_adapter.runtime import CloneRuntime
     from span_panel_simulator.recorder import RecorderDataSource
 
@@ -147,23 +148,14 @@ class PanelInstance:
             )
         return summary
 
-    def update_bess_config(self, bess_yaml: dict[str, Any]) -> None:
+    def update_bess_config(self, bess_yaml: BESSConfigYAML) -> None:
         """Apply a fresh BESS configuration mid-run (e.g. dashboard edit). The
         emitter's BESSDevice swaps configs; SOC/SOE state persists across the
         swap, the change takes effect on the next published tick."""
         if self._runtime is None:
             msg = "Panel not initialised — call start() first"
             raise RuntimeError(msg)
-        from span_panel_simulator.emitter_adapter.runtime import _bess_config_from_engine
-
-        # Mutate the engine's loaded config so subsequent reads see the new values,
-        # then rebuild the emitter-side BESSConfig from the mutated source.
-        assert self._engine is not None
-        self._engine.config["bess"] = bess_yaml  # type: ignore[typeddict-unknown-key]
-        new_cfg = _bess_config_from_engine(self._engine)
-        if new_cfg is None:
-            return
-        self._runtime.emitter.update_bess_config(new_cfg)
+        emitter_runtime.update_bess_config_live(self._runtime, bess_yaml)
 
     async def start(self) -> str:
         engine = DynamicSimulationEngine(

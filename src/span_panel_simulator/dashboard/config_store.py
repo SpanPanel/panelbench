@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from span_panel_simulator.config_types import BESSConfigYAML
 
 from span_panel_simulator.dashboard.defaults import make_defaults
 from span_panel_simulator.dashboard.presets import (
@@ -150,10 +152,15 @@ class ConfigStore:
 
     # -- BESS config --
 
-    def get_bess_config(self) -> dict[str, Any]:
+    def get_bess_config(self) -> BESSConfigYAML:
         """Return the top-level BESS configuration, or empty dict if absent."""
         bess = self._state.get("bess")
-        return dict(bess) if isinstance(bess, dict) else {}
+        if isinstance(bess, dict):
+            # ``_state`` holds the raw YAML mapping; the runtime invariant is
+            # that ``_state["bess"]`` matches the BESSConfigYAML schema, so we
+            # cast through ``cast`` rather than re-validating each access.
+            return cast("BESSConfigYAML", dict(bess))
+        return {}
 
     def has_bess(self) -> bool:
         """Whether a BESS is configured and enabled."""

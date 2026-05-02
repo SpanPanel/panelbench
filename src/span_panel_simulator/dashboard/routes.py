@@ -799,7 +799,7 @@ def _persist_config_live_bess(request: web.Request) -> None:
     store.save_to_file(output_path)
     _LOGGER.info("Config saved to %s (live BESS apply)", output_path)
     bess_yaml = store.get_bess_config()
-    if not ctx.apply_bess_config_live(filename, dict(bess_yaml)):
+    if not ctx.apply_bess_config_live(filename, bess_yaml):
         # Panel isn't running — fall back to the restart path so the next
         # start picks up the new YAML.
         ctx.start_panel(filename)

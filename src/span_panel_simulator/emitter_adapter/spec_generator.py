@@ -7,12 +7,15 @@ aggregation, and per-leg current calculation."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from ebus_emitter import DeviceInstance, DeviceManifest
 
 from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
 from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
+
+if TYPE_CHECKING:
+    from span_panel_simulator.config_types import CircuitTemplateExtended, SimulationConfig
 
 _CIRCUIT_RELAY_BEHAVIOR_MAP = {
     "controllable": "controllable",
@@ -29,7 +32,7 @@ _PV_INVERTER_TYPE_MAP = {
 }
 
 
-def build_manifest(profile: dict[str, Any]) -> DeviceManifest:
+def build_manifest(profile: SimulationConfig) -> DeviceManifest:
     """Walk the loaded SimulationConfig dict; emit a DeviceManifest the emitter
     consumes. Identity + physics — no behaviour, no schedule, no modelling."""
     panel_cfg = profile["panel_config"]
@@ -71,17 +74,28 @@ def build_manifest(profile: dict[str, Any]) -> DeviceManifest:
         ),
     ]
 
-    templates = profile.get("circuit_templates", {})
-    for c in profile.get("circuits", []):
+    templates = profile.get("circuit_templates") or {}
+    for c in profile.get("circuits") or []:
         tabs = c.get("tabs") or [0]
-        template = templates.get(c.get("template", ""), {})
-        relay_behavior_raw = str(template.get("relay_behavior", "controllable"))
+        template_name = c.get("template", "")
+        template: CircuitTemplateExtended | None = templates.get(template_name)
+        if template is None:
+            relay_behavior_raw = "controllable"
+            priority = "NICE_TO_HAVE"
+            breaker_rating = 20.0
+        else:
+            relay_behavior_raw = str(template.get("relay_behavior", "controllable"))
+            priority = str(template.get("priority", "NICE_TO_HAVE")).upper()
+            # ``breaker_rating_a`` is the producer-side legacy key; the typed
+            # ``breaker_rating`` (no units suffix) is the canonical YAML field.
+            # Read both so manifests built from older clones still work.
+            breaker_rating = float(
+                template.get("breaker_rating_a") or template.get("breaker_rating", 20),
+            )
         relay_behavior = _CIRCUIT_RELAY_BEHAVIOR_MAP.get(
             relay_behavior_raw.lower().replace("_", "-"),
             "controllable",
         )
-        priority = str(template.get("priority", "NICE_TO_HAVE")).upper()
-        breaker_rating = float(template.get("breaker_rating_a", 20.0))
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
@@ -156,11 +170,11 @@ def build_manifest(profile: dict[str, Any]) -> DeviceManifest:
     return DeviceManifest(instances=tuple(instances))
 
 
-def _islandable(profile: dict[str, Any]) -> bool:
+def _islandable(profile: SimulationConfig) -> bool:
     """A panel can island when a hybrid PV inverter is configured (or any config
     explicitly sets ``islandable: true`` on panel_config)."""
-    panel_cfg = profile.get("panel_config", {})
-    if isinstance(panel_cfg, dict) and "islandable" in panel_cfg:
+    panel_cfg = profile["panel_config"]
+    if "islandable" in panel_cfg:
         return bool(panel_cfg["islandable"])
     pv_cfg = profile.get("pv") or {}
     return bool(pv_cfg.get("enabled") and pv_cfg.get("inverter_type") == "hybrid")

@@ -5,24 +5,24 @@ integration tests against the in-process amqtt broker fixture."""
 from unittest.mock import MagicMock
 
 from span_panel_simulator.emitter_adapter.runtime import (
-    _bess_config_from_engine,
     _load_shedding_config_from_engine,
+    bess_config_from_engine,
 )
 
 
-def test_bess_config_from_engine_returns_none_when_disabled() -> None:
+def testbess_config_from_engine_returns_none_when_disabled() -> None:
     engine = MagicMock()
     engine.config = {"panel_config": {"serial_number": "x"}, "bess": {"enabled": False}}
-    assert _bess_config_from_engine(engine) is None
+    assert bess_config_from_engine(engine) is None
 
 
-def test_bess_config_from_engine_returns_none_when_missing() -> None:
+def testbess_config_from_engine_returns_none_when_missing() -> None:
     engine = MagicMock()
     engine.config = {"panel_config": {"serial_number": "x"}}
-    assert _bess_config_from_engine(engine) is None
+    assert bess_config_from_engine(engine) is None
 
 
-def test_bess_config_from_engine_uses_yaml_values() -> None:
+def testbess_config_from_engine_uses_yaml_values() -> None:
     engine = MagicMock()
     engine.serial_number = "abc"
     engine.config = {
@@ -40,7 +40,7 @@ def test_bess_config_from_engine_uses_yaml_values() -> None:
             "discharge_hours": [18, 19],
         },
     }
-    cfg = _bess_config_from_engine(engine)
+    cfg = bess_config_from_engine(engine)
     assert cfg is not None
     assert cfg.instance_id == "abc-bess"
     assert cfg.nameplate_capacity_kwh == 20.0
