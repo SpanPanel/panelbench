@@ -16,11 +16,12 @@ dependencies = [
     "pyyaml>=6.0",
     "zeroconf>=0.131.0",
     "timezonefinder>=6.0",
-    "ebus-emitter",
 ]
 
-[tool.uv.sources]
-ebus-emitter = { path = "../../ebus/emitter", editable = true }
+# `ebus-emitter` is a runtime dependency but is not listed here because it is not on
+# PyPI and its checkout location varies per developer. Run `scripts/dev-setup.sh`
+# (which reads `.env` for `EBUS_EMITTER_PATH`) to install it editable into the venv.
+# See `.env.example` for the expected variable.
 
 [dependency-groups]
 dev = [

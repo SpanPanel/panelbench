@@ -33,3 +33,7 @@ configs/*_history.db
 # Only default_* templates are tracked in configs/; user clones are local-only
 configs/*.yaml
 !configs/default_*.yaml
+
+# Local-developer source overrides + env. See .env.example and uv.toml.example.
+.env
+uv.toml
