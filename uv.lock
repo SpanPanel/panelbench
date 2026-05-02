@@ -365,6 +365,62 @@ wheels = [
 ]
 
 [[package]]
+name = "ebus-emitter"
+version = "0.1.0"
+source = { editable = "../../ebus/emitter" }
+dependencies = [
+    { name = "ebus-sdk" },
+    { name = "paho-mqtt" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ebus-sdk", editable = "../../ebus/ebus-sdk" },
+    { name = "paho-mqtt", specifier = ">=2.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "ruff", specifier = ">=0.15.0" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "ebus-mqtt-client"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "paho-mqtt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/58/82/44884909698cf96c3e04243419e8c07328b37397f0edbd40aa5972adb732/ebus_mqtt_client-0.1.2.tar.gz", hash = "sha256:7477cded5b544cdd5dbad3f66b25b85a2742f5abd7eb2f908ee1e08c215aa5d9", size = 6913, upload-time = "2026-04-18T01:18:53.643Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/3d/3e15cc69c2ffc0301b1a75657b868c52881b6c3a5766f85a0112444b887e/ebus_mqtt_client-0.1.2-py3-none-any.whl", hash = "sha256:949ee88b834baf5f5d94ec4c1a013ae4b529029e48a4ff05325853330d8d788b", size = 5762, upload-time = "2026-04-18T01:18:52.638Z" },
+]
+
+[[package]]
+name = "ebus-sdk"
+version = "0.1.4"
+source = { editable = "../../ebus/ebus-sdk" }
+dependencies = [
+    { name = "ebus-mqtt-client" },
+    { name = "paho-mqtt" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ebus-mqtt-client", specifier = ">=0.1.0" },
+    { name = "paho-mqtt", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "zeroconf", marker = "extra == 'mdns'", specifier = ">=0.131.0" },
+]
+provides-extras = ["mdns", "dev"]
+
+[[package]]
 name = "filelock"
 version = "3.25.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1180,6 +1236,7 @@ dependencies = [
     { name = "aiohttp-jinja2" },
     { name = "aiomqtt" },
     { name = "cryptography" },
+    { name = "ebus-emitter" },
     { name = "jinja2" },
     { name = "pyyaml" },
     { name = "timezonefinder" },
@@ -1203,6 +1260,7 @@ requires-dist = [
     { name = "aiohttp-jinja2", specifier = ">=1.6" },
     { name = "aiomqtt", specifier = ">=2.0.0" },
     { name = "cryptography", specifier = ">=42.0.0" },
+    { name = "ebus-emitter", editable = "../../ebus/emitter" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "timezonefinder", specifier = ">=6.0" },

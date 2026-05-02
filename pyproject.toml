@@ -16,7 +16,11 @@ dependencies = [
     "pyyaml>=6.0",
     "zeroconf>=0.131.0",
     "timezonefinder>=6.0",
+    "ebus-emitter",
 ]
+
+[tool.uv.sources]
+ebus-emitter = { path = "../../ebus/emitter", editable = true }
 
 [dependency-groups]
 dev = [
