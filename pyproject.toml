@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "span-panel-simulator"
 version = "1.0.11"
 description = "Standalone eBus simulator for SPAN panels"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "aiomqtt>=2.0.0",
     "aiohttp>=3.9.0",
@@ -45,7 +45,7 @@ packages = ["src/span_panel_simulator"]
 "src/span_panel_simulator/dashboard/static" = "span_panel_simulator/dashboard/static"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 99
 
 [tool.ruff.lint]
@@ -59,7 +59,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 
 [[tool.mypy.overrides]]
