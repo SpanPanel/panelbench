@@ -38,6 +38,21 @@ if TYPE_CHECKING:
     from span_panel_simulator.engine import DynamicSimulationEngine
 
 
+@dataclass(frozen=True, slots=True)
+class BrokerConnection:
+    """Broker connection parameters threaded through clone start-up.
+
+    A frozen dataclass so the same connection profile can be safely
+    reused across panels (and across future second-emitter scenarios
+    such as a separate BESS or PV emitter on the same broker)."""
+
+    host: str
+    port: int
+    username: str | None = None
+    password: str | None = None
+    ca_cert_path: str | None = None
+
+
 @dataclass(slots=True)
 class CloneRuntime:
     engine: DynamicSimulationEngine
@@ -159,22 +174,50 @@ def _load_shedding_config_from_engine(
     )
 
 
+def _resolve_broker(
+    config_broker: BrokerConfigYAML,
+    fallback: BrokerConnection | None,
+) -> BrokerConnection:
+    """Combine YAML ``broker:`` overrides with the app-supplied fallback.
+
+    The YAML section takes precedence (a clone can pin its own broker);
+    fields it omits fall through to *fallback*; missing fallback values
+    use sensible defaults (127.0.0.1:1883 anonymous, no TLS).
+    """
+    fb_host = fallback.host if fallback is not None else "127.0.0.1"
+    fb_port = fallback.port if fallback is not None else None
+    fb_user = fallback.username if fallback is not None else None
+    fb_pass = fallback.password if fallback is not None else None
+    fb_ca = fallback.ca_cert_path if fallback is not None else None
+
+    host = config_broker.get("host") or fb_host
+    raw_port = config_broker.get("port") if config_broker.get("port") is not None else fb_port
+    port = int(raw_port) if raw_port is not None else 1883
+    username = config_broker.get("username") or fb_user
+    password = config_broker.get("password") or fb_pass
+    ca_cert_path = config_broker.get("ca_cert_path") or fb_ca
+    return BrokerConnection(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        ca_cert_path=ca_cert_path,
+    )
+
+
 async def start_clone(
     engine: DynamicSimulationEngine,
     *,
-    broker_host: str | None = None,
-    broker_port: int | None = None,
-    broker_username: str | None = None,
-    broker_password: str | None = None,
-    ca_cert_path: str | None = None,
+    broker: BrokerConnection | None = None,
 ) -> CloneRuntime:
     """Assemble the emitter for ``engine``: build manifest, open MQTT, run
     lifecycle. Returns a runtime the panel holds across ticks.
 
     Broker connection precedence (highest first):
         1. ``broker:`` section in the YAML config (config explicitness wins).
-        2. Explicit ``broker_*`` arguments (typically passed by ``SimulatorApp``).
-        3. Default 127.0.0.1:1883 anonymous."""
+        2. The supplied ``broker`` fallback (typically constructed once by
+           ``SimulatorApp`` from CLI/env).
+        3. Default 127.0.0.1:1883 anonymous (no TLS)."""
     manifest = build_manifest(engine.config)
 
     uuid_to_circuit_id = {stable_circuit_uuid(c["id"]): c["id"] for c in engine.config["circuits"]}
@@ -192,19 +235,15 @@ async def start_clone(
     )
 
     broker_cfg: BrokerConfigYAML = engine.config.get("broker") or {}
-    host = broker_cfg.get("host") or broker_host or "127.0.0.1"
-    port_value = broker_cfg.get("port") if broker_cfg.get("port") is not None else broker_port
-    port = int(port_value) if port_value is not None else 1883
-    username = broker_cfg.get("username") or broker_username
-    password = broker_cfg.get("password") or broker_password
+    resolved = _resolve_broker(broker_cfg, broker)
     mqtt = _AiomqttPublisher(
-        host=host,
-        port=int(port),
+        host=resolved.host,
+        port=resolved.port,
         client_id=f"span-sim-{engine.serial_number}",
-        username=username,
-        password=password,
+        username=resolved.username,
+        password=resolved.password,
         will=will,
-        ca_cert_path=ca_cert_path,
+        ca_cert_path=resolved.ca_cert_path,
     )
     await mqtt.connect()
 

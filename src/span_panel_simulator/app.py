@@ -33,6 +33,7 @@ from span_panel_simulator.const import (
 )
 from span_panel_simulator.dashboard import DashboardContext, create_dashboard_app
 from span_panel_simulator.discovery import PanelAdvertiser, PanelBrowser
+from span_panel_simulator.emitter_adapter.runtime import BrokerConnection
 from span_panel_simulator.panel import PanelInstance
 from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
 from span_panel_simulator.recorder import RecorderDataSource
@@ -286,19 +287,23 @@ class SimulatorApp:
         # ``compute_modeling_data``.
         recorder = await self._load_recorder_data(config_path)
 
+        ca_cert_path = (
+            str(self._certs.ca_cert_path)
+            if self._certs is not None and self._certs.ca_cert_path is not None
+            else None
+        )
+        broker = BrokerConnection(
+            host=self._broker_host,
+            port=self._broker_port,
+            username=self._broker_username,
+            password=self._broker_password,
+            ca_cert_path=ca_cert_path,
+        )
         panel = PanelInstance(
             config_path=config_path,
             tick_interval=self._tick_interval,
             recorder=recorder,
-            broker_host=self._broker_host,
-            broker_port=self._broker_port,
-            broker_username=self._broker_username,
-            broker_password=self._broker_password,
-            ca_cert_path=(
-                str(self._certs.ca_cert_path)
-                if self._certs is not None and self._certs.ca_cert_path is not None
-                else None
-            ),
+            broker=broker,
         )
         serial = await panel.start()
 

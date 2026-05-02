@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from ebus_emitter import EbusBatterySnapshot
 
     from span_panel_simulator.config_types import BESSConfigYAML
-    from span_panel_simulator.emitter_adapter.runtime import CloneRuntime
+    from span_panel_simulator.emitter_adapter.runtime import BrokerConnection, CloneRuntime
     from span_panel_simulator.recorder import RecorderDataSource
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,11 +36,7 @@ class PanelInstance:
         *,
         tick_interval: float = 1.0,
         recorder: RecorderDataSource | None = None,
-        broker_host: str | None = None,
-        broker_port: int | None = None,
-        broker_username: str | None = None,
-        broker_password: str | None = None,
-        ca_cert_path: str | None = None,
+        broker: BrokerConnection | None = None,
     ) -> None:
         self._config_path = config_path
         self._tick_interval = tick_interval
@@ -48,11 +44,7 @@ class PanelInstance:
         # App-level broker connection. Used when the YAML config doesn't carry
         # its own broker section (the typical case — clones share the simulator
         # process's MQTT broker).
-        self._broker_host = broker_host
-        self._broker_port = broker_port
-        self._broker_username = broker_username
-        self._broker_password = broker_password
-        self._ca_cert_path = ca_cert_path
+        self._broker = broker
 
         self._engine: DynamicSimulationEngine | None = None
         self._runtime: CloneRuntime | None = None
@@ -167,11 +159,7 @@ class PanelInstance:
 
         self._runtime = await emitter_runtime.start_clone(
             engine,
-            broker_host=self._broker_host,
-            broker_port=self._broker_port,
-            broker_username=self._broker_username,
-            broker_password=self._broker_password,
-            ca_cert_path=self._ca_cert_path,
+            broker=self._broker,
         )
 
         await emitter_runtime.publish_tick(self._runtime)
