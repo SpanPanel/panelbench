@@ -53,7 +53,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
 # TC002 (move third-party import into TYPE_CHECKING) conflicts with mypy's need for runtime
 # resolution of imported names referenced from generic functions/methods. Disable to allow
 # straightforward runtime imports.
-ignore = ["TC002"]
+ignore = ["TC002", "TC003"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

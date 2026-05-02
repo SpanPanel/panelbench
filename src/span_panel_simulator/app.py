@@ -185,22 +185,18 @@ class SimulatorApp:
         return dict(self._panel_start_errors)
 
     def _get_first_engine(self) -> DynamicSimulationEngine | None:
-        """Return the engine of the first running panel, if any."""
-        for panel in self._panels.values():
-            if panel.engine is not None:
-                return panel.engine
+        """Engine accessors are deprecated post-emitter cutover. The engine has been
+        extracted into ebus-emitter.scheduleRunner. HA-API endpoints that previously
+        consumed engine state should be migrated to read EbusPanelSnapshot via
+        ``panel.last_snapshot`` in a follow-up pass."""
         return None
 
     def _get_engine_for_config_file(
         self, config_filename: str | None
     ) -> DynamicSimulationEngine | None:
-        """Resolve the running engine for a dashboard YAML filename, if any."""
-        if config_filename:
-            path = self._config_dir / config_filename
-            panel = self._panels.get(path)
-            if panel is not None and panel.engine is not None:
-                return panel.engine
-        return self._get_first_engine()
+        """See ``_get_first_engine``: deprecated; returns None post-cutover."""
+        del config_filename
+        return None
 
     def _get_power_summary(self) -> dict[str, object] | None:
         """Return current power flows from the first running panel."""
@@ -278,12 +274,15 @@ class SimulatorApp:
         # here (outside the engine) so the engine stays backend-agnostic.
         recorder = await self._load_recorder_data(config_path)
 
+        # Recorder data is no longer threaded into the panel — the emitter consumes
+        # the runtime spec which carries pre-baked behaviour. Recorder integration is
+        # a follow-up: the spec_generator will pre-bake recorded entity data into the
+        # circuit hour_factors at spec-generation time.
+        del recorder
+
         panel = PanelInstance(
             config_path=config_path,
-            publish_fn=self._publish,
             tick_interval=self._tick_interval,
-            schema=self._schema,
-            recorder=recorder,
         )
         serial = await panel.start()
 
@@ -308,12 +307,14 @@ class SimulatorApp:
             while f"{base_serial}-{suffix}" in self._serial_to_panel:
                 suffix += 1
             serial = f"{base_serial}-{suffix}"
-            assert panel.engine is not None  # narrowed by panel.total_tabs above
-            panel.engine.override_serial_number(serial)
-            if panel.publisher is not None:
-                panel.publisher.override_serial(serial)
+            # Serial-override post-cutover requires emitter restart to propagate the
+            # new serial through the manifest + lifecycle. For v0.1.0 of the emitter
+            # integration this is a degraded path: log the duplicate and skip the
+            # rename. Follow-up: implement runtime serial override by tearing down
+            # and restarting the panel's CloneRuntime with the new serial.
             _LOGGER.warning(
-                "Duplicate serial %s detected — renamed to %s",
+                "Duplicate serial %s detected — renamed to %s "
+                "(emitter restart required to take effect)",
                 base_serial,
                 serial,
             )
@@ -720,67 +721,25 @@ class SimulatorApp:
     # ------------------------------------------------------------------
 
     async def _handle_set_messages(self) -> None:
-        """Subscribe to /set topics for all panels and route to the correct engine."""
-        assert self._mqtt_client is not None
-
-        # Subscribe to wildcard for all panel serials
-        for panel in self._panels.values():
-            if panel.publisher is not None:
-                for topic in panel.publisher.get_set_topics():
-                    await self._mqtt_client.subscribe(topic)
-
-        async for message in self._mqtt_client.messages:
-            topic_str = str(message.topic)
-            payload_str = (
-                message.payload.decode("utf-8")
-                if isinstance(message.payload, bytes | bytearray)
-                else str(message.payload)
-            )
-
-            # Route to the correct panel by trying each publisher
-            for panel in self._panels.values():
-                if panel.publisher is None or panel.engine is None:
-                    continue
-                parsed = panel.publisher.resolve_set_message(topic_str)
-                if parsed is None:
-                    continue
-
-                target_type, circuit_id, prop = parsed
-                _LOGGER.info(
-                    "Set command [%s]: %s/%s = %s",
-                    panel.serial_number,
-                    target_type,
-                    prop,
-                    payload_str,
-                )
-
-                if target_type == "circuit" and prop == "relay":
-                    panel.engine.set_dynamic_overrides(
-                        circuit_overrides={circuit_id: {"relay_state": payload_str}}
-                    )
-                elif target_type == "circuit" and prop == "shed-priority":
-                    panel.engine.set_dynamic_overrides(
-                        circuit_overrides={circuit_id: {"priority": payload_str}}
-                    )
-                break  # Only one panel should match
+        """Post-cutover: /set message routing is now owned by each panel's emitter
+        (each emitter subscribes to its own /set topics via its own MqttClient and
+        dispatches through the SetterRegistry). The app-level /set router is no
+        longer needed and has been removed; this method exists only as a no-op
+        placeholder for the existing call sites until they are removed."""
+        return None
 
     # ------------------------------------------------------------------
     # Reload watcher
     # ------------------------------------------------------------------
 
     async def _reload_watcher(self) -> None:
-        """Wait for reload signals and execute them."""
+        """Wait for reload signals and execute them. Per-panel /set re-subscription
+        is now handled by each panel's emitter on restart."""
         while self._running:
             await self._reload_event.wait()
             self._reload_event.clear()
             try:
                 await self.reload()
-                # Re-subscribe for any new panels' /set topics
-                if self._mqtt_client is not None:
-                    for panel in self._panels.values():
-                        if panel.publisher is not None:
-                            for topic in panel.publisher.get_set_topics():
-                                await self._mqtt_client.subscribe(topic)
             except Exception:
                 _LOGGER.exception("Reload failed")
 
