@@ -30,14 +30,20 @@ async def amqtt_broker() -> AsyncIterator[tuple[str, int]]:
     """In-process pure-Python MQTT broker (amqtt) for tests that need a live broker.
     Yields (host, port). No system mosquitto required."""
     port = _free_port()
+    # Use the v0.11+ "plugins" config form instead of EntryPoint-based discovery
+    # (which amqtt deprecated). Declare the anonymous-auth plugin explicitly so
+    # tests can connect without credentials; declaring `plugins` here means
+    # `auth` / `topic-check` sections of config are ignored.
     broker = Broker(
         config={
             "listeners": {
                 "default": {"type": "tcp", "bind": f"127.0.0.1:{port}"},
             },
-            "auth": {"allow-anonymous": True},
-            "topic-check": {"enabled": False},
-            "sys_interval": 0,
+            "plugins": {
+                "amqtt.plugins.authentication.AnonymousAuthPlugin": {
+                    "allow_anonymous": True,
+                },
+            },
         },
     )
     await broker.start()

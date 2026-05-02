@@ -149,10 +149,12 @@ class TestUnsupportedPanelSize:
 
         app = SimulatorApp(config_dir=tmp_path)
         app._schema = load_schema(_BUNDLED_SCHEMA)
+        # ca_cert_path=None makes the per-clone runtime skip TLS — these tests
+        # use the plain-TCP amqtt_broker fixture, not a TLS broker.
         app._certs = MagicMock(
             ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+            ca_cert_path=None,
         )
-        app._mqtt_client = AsyncMock()
 
         with pytest.raises(KeyError):
             await app._start_panel(config)
@@ -181,10 +183,12 @@ class TestReloadContinuesOnPerPathFailure:
 
         app = SimulatorApp(config_dir=tmp_path)
         app._schema = load_schema(_BUNDLED_SCHEMA)
+        # ca_cert_path=None makes the per-clone runtime skip TLS — these tests
+        # use the plain-TCP amqtt_broker fixture, not a TLS broker.
         app._certs = MagicMock(
-            ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n"
+            ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+            ca_cert_path=None,
         )
-        app._mqtt_client = AsyncMock()
 
         mock_server = MagicMock()
         mock_server.start = AsyncMock()

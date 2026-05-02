@@ -39,6 +39,7 @@ class DashboardContext:
     set_grid_islandable: Callable[[bool], None] = lambda _: None
     set_circuit_priority: Callable[[str, str], None] = lambda _id, _pri: None
     set_circuit_relay: Callable[[str, str], None] = lambda _id, _state: None
+    apply_bess_config_live: Callable[[str, dict[str, Any]], bool] = lambda _f, _c: False
     get_modeling_data: Callable[[int, str | None], Awaitable[dict[str, Any] | None]] = (
         _noop_modeling_data
     )

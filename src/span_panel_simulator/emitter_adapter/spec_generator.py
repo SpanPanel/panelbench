@@ -1,68 +1,42 @@
-"""Generate the (DeviceManifest, RuntimeSpec) pair the emitter consumes from a
-SimulationConfig.
+"""Build a ``DeviceManifest`` from a loaded clone-profile dict.
 
-The simulator's clone-profile YAML is the source of truth. This generator walks the
-loaded SimulationConfig dict, derives the static identity (DeviceManifest) and the
-behaviour (RuntimeSpec) artifacts, and returns both. Producer-side modelling
-(weather/HVAC/solar physics) bakes its outputs into the runtime spec; the emitter
-consumes pre-baked data only.
-
-This v0.1.0 generator handles the structural translation. The deeper modelling baking
-(annual solar curves from sun position + cloud cover; HVAC seasonal multipliers folded
-into per-circuit monthly_factors; rate-driven BESS schedule resolution) is deferred to
-a follow-up release; for now the spec carries flat default factor tables that exercise
-the emitter's full pipeline."""
+The manifest carries identity + physics keys per the v0.3.0 emitter contract.
+The emitter parses physics fields via ``ManifestPhysicsView`` at construction
+and uses them for relay-state ownership, energy integration, panel-meter
+aggregation, and per-leg current calculation."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
-from ebus_emitter import DeviceInstance, DeviceManifest, RuntimeSpec
-from ebus_emitter.scheduleRunner.runtime_spec import (
-    BESSConfig,
-    CircuitSpec,
-    ClockSpec,
-    CyclingPatternSpec,
-    EnergyProfileSpec,
-    GridSpec,
-    PanelSpec,
-    TimeOfDaySpec,
-)
+from ebus_emitter import DeviceInstance, DeviceManifest
 
 from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
+from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
 
-_PRIORITY_V1_TO_V2 = {
-    "MUST_HAVE": "NEVER",
-    "NICE_TO_HAVE": "SOC_THRESHOLD",
-    "NON_ESSENTIAL": "OFF_GRID",
-    "NEVER": "NEVER",
-    "SOC_THRESHOLD": "SOC_THRESHOLD",
-    "OFF_GRID": "OFF_GRID",
-    "UNKNOWN": "UNKNOWN",
+_CIRCUIT_RELAY_BEHAVIOR_MAP = {
+    "controllable": "controllable",
+    "non_controllable": "non-controllable",
+    "non-controllable": "non-controllable",
+    "always_on": "always-on",
+    "always-on": "always-on",
 }
 
-_CHARGE_MODE_MAP = {
-    "self-consumption": "self-consumption",
-    "backup-only": "backup-only",
-    "solar-gen": "self-consumption",
-    "custom": "self-consumption",
+_PV_INVERTER_TYPE_MAP = {
+    "hybrid": "hybrid",
+    "ac_coupled": "ac-coupled",
+    "ac-coupled": "ac-coupled",
 }
-
-
-def _normalise_priority(p: str) -> str:
-    return _PRIORITY_V1_TO_V2.get(p, "UNKNOWN")
-
-
-@dataclass(frozen=True, slots=True)
-class GeneratedArtifacts:
-    manifest: DeviceManifest
-    runtime_spec: RuntimeSpec
 
 
 def build_manifest(profile: dict[str, Any]) -> DeviceManifest:
+    """Walk the loaded SimulationConfig dict; emit a DeviceManifest the emitter
+    consumes. Identity + physics — no behaviour, no schedule, no modelling."""
     panel_cfg = profile["panel_config"]
     panel_id = panel_cfg["serial_number"]
+    panel_size = int(panel_cfg.get("total_tabs", 40))
+    panel_model = PANEL_SIZE_TO_MODEL.get(panel_size, f"MAIN_{panel_size}")
+
     instances: list[DeviceInstance] = [
         DeviceInstance(
             entity_class="panel",
@@ -73,6 +47,14 @@ def build_manifest(profile: dict[str, Any]) -> DeviceManifest:
                 "serial-number": panel_id,
                 "firmware-version": profile.get("firmware_version", "sim/v0.1.0"),
                 "hardware-version": profile.get("hardware_version", "rev2"),
+                "panel-size": str(panel_size),
+                "main-breaker-rating-a": str(int(panel_cfg.get("main_size", 200))),
+                "panel-model": panel_model,
+                "postal-code": str(panel_cfg.get("postal_code", "94103")),
+                "time-zone": str(panel_cfg.get("time_zone", "America/Los_Angeles")),
+                "service-voltage-v": str(panel_cfg.get("service_voltage_v", 240.0)),
+                "line-voltage-v": str(panel_cfg.get("line_voltage_v", 120.0)),
+                "islandable": "true" if _islandable(profile) else "false",
             },
         ),
         DeviceInstance(
@@ -89,42 +71,68 @@ def build_manifest(profile: dict[str, Any]) -> DeviceManifest:
         ),
     ]
 
+    templates = profile.get("circuit_templates", {})
     for c in profile.get("circuits", []):
+        tabs = c.get("tabs") or [0]
+        template = templates.get(c.get("template", ""), {})
+        relay_behavior_raw = str(template.get("relay_behavior", "controllable"))
+        relay_behavior = _CIRCUIT_RELAY_BEHAVIOR_MAP.get(
+            relay_behavior_raw.lower().replace("_", "-"),
+            "controllable",
+        )
+        priority = str(template.get("priority", "NICE_TO_HAVE")).upper()
+        breaker_rating = float(template.get("breaker_rating_a", 20.0))
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
                 instance_id=stable_circuit_uuid(c["id"]),
                 display_name=c.get("name", c["id"]),
                 metadata={
-                    "tab-number": str(c.get("tabs", [0])[0] if c.get("tabs") else 0),
-                    "dipole": str(len(c.get("tabs", [])) > 1).lower(),
+                    "tab-numbers": ",".join(str(int(t)) for t in tabs if t),
+                    "breaker-rating-a": str(breaker_rating),
+                    "default-priority": priority,
+                    "relay-behavior": relay_behavior,
+                    "placement": str(c.get("placement", "downstream-of-lugs")),
+                    "always-on": "true" if relay_behavior == "always-on" else "false",
                 },
-            )
+            ),
         )
 
     bess_cfg = profile.get("bess") or {}
     if bess_cfg.get("enabled"):
+        bess_meta: dict[str, str] = {
+            "vendor-name": str(bess_cfg.get("vendor", "Span")),
+            "nameplate-capacity-kwh": str(bess_cfg.get("nameplate_capacity_kwh", 13.5)),
+        }
+        if "initial_soe_kwh" in bess_cfg:
+            bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
         instances.append(
             DeviceInstance(
                 entity_class="bess",
                 instance_id=f"{panel_id}-bess",
                 display_name="Battery",
-                metadata={
-                    "vendor-name": str(bess_cfg.get("vendor", "Span")),
-                    "nameplate-capacity": str(bess_cfg.get("nameplate_capacity_kwh", 13.5)),
-                },
-            )
+                metadata=bess_meta,
+            ),
         )
 
     pv_cfg = profile.get("pv") or {}
     if pv_cfg.get("enabled"):
+        inverter_type_raw = str(pv_cfg.get("inverter_type", "ac_coupled"))
+        inverter_type = _PV_INVERTER_TYPE_MAP.get(
+            inverter_type_raw.lower().replace("_", "-"),
+            "ac-coupled",
+        )
         instances.append(
             DeviceInstance(
                 entity_class="pv",
                 instance_id=f"{panel_id}-pv",
                 display_name="Solar",
-                metadata={"vendor-name": str(pv_cfg.get("vendor", "Enphase"))},
-            )
+                metadata={
+                    "vendor-name": str(pv_cfg.get("vendor", "Enphase")),
+                    "nameplate-capacity-w": str(pv_cfg.get("nameplate_capacity_w", 5000.0)),
+                    "inverter-type": inverter_type,
+                },
+            ),
         )
 
     evse_cfg = profile.get("evse") or {}
@@ -134,137 +142,25 @@ def build_manifest(profile: dict[str, Any]) -> DeviceManifest:
                 entity_class="evse",
                 instance_id=f"{panel_id}-evse",
                 display_name="EV Charger",
-                metadata={"vendor-name": str(evse_cfg.get("vendor", "Span"))},
-            )
+                metadata={
+                    "vendor-name": str(evse_cfg.get("vendor", "SPAN")),
+                    "product-name": str(evse_cfg.get("product", "SPAN Drive")),
+                    "part-number": str(evse_cfg.get("part_number", "SPN-DRV-001")),
+                    "serial-number": str(evse_cfg.get("serial_number", f"SIM-EVSE-{panel_id}")),
+                    "software-version": str(evse_cfg.get("software_version", "sim/v0.1.0")),
+                    "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),
+                },
+            ),
         )
 
     return DeviceManifest(instances=tuple(instances))
 
 
-def build_runtime_spec(profile: dict[str, Any]) -> RuntimeSpec:
-    panel_cfg = profile["panel_config"]
-    panel_id = panel_cfg["serial_number"]
-    sim_params = profile.get("simulation_params", {}) or {}
-
-    bess_cfg = profile.get("bess") or {}
-    bess_config: BESSConfig | None = None
-    if bess_cfg.get("enabled"):
-        raw_mode = bess_cfg.get("charge_mode", "self-consumption")
-        mode = _CHARGE_MODE_MAP.get(raw_mode, "self-consumption")
-        bess_config = BESSConfig(
-            instance_id=f"{panel_id}-bess",
-            nameplate_capacity_kwh=float(bess_cfg.get("nameplate_capacity_kwh", 13.5)),
-            max_charge_w=float(bess_cfg.get("max_charge_w", 3500.0)),
-            max_discharge_w=float(bess_cfg.get("max_discharge_w", 3500.0)),
-            charge_efficiency=float(bess_cfg.get("charge_efficiency", 0.95)),
-            discharge_efficiency=float(bess_cfg.get("discharge_efficiency", 0.95)),
-            backup_reserve_pct=float(bess_cfg.get("backup_reserve_pct", 20.0)),
-            charge_mode=mode,
-            charge_hours=tuple(bess_cfg.get("charge_hours", [10, 11, 12, 13, 14, 15])),
-            discharge_hours=tuple(
-                bess_cfg.get("discharge_hours", [17, 18, 19, 20, 21]),
-            ),
-        )
-
-    default_hours = {
-        0: 0.30,
-        1: 0.25,
-        2: 0.20,
-        3: 0.20,
-        4: 0.20,
-        5: 0.25,
-        6: 0.45,
-        7: 0.65,
-        8: 0.55,
-        9: 0.40,
-        10: 0.35,
-        11: 0.40,
-        12: 0.50,
-        13: 0.45,
-        14: 0.40,
-        15: 0.45,
-        16: 0.55,
-        17: 0.75,
-        18: 0.85,
-        19: 0.90,
-        20: 0.85,
-        21: 0.70,
-        22: 0.55,
-        23: 0.40,
-    }
-    default_months = {m: 1.0 for m in range(1, 13)}
-
-    circuits: list[CircuitSpec] = []
-    templates = profile.get("circuit_templates", {})
-    for c in profile.get("circuits", []):
-        template_name = c.get("template", "")
-        template = templates.get(template_name, {})
-        ep = template.get("energy_profile", {})
-        cycling = template.get("cycling_pattern") or {}
-        time_of_day = template.get("time_of_day_profile") or {}
-
-        hour_factors = (
-            {int(k): float(v) for k, v in time_of_day.get("hour_factors", {}).items()}
-            if time_of_day.get("enabled")
-            else dict(default_hours)
-        )
-        if set(hour_factors.keys()) != set(range(24)):
-            hour_factors = dict(default_hours)
-
-        monthly_factors = {
-            int(k): float(v) for k, v in template.get("monthly_factors", {}).items()
-        } or dict(default_months)
-        if set(monthly_factors.keys()) != set(range(1, 13)):
-            monthly_factors = dict(default_months)
-
-        circuits.append(
-            CircuitSpec(
-                instance_id=stable_circuit_uuid(c["id"]),
-                energy_profile=EnergyProfileSpec(
-                    mode="producer" if ep.get("mode") == "producer" else "consumer",
-                    typical_power_w=float(ep.get("typical_power", 200.0)),
-                    power_variation=float(ep.get("power_variation", 0.15)),
-                    initial_consumed_energy_wh=float(
-                        ep.get("initial_consumed_energy_wh", 0.0),
-                    ),
-                    initial_produced_energy_wh=float(
-                        ep.get("initial_produced_energy_wh", 0.0),
-                    ),
-                    nameplate_capacity_w=ep.get("nameplate_capacity_w"),
-                ),
-                time_of_day=TimeOfDaySpec(hour_factors=hour_factors),
-                monthly_factors=monthly_factors,
-                priority=_normalise_priority(template.get("priority", "UNKNOWN")),
-                relay_behavior=(
-                    "controllable"
-                    if template.get("relay_behavior") == "controllable"
-                    else "non_controllable"
-                ),
-                cycling_pattern=CyclingPatternSpec(
-                    enabled=bool(cycling),
-                    duty_cycle=float(cycling.get("duty_cycle", 0.0)),
-                    period_seconds=int(cycling.get("period", 0)),
-                ),
-            )
-        )
-
-    return RuntimeSpec(
-        panel=PanelSpec(instance_id=panel_id, setter_debounce_minutes=15),
-        clock=ClockSpec(
-            start_iso=str(
-                sim_params.get("simulation_start_time") or "2026-01-01T00:00:00+00:00",
-            ),
-            acceleration=float(sim_params.get("time_acceleration", 1.0)),
-        ),
-        grid=GridSpec(mode="always-available"),
-        bess=bess_config,
-        solar_curve=None,
-        circuits=tuple(circuits),
-    )
-
-
-def generate(profile: dict[str, Any]) -> GeneratedArtifacts:
-    return GeneratedArtifacts(
-        manifest=build_manifest(profile),
-        runtime_spec=build_runtime_spec(profile),
-    )
+def _islandable(profile: dict[str, Any]) -> bool:
+    """A panel can island when a hybrid PV inverter is configured (or any config
+    explicitly sets ``islandable: true`` on panel_config)."""
+    panel_cfg = profile.get("panel_config", {})
+    if isinstance(panel_cfg, dict) and "islandable" in panel_cfg:
+        return bool(panel_cfg["islandable"])
+    pv_cfg = profile.get("pv") or {}
+    return bool(pv_cfg.get("enabled") and pv_cfg.get("inverter_type") == "hybrid")

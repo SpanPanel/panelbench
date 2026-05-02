@@ -32,6 +32,7 @@ dev = [
     "mypy>=1.10",
     "pre-commit>=4.0",
     "types-pyyaml>=6.0",
+    "amqtt>=0.11.3",
 ]
 
 [project.scripts]
@@ -45,7 +46,10 @@ packages = ["src/span_panel_simulator"]
 "src/span_panel_simulator/dashboard/static" = "span_panel_simulator/dashboard/static"
 
 [tool.ruff]
-target-version = "py314"
+# Pinned to py313 because ruff 0.15.x has a formatter bug under py314 that
+# rewrites ``except (A, B):`` into the Python-2 ``except A, B:`` syntax.
+# Bump back to py314 once the upstream bug is fixed.
+target-version = "py313"
 line-length = 99
 
 [tool.ruff.lint]

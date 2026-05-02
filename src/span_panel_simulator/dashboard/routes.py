@@ -785,6 +785,26 @@ def _persist_config(request: web.Request) -> None:
     ctx.start_panel(filename)
 
 
+def _persist_config_live_bess(request: web.Request) -> None:
+    """BESS-only persistence path — saves YAML and applies the new BESS config
+    to the running emitter without restarting the panel. SOC/SOE persists
+    across the swap. Falls back to a normal restart-style persist when no
+    running panel matches the current filter (e.g. panel is stopped)."""
+    ctx = _ctx(request)
+    filename = ctx.config_filter
+    if not filename or filename.startswith("default_"):
+        return
+    output_path = ctx.config_dir / filename
+    store = _store(request)
+    store.save_to_file(output_path)
+    _LOGGER.info("Config saved to %s (live BESS apply)", output_path)
+    bess_yaml = store.get_bess_config()
+    if not ctx.apply_bess_config_live(filename, dict(bess_yaml)):
+        # Panel isn't running — fall back to the restart path so the next
+        # start picks up the new YAML.
+        ctx.start_panel(filename)
+
+
 async def handle_put_entity(request: web.Request) -> web.Response:
     entity_id = request.match_info["id"]
     data = await request.post()
@@ -943,7 +963,9 @@ async def handle_put_bess_charge_mode(request: web.Request) -> web.Response:
 
     When switching to TOU with an active rate, stores the rate label so
     the energy system resolves dispatch from the URDB record at each tick.
-    """
+
+    Applied live to the running emitter — no panel restart. SOC/SOE persists
+    across the swap."""
     data = await request.post()
     mode = str(data.get("charge_mode", "custom"))
 
@@ -952,7 +974,7 @@ async def handle_put_bess_charge_mode(request: web.Request) -> web.Response:
         rate_label = _rate_cache(request).get_current_rate_label()
 
     _store(request).update_battery_charge_mode(mode, rate_label=rate_label)
-    _persist_config(request)
+    _persist_config_live_bess(request)
     return _render("partials/bess_card.html", request, _bess_card_context(request, editing=True))
 
 

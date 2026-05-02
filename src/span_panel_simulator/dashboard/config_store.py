@@ -673,9 +673,17 @@ class ConfigStore:
     # -- Battery charge mode --
 
     def get_battery_charge_mode(self) -> str:
-        """Return the BESS charge mode (default ``"self-consumption"``)."""
+        """Return the BESS charge mode (default ``"self-consumption"``).
+
+        Legacy configs may carry mode strings outside the dashboard's known set
+        (e.g. ``solar-gen`` from earlier defaults). Normalize anything not in
+        the supported set to ``self-consumption`` so the UI dropdown renders a
+        real value instead of blank."""
         bess = self.get_bess_config()
-        return str(bess.get("charge_mode", "self-consumption"))
+        raw = str(bess.get("charge_mode", "self-consumption"))
+        if raw in ("self-consumption", "custom", "backup-only"):
+            return raw
+        return "self-consumption"
 
     def update_battery_charge_mode(
         self,

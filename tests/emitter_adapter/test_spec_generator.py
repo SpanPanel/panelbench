@@ -3,11 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from span_panel_simulator.emitter_adapter.spec_generator import (
-    GeneratedArtifacts,
-    build_manifest,
-    generate,
-)
+from span_panel_simulator.emitter_adapter.spec_generator import build_manifest
 
 
 def _profile() -> dict:
@@ -31,33 +27,136 @@ def test_build_manifest_includes_bess_when_enabled() -> None:
         pytest.skip("default_MAIN_40 has no enabled BESS")
 
 
-def test_runtime_spec_panel_id_matches_manifest() -> None:
-    artifacts = generate(_profile())
-    panel_id = artifacts.manifest.of_class("panel")[0].instance_id
-    assert artifacts.runtime_spec.panel.instance_id == panel_id
+def test_build_manifest_omits_native_devices_when_disabled() -> None:
+    profile = {
+        "panel_config": {"serial_number": "test-001"},
+        "circuits": [],
+    }
+    manifest = build_manifest(profile)
+    assert len(manifest.of_class("bess")) == 0
+    assert len(manifest.of_class("pv")) == 0
+    assert len(manifest.of_class("evse")) == 0
 
 
-def test_runtime_spec_normalises_priorities() -> None:
-    artifacts = generate(_profile())
-    valid = {"NEVER", "SOC_THRESHOLD", "OFF_GRID", "UNKNOWN"}
-    for c in artifacts.runtime_spec.circuits:
-        assert c.priority in valid
+def test_build_manifest_panel_id_matches_serial() -> None:
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "display_name": "Test Panel"},
+        "circuits": [],
+    }
+    manifest = build_manifest(profile)
+    panel = manifest.of_class("panel")[0]
+    assert panel.instance_id == "abc-123"
+    assert panel.display_name == "Test Panel"
 
 
-def test_runtime_spec_charge_mode_in_supported_set() -> None:
-    artifacts = generate(_profile())
-    if artifacts.runtime_spec.bess is None:
-        pytest.skip("no BESS in fixture")
-    assert artifacts.runtime_spec.bess.charge_mode in ("self-consumption", "backup-only")
+# ---- v0.3.0 physics-key emission --------------------------------------------
 
 
-def test_runtime_spec_default_setter_debounce_is_15() -> None:
-    artifacts = generate(_profile())
-    assert artifacts.runtime_spec.panel.setter_debounce_minutes == 15
+def test_panel_metadata_includes_physics_keys() -> None:
+    profile = {
+        "panel_config": {
+            "serial_number": "abc-123",
+            "total_tabs": 40,
+            "main_size": 200,
+            "postal_code": "94110",
+            "time_zone": "America/Los_Angeles",
+        },
+        "circuits": [],
+    }
+    panel = build_manifest(profile).of_class("panel")[0]
+    assert panel.metadata["panel-size"] == "40"
+    assert panel.metadata["main-breaker-rating-a"] == "200"
+    assert panel.metadata["panel-model"] == "MAIN_40"
+    assert panel.metadata["postal-code"] == "94110"
+    assert panel.metadata["time-zone"] == "America/Los_Angeles"
+    assert panel.metadata["service-voltage-v"] == "240.0"
+    assert panel.metadata["line-voltage-v"] == "120.0"
+    assert panel.metadata["islandable"] == "false"
 
 
-def test_generate_returns_paired_artifacts() -> None:
-    artifacts = generate(_profile())
-    assert isinstance(artifacts, GeneratedArtifacts)
-    assert isinstance(artifacts.runtime_spec.circuits, tuple)
-    assert len(artifacts.runtime_spec.circuits) == len(artifacts.manifest.of_class("circuit"))
+def test_circuit_metadata_includes_physics_keys() -> None:
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuit_templates": {
+            "lighting": {
+                "priority": "NICE_TO_HAVE",
+                "relay_behavior": "controllable",
+                "breaker_rating_a": 15.0,
+            },
+        },
+        "circuits": [
+            {"id": "kitchen", "name": "Kitchen", "template": "lighting", "tabs": [1]},
+            {"id": "hvac", "name": "HVAC", "template": "lighting", "tabs": [3, 4]},
+        ],
+    }
+    manifest = build_manifest(profile)
+    circuits = manifest.of_class("circuit")
+    assert len(circuits) == 2
+
+    by_name = {c.display_name: c for c in circuits}
+    kitchen = by_name["Kitchen"]
+    assert kitchen.metadata["tab-numbers"] == "1"
+    assert kitchen.metadata["breaker-rating-a"] == "15.0"
+    assert kitchen.metadata["default-priority"] == "NICE_TO_HAVE"
+    assert kitchen.metadata["relay-behavior"] == "controllable"
+    assert kitchen.metadata["placement"] == "downstream-of-lugs"
+    assert kitchen.metadata["always-on"] == "false"
+
+    hvac = by_name["HVAC"]
+    assert hvac.metadata["tab-numbers"] == "3,4"
+
+
+def test_bess_metadata_includes_physics_keys() -> None:
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuits": [],
+        "bess": {"enabled": True, "nameplate_capacity_kwh": 13.5, "initial_soe_kwh": 6.75},
+    }
+    bess = build_manifest(profile).of_class("bess")[0]
+    assert bess.metadata["vendor-name"] == "Span"
+    assert bess.metadata["nameplate-capacity-kwh"] == "13.5"
+    assert bess.metadata["initial-soe-kwh"] == "6.75"
+
+
+def test_pv_metadata_includes_inverter_type() -> None:
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuits": [],
+        "pv": {
+            "enabled": True,
+            "vendor": "Enphase",
+            "nameplate_capacity_w": 7000.0,
+            "inverter_type": "hybrid",
+        },
+    }
+    manifest = build_manifest(profile)
+    pv = manifest.of_class("pv")[0]
+    assert pv.metadata["inverter-type"] == "hybrid"
+    assert pv.metadata["nameplate-capacity-w"] == "7000.0"
+    # Hybrid PV → panel becomes islandable.
+    panel = manifest.of_class("panel")[0]
+    assert panel.metadata["islandable"] == "true"
+
+
+def test_evse_metadata_includes_physics_keys() -> None:
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuits": [],
+        "evse": {"enabled": True, "max_current_a": 40.0},
+    }
+    evse = build_manifest(profile).of_class("evse")[0]
+    assert evse.metadata["max-current-a"] == "40.0"
+    assert evse.metadata["product-name"] == "SPAN Drive"
+
+
+def test_circuit_relay_behavior_translates_underscore_to_hyphen() -> None:
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuit_templates": {
+            "always": {"priority": "MUST_HAVE", "relay_behavior": "always_on"},
+        },
+        "circuits": [{"id": "smoke", "name": "Smoke Alarm", "template": "always", "tabs": [1]}],
+    }
+    c = build_manifest(profile).of_class("circuit")[0]
+    assert c.metadata["relay-behavior"] == "always-on"
+    assert c.metadata["always-on"] == "true"

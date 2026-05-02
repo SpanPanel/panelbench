@@ -1,6 +1,26 @@
-"""TOU rates module — kept on the simulator side after the energy-system extraction.
+"""Simulator-side energy package — grid + PV + load resolver only.
 
-The rest of the energy/ package (system, components, bus, types) was lifted into
-``ebus_emitter.scheduleRunner.energy``. ``tou.py`` stays because rate-driven
-optimisation is a producer-side modelling concern; the dashboard's TOU display
-imports ``all_rates_for_day`` from here."""
+BESS dispatch lives in the emitter (`ebus_emitter.native_devices.bess`), driven
+each tick by ``per_tick_context`` (load_demand_w, pv_available_w, grid_online,
+current_time). The simulator's ``DynamicSimulationEngine`` uses ``EnergySystem``
+here to compute pre-battery grid power for the snapshot it hands the emitter."""
+
+from span_panel_simulator.energy.system import EnergySystem
+from span_panel_simulator.energy.types import (
+    EnergySystemConfig,
+    GridConfig,
+    LoadConfig,
+    PowerInputs,
+    PVConfig,
+    SystemState,
+)
+
+__all__ = [
+    "EnergySystem",
+    "EnergySystemConfig",
+    "GridConfig",
+    "LoadConfig",
+    "PVConfig",
+    "PowerInputs",
+    "SystemState",
+]
