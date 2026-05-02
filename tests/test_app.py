@@ -17,6 +17,10 @@ panel_config:
   total_tabs: 8
   main_size: 100
 
+broker:
+  host: "{broker_host}"
+  port: {broker_port}
+
 circuit_templates:
   lighting:
     energy_profile:
@@ -43,9 +47,18 @@ simulation_params:
 """
 
 
-def _write_config(config_dir: Path, name: str, serial: str) -> Path:
+def _write_config(
+    config_dir: Path,
+    name: str,
+    serial: str,
+    *,
+    broker_host: str = "127.0.0.1",
+    broker_port: int = 1,
+) -> Path:
     path = config_dir / name
-    path.write_text(_SIMPLE_CONFIG.format(serial=serial))
+    path.write_text(
+        _SIMPLE_CONFIG.format(serial=serial, broker_host=broker_host, broker_port=broker_port),
+    )
     return path
 
 
@@ -70,7 +83,7 @@ class TestConfigDiscovery:
         path = _write_config(tmp_path, "panel.yaml", "PANEL-A")
         hash1 = _file_hash(path)
 
-        path.write_text(_SIMPLE_CONFIG.format(serial="PANEL-B"))
+        _write_config(tmp_path, "panel.yaml", "PANEL-B")
         hash2 = _file_hash(path)
 
         assert hash1 != hash2
@@ -89,6 +102,10 @@ panel_config:
   serial_number: "SIM-BAD-20"
   total_tabs: 20
   main_size: 100
+
+broker:
+  host: "{broker_host}"
+  port: {broker_port}
 
 circuit_templates:
   lighting:
@@ -119,27 +136,27 @@ simulation_params:
 class TestUnsupportedPanelSize:
     """Configs with total_tabs outside _PANEL_SIZE_TO_MODEL fail loudly at panel-add."""
 
-    @pytest.mark.skip(
-        reason="post-emitter-cutover: requires running mosquitto broker for PanelInstance.start()",
-    )
     @pytest.mark.asyncio
-    async def test_unsupported_total_tabs_raises_key_error(self, tmp_path: Path) -> None:
+    async def test_unsupported_total_tabs_raises_key_error(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+    ) -> None:
         """total_tabs=20 has no SPAN model — _start_panel must raise AND not register."""
+        host, port = amqtt_broker
         config = tmp_path / "bad_size.yaml"
-        config.write_text(_BAD_SIZE_CONFIG)
+        config.write_text(_BAD_SIZE_CONFIG.format(broker_host=host, broker_port=port))
 
         app = SimulatorApp(config_dir=tmp_path)
         app._schema = load_schema(_BUNDLED_SCHEMA)
         app._certs = MagicMock(
-            ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n"
+            ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
         )
         app._mqtt_client = AsyncMock()
 
         with pytest.raises(KeyError):
             await app._start_panel(config)
 
-        # Validation ran before registration — panel must not be tracked,
-        # and its tick task must not be running.
         assert config not in app._panels
         assert not app._serial_to_panel
 
@@ -147,18 +164,20 @@ class TestUnsupportedPanelSize:
 class TestReloadContinuesOnPerPathFailure:
     """A failing config does not block other panels in the same reload."""
 
-    @pytest.mark.skip(
-        reason="post-emitter-cutover: requires running mosquitto broker for PanelInstance.start()",
-    )
     @pytest.mark.asyncio
-    async def test_good_panel_starts_despite_bad_peer(self, tmp_path: Path) -> None:
+    async def test_good_panel_starts_despite_bad_peer(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+    ) -> None:
         """Unsupported total_tabs in one config must not prevent starting another."""
+        host, port = amqtt_broker
         # total_tabs=32 is a valid SPAN panel size; total_tabs=20 is not.
         good_config = _SIMPLE_CONFIG.replace("total_tabs: 8", "total_tabs: 32")
         good = tmp_path / "good.yaml"
-        good.write_text(good_config.format(serial="SIM-GOOD"))
+        good.write_text(good_config.format(serial="SIM-GOOD", broker_host=host, broker_port=port))
         bad = tmp_path / "bad.yaml"
-        bad.write_text(_BAD_SIZE_CONFIG)
+        bad.write_text(_BAD_SIZE_CONFIG.format(broker_host=host, broker_port=port))
 
         app = SimulatorApp(config_dir=tmp_path)
         app._schema = load_schema(_BUNDLED_SCHEMA)

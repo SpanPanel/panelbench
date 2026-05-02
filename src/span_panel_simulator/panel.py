@@ -11,13 +11,13 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
-from ebus_emitter import EbusPanelSnapshot
-
 from span_panel_simulator.emitter_adapter import runtime as emitter_runtime
 from span_panel_simulator.emitter_adapter.profile_loader import load_clone_profile
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from ebus_emitter import EbusPanelSnapshot
 
     from span_panel_simulator.emitter_adapter.runtime import CloneRuntime
 

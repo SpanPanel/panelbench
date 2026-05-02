@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ebus_emitter import SetterRegistry
-
 if TYPE_CHECKING:
+    from ebus_emitter import SetterRegistry
+
     from span_panel_simulator.emitter_adapter.runtime import CloneRuntime
 
 

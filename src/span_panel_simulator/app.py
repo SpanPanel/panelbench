@@ -34,16 +34,21 @@ from span_panel_simulator.const import (
 )
 from span_panel_simulator.dashboard import DashboardContext, create_dashboard_app
 from span_panel_simulator.discovery import PanelAdvertiser, PanelBrowser
-from span_panel_simulator.engine import _PANEL_SIZE_TO_MODEL
 from span_panel_simulator.panel import PanelInstance
+from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
 from span_panel_simulator.recorder import RecorderDataSource
 from span_panel_simulator.schema import HomieSchemaRegistry, load_schema, render_for_panel
 
 if TYPE_CHECKING:
     from span_panel_simulator.certs import CertificateBundle
-    from span_panel_simulator.engine import DynamicSimulationEngine
     from span_panel_simulator.ha_api.client import HAClient, HAConnectionConfig
     from span_panel_simulator.supervisor_discovery import SupervisorDiscovery
+
+
+# Engine accessors are stubbed post-emitter cutover. Use ``object`` as the return type
+# placeholder since the value is always ``None`` until the HA-API endpoints are
+# migrated to read EbusPanelSnapshot via ``panel.last_snapshot``.
+DynamicSimulationEngine = object
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -198,59 +203,42 @@ class SimulatorApp:
         del config_filename
         return None
 
+    # Post-emitter cutover: HA-API endpoints that previously delegated to the legacy
+    # DynamicSimulationEngine are stubbed to no-ops or empty returns. The follow-up
+    # migration reads EbusPanelSnapshot via ``panel.last_snapshot`` and routes
+    # mutations through ``panel.runtime.emitter.set_property_override`` /
+    # ``force_grid_state``. The HA-API surface is preserved for back-compat; the
+    # behaviours degrade gracefully (UI shows empty / no-op) until that migration lands.
+
     def _get_power_summary(self) -> dict[str, object] | None:
-        """Return current power flows from the first running panel."""
-        engine = self._get_first_engine()
-        if engine is None:
-            return None
-        return engine.get_power_summary()
+        del self
+        return None
 
     def _set_simulation_time(self, iso_str: str) -> None:
-        """Set the simulation time on the first running panel."""
-        engine = self._get_first_engine()
-        if engine is not None:
-            engine.override_simulation_start_time(iso_str)
+        del self, iso_str
 
     def _set_time_acceleration(self, accel: float) -> None:
-        """Set the time acceleration on the first running panel."""
-        engine = self._get_first_engine()
-        if engine is not None:
-            engine.set_time_acceleration(accel)
+        del self, accel
 
     def _set_grid_online(self, online: bool) -> None:
-        """Set the grid online/offline state on the first running panel."""
-        engine = self._get_first_engine()
-        if engine is not None:
-            engine.set_grid_online(online)
+        del self, online
 
     def _set_grid_islandable(self, islandable: bool) -> None:
-        """Set the grid islandable flag on the first running panel."""
-        engine = self._get_first_engine()
-        if engine is not None:
-            engine.set_grid_islandable(islandable)
+        del self, islandable
 
     def _set_circuit_priority(self, circuit_id: str, priority: str) -> None:
-        """Push a circuit priority change to the running engine immediately."""
-        engine = self._get_first_engine()
-        if engine is not None:
-            engine.set_dynamic_overrides(circuit_overrides={circuit_id: {"priority": priority}})
+        del self, circuit_id, priority
 
     def _set_circuit_relay(self, circuit_id: str, relay_state: str) -> None:
-        """Push a circuit relay change to the running engine immediately."""
-        engine = self._get_first_engine()
-        if engine is not None:
-            engine.set_dynamic_overrides(
-                circuit_overrides={circuit_id: {"relay_state": relay_state}}
-            )
+        del self, circuit_id, relay_state
 
     async def _get_modeling_data(
-        self, horizon_hours: int, config_filename: str | None = None
+        self,
+        horizon_hours: int,
+        config_filename: str | None = None,
     ) -> dict[str, Any] | None:
-        """Compute modeling data from the engine for the active dashboard config."""
-        engine = self._get_engine_for_config_file(config_filename)
-        if engine is None:
-            return None
-        return await engine.compute_modeling_data(horizon_hours)
+        del self, horizon_hours, config_filename
+        return None
 
     # ------------------------------------------------------------------
     # MQTT publish callback (shared across all panels)
@@ -292,7 +280,7 @@ class SimulatorApp:
         # without a bootstrap HTTP server to match.
         try:
             total_tabs = panel.total_tabs
-            panel_model = _PANEL_SIZE_TO_MODEL[total_tabs]
+            panel_model = PANEL_SIZE_TO_MODEL[total_tabs]
             panel_schema = render_for_panel(self._schema, total_tabs)
         except Exception:
             await panel.stop()
