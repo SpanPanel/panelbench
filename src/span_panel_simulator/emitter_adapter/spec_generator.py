@@ -189,6 +189,8 @@ def _evse_instance(profile: SimulationConfig) -> DeviceInstance | None:
     if not evse_cfg.get("enabled"):
         return None
     panel_id = profile["panel_config"]["serial_number"]
+    # Per the v0.3.0 emitter migration guide, ``software-version`` was
+    # renamed to ``firmware-version`` for all device classes.
     return DeviceInstance(
         entity_class="evse",
         instance_id=f"{panel_id}-evse",
@@ -198,7 +200,7 @@ def _evse_instance(profile: SimulationConfig) -> DeviceInstance | None:
             "product-name": str(evse_cfg.get("product", "SPAN Drive")),
             "part-number": str(evse_cfg.get("part_number", "SPN-DRV-001")),
             "serial-number": str(evse_cfg.get("serial_number", f"SIM-EVSE-{panel_id}")),
-            "software-version": str(evse_cfg.get("software_version", "sim/v0.1.0")),
+            "firmware-version": str(evse_cfg.get("firmware_version", "sim/v0.1.0")),
             "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),
         },
     )
