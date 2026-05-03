@@ -22,19 +22,27 @@ from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
 if TYPE_CHECKING:
     from span_panel_simulator.config_types import CircuitTemplateExtended, SimulationConfig
 
-_CIRCUIT_RELAY_BEHAVIOR_MAP = {
-    "controllable": "controllable",
-    "non_controllable": "non-controllable",
-    "non-controllable": "non-controllable",
-    "always_on": "always-on",
-    "always-on": "always-on",
-}
+# Allowed Homie-convention values for circuit relay-behavior and PV
+# inverter-type — both are dash-form on the wire.  YAML clones written
+# before the dash convention may still use underscore form, so we
+# normalise once before validating.
+_VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-on"})
+_VALID_INVERTER_TYPES = frozenset({"hybrid", "ac-coupled"})
 
-_PV_INVERTER_TYPE_MAP = {
-    "hybrid": "hybrid",
-    "ac_coupled": "ac-coupled",
-    "ac-coupled": "ac-coupled",
-}
+
+def _normalise_relay_behavior(raw: str) -> str:
+    """Coerce ``controllable`` / ``non_controllable`` / ``always_on`` (any
+    underscore-vs-dash form) to the dashed Homie convention; default to
+    ``controllable`` when unrecognised."""
+    candidate = raw.lower().replace("_", "-")
+    return candidate if candidate in _VALID_RELAY_BEHAVIORS else "controllable"
+
+
+def _normalise_inverter_type(raw: str) -> str:
+    """Coerce ``hybrid`` / ``ac_coupled`` (any underscore-vs-dash form) to
+    the dashed Homie convention; default to ``ac-coupled`` when unrecognised."""
+    candidate = raw.lower().replace("_", "-")
+    return candidate if candidate in _VALID_INVERTER_TYPES else "ac-coupled"
 
 
 def build_manifest(profile: SimulationConfig) -> DeviceManifest:
@@ -121,10 +129,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             breaker_rating = float(
                 template.get("breaker_rating_a") or template.get("breaker_rating", 20),
             )
-        relay_behavior = _CIRCUIT_RELAY_BEHAVIOR_MAP.get(
-            relay_behavior_raw.lower().replace("_", "-"),
-            "controllable",
-        )
+        relay_behavior = _normalise_relay_behavior(relay_behavior_raw)
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
@@ -167,11 +172,7 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
     if not pv_cfg.get("enabled"):
         return None
     panel_id = profile["panel_config"]["serial_number"]
-    inverter_type_raw = str(pv_cfg.get("inverter_type", "ac_coupled"))
-    inverter_type = _PV_INVERTER_TYPE_MAP.get(
-        inverter_type_raw.lower().replace("_", "-"),
-        "ac-coupled",
-    )
+    inverter_type = _normalise_inverter_type(str(pv_cfg.get("inverter_type", "ac-coupled")))
     return DeviceInstance(
         entity_class="pv",
         instance_id=f"{panel_id}-pv",
