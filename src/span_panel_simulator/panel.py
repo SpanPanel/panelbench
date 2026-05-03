@@ -106,10 +106,16 @@ class PanelInstance:
         return snap.active_power_w if snap is not None else 0.0
 
     def _last_battery(self) -> EbusBatterySnapshot | None:
+        """First battery from the emitter's snapshot (the simulator models a
+        single BESS per panel today). The emitter's Phase 2 reshape pluralised
+        ``snapshot.battery`` into a dict keyed by ``instance_id``; we collapse
+        to the first entry for the simulator's single-BESS world."""
         if self._runtime is None:
             return None
         last = self._runtime.emitter.last_snapshot
-        return last.battery if last is not None else None
+        if last is None:
+            return None
+        return next(iter(last.battery.values()), None)
 
     def get_power_summary(self) -> dict[str, Any] | None:
         """Power summary in the legacy shape dashboard / HA-API consumers expect.
@@ -124,20 +130,30 @@ class PanelInstance:
         summary = self._engine.get_power_summary()
         snap = self._runtime.emitter.last_snapshot if self._runtime is not None else None
         if snap is not None:
-            summary["grid_w"] = round(snap.instant_grid_power_w, 1)
-            summary["pv_w"] = round(snap.power_flow_pv or 0.0, 1)
-            # Sign flip from emitter → SPAN dashboard convention:
-            # emitter ``active_power_w`` is positive = discharging, negative = charging.
-            # SPAN dashboards / HA-API consumers expect positive = charging
-            # (panel→battery), negative = discharging (battery→panel). See SPAN
-            # hardware sign convention reference in SpanPanel/span#184.
-            summary["battery_w"] = round(-snap.battery.active_power_w, 1)
-            summary["consumption_w"] = round(snap.power_flow_site or 0.0, 1)
-            summary["soc_pct"] = (
-                round(snap.battery.soe_percentage, 1)
-                if snap.battery.soe_percentage is not None
-                else None
-            )
+            summary["grid_w"] = round(snap.meter.instant_grid_power_w, 1)
+            summary["pv_w"] = round(snap.power_flows.pv or 0.0, 1)
+
+            # Battery is now a dict keyed by instance_id. The simulator models a
+            # single BESS per panel today, so collapse to the first entry. If
+            # multiple natives ever land here, snapshot.power_flows.battery is
+            # the authoritative panel-level aggregate — but the per-device SOC
+            # would still need a policy decision (which one to surface).
+            batt = next(iter(snap.battery.values()), None)
+            if batt is not None:
+                # Sign flip from emitter → SPAN dashboard convention:
+                # emitter ``active_power_w`` is positive = discharging, negative = charging.
+                # SPAN dashboards / HA-API consumers expect positive = charging
+                # (panel→battery), negative = discharging (battery→panel). See SPAN
+                # hardware sign convention reference in SpanPanel/span#184.
+                summary["battery_w"] = round(-batt.active_power_w, 1)
+                summary["soc_pct"] = (
+                    round(batt.soe_percentage, 1) if batt.soe_percentage is not None else None
+                )
+            else:
+                summary["battery_w"] = 0.0
+                summary["soc_pct"] = None
+
+            summary["consumption_w"] = round(snap.power_flows.site or 0.0, 1)
         return summary
 
     def update_bess_config(self, bess_yaml: BESSConfigYAML) -> None:
