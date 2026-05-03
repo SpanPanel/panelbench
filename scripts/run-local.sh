@@ -67,7 +67,11 @@ ensure_prerequisites() {
 
 ensure_venv() {
     echo "==> Syncing dependencies..."
-    uv sync --quiet
+    # ``uv sync`` alone would strip the local-path ``ebus-emitter`` editable
+    # install (it isn't declared in pyproject.toml because the path is
+    # contributor-specific; see scripts/dev-setup.sh for the .env contract).
+    # dev-setup.sh wraps ``uv sync`` and re-installs ebus-emitter editable.
+    bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
     # shellcheck disable=SC1091
     source "${VENV_DIR}/bin/activate"
 }

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
 from span_panel_simulator.emitter_adapter.spec_generator import build_manifest
 
 
@@ -25,6 +26,24 @@ def test_build_manifest_includes_bess_when_enabled() -> None:
         assert len(manifest.of_class("bess")) == 1
     else:
         pytest.skip("default_MAIN_40 has no enabled BESS")
+
+
+def test_build_manifest_derives_pv_and_evse_from_device_type_templates() -> None:
+    manifest = build_manifest(_profile())
+
+    pv = manifest.of_class("pv")[0]
+    assert pv.instance_id == "pv"
+    assert pv.metadata["feed"] == stable_circuit_uuid("solar_inverter")
+    assert pv.metadata["relative-position"] == "IN_PANEL"
+
+    evse = manifest.of_class("evse")[0]
+    assert evse.instance_id == "evse"
+    assert evse.metadata["feed"] == stable_circuit_uuid("span_drive_garage")
+    assert len(manifest.of_class("evse")) == 2
+    assert manifest.of_class("evse")[1].instance_id == "evse-2"
+    assert manifest.of_class("evse")[1].metadata["feed"] == stable_circuit_uuid(
+        "span_drive_driveway",
+    )
 
 
 def test_build_manifest_omits_native_devices_when_disabled() -> None:
@@ -113,8 +132,10 @@ def test_bess_metadata_includes_physics_keys() -> None:
         "bess": {"enabled": True, "nameplate_capacity_kwh": 13.5, "initial_soe_kwh": 6.75},
     }
     bess = build_manifest(profile).of_class("bess")[0]
+    assert bess.instance_id == "bess"
     assert bess.metadata["vendor-name"] == "Span"
     assert bess.metadata["nameplate-capacity-kwh"] == "13.5"
+    assert bess.metadata["relative-position"] == "UPSTREAM"
     assert bess.metadata["initial-soe-kwh"] == "6.75"
 
 
@@ -133,6 +154,7 @@ def test_pv_metadata_includes_inverter_type() -> None:
     pv = manifest.of_class("pv")[0]
     assert pv.metadata["inverter-type"] == "hybrid"
     assert pv.metadata["nameplate-capacity-w"] == "7000.0"
+    assert pv.metadata["relative-position"] == "UPSTREAM"
     # Hybrid PV → panel becomes islandable.
     panel = manifest.of_class("panel")[0]
     assert panel.metadata["islandable"] == "true"

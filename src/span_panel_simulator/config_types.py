@@ -105,6 +105,13 @@ class BESSConfigYAML(TypedDict, total=False):
 
     enabled: bool
     vendor: str
+    instance_id: str
+    product_name: str
+    model: str
+    serial_number: str
+    firmware_version: str
+    relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
+    feed: str
     nameplate_capacity_kwh: float
     max_charge_w: float
     max_discharge_w: float
@@ -129,21 +136,28 @@ class PVConfigYAML(TypedDict, total=False):
 
     enabled: bool
     vendor: str
+    instance_id: str
+    product_name: str
+    serial_number: str
     nameplate_capacity_w: float
     inverter_type: Literal["hybrid", "ac_coupled", "ac-coupled"]
     firmware_version: str
+    relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
+    feed: str
 
 
 class EVSEConfigYAML(TypedDict, total=False):
     """Top-level EVSE (EV-charger) configuration in the simulator YAML."""
 
     enabled: bool
+    instance_id: str
     vendor: str
     product: str
     part_number: str
     serial_number: str
     firmware_version: str
     max_current_a: float
+    feed: str
 
 
 class BrokerConfigYAML(TypedDict, total=False):

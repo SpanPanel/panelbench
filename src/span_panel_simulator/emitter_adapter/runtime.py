@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from span_panel_simulator.config_types import (
         BESSConfigYAML,
         BrokerConfigYAML,
+        SimulationConfig,
     )
     from span_panel_simulator.engine import DynamicSimulationEngine
 
@@ -163,8 +164,9 @@ def _build_bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig |
         return None
     raw_mode = bess.get("charge_mode", "self-consumption")
     mode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
+    del serial_number
     return BESSConfig(
-        instance_id=f"{serial_number}-bess",
+        instance_id=str(bess.get("instance_id", "bess")),
         nameplate_capacity_kwh=float(bess.get("nameplate_capacity_kwh", 13.5)),
         max_charge_w=float(bess.get("max_charge_w", 3500.0)),
         max_discharge_w=float(bess.get("max_discharge_w", 3500.0)),
@@ -308,6 +310,7 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
         current_time=raw["current_time"],
         grid_online=raw["grid_online"],
         circuits=raw["circuits"],
+        evse=_evse_tick_inputs(runtime.engine.config, raw["circuits"]),
         envelope=PanelEnvelopeTick(),
     )
     return await runtime.emitter.publish_tick(tick)
@@ -315,6 +318,59 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
 
 async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
     try:
-        await runtime.emitter.stop(graceful=graceful)
+        await runtime.emitter.stop(graceful=graceful, clear_retained=True)
     finally:
         await runtime.mqtt.disconnect()
+
+
+def _evse_tick_inputs(
+    config: SimulationConfig,
+    circuit_powers: dict[str, float],
+) -> dict[str, float]:
+    """Mirror EVSE feed-circuit power into TickInputs.evse.
+
+    The emitter uses circuit powers for panel aggregation and EVSE powers for
+    EVSE device status/energy. Real panels link the EVSE node to its feed
+    circuit via the ``feed`` property, so the simulator derives the same link
+    from every circuit template tagged ``device_type: evse`` unless explicitly
+    configured to one feed.
+    """
+    evse_cfg = config.get("evse")
+    base_evse_id = "evse"
+    explicit_feed: str | None = None
+    if isinstance(evse_cfg, dict):
+        base_evse_id = str(evse_cfg.get("instance_id", base_evse_id))
+        raw_feed = evse_cfg.get("feed")
+        explicit_feed = str(raw_feed) if raw_feed else None
+
+    feeds = [explicit_feed] if explicit_feed else _feeds_for_device_type(config, "evse")
+    return {
+        (base_evse_id if idx == 1 else f"{base_evse_id}-{idx}"): circuit_powers.get(feed, 0.0)
+        for idx, feed in enumerate(feeds, start=1)
+        if feed is not None
+    }
+
+
+def _first_feed_for_device_type(config: SimulationConfig, device_type: str) -> str | None:
+    feeds = _feeds_for_device_type(config, device_type)
+    return feeds[0] if feeds else None
+
+
+def _feeds_for_device_type(config: SimulationConfig, device_type: str) -> list[str]:
+    templates = config.get("circuit_templates")
+    circuits = config.get("circuits")
+    if not isinstance(templates, dict) or not isinstance(circuits, list):
+        return []
+    feeds: list[str] = []
+    for item in circuits:
+        if not isinstance(item, dict):
+            continue
+        template_name = item.get("template")
+        if template_name is None or not isinstance(template_name, str):
+            continue
+        template = templates.get(template_name)
+        if isinstance(template, dict) and template.get("device_type") == device_type:
+            circuit_id = item.get("id")
+            if circuit_id is not None:
+                feeds.append(stable_circuit_uuid(str(circuit_id)))
+    return feeds

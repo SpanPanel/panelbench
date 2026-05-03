@@ -20,7 +20,12 @@ from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uui
 from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
 
 if TYPE_CHECKING:
-    from span_panel_simulator.config_types import CircuitTemplateExtended, SimulationConfig
+    from span_panel_simulator.config_types import (
+        BESSConfigYAML,
+        CircuitDefinitionExtended,
+        CircuitTemplateExtended,
+        SimulationConfig,
+    )
 
 # Allowed Homie-convention values for circuit relay-behavior and PV
 # inverter-type — both are dash-form on the wire.  YAML clones written
@@ -59,9 +64,7 @@ def build_manifest(profile: SimulationConfig) -> DeviceManifest:
     pv = _pv_instance(profile)
     if pv is not None:
         instances.append(pv)
-    evse = _evse_instance(profile)
-    if evse is not None:
-        instances.append(evse)
+    instances.extend(_evse_instances(profile))
     return DeviceManifest(instances=tuple(instances))
 
 
@@ -92,17 +95,16 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
 
 
 def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
-    panel_id = profile["panel_config"]["serial_number"]
     return [
         DeviceInstance(
             entity_class="lugs",
-            instance_id=f"{panel_id}-lugs-upstream",
+            instance_id="lugs-upstream",
             display_name="Upstream lugs",
             metadata={"direction": "upstream"},
         ),
         DeviceInstance(
             entity_class="lugs",
-            instance_id=f"{panel_id}-lugs-downstream",
+            instance_id="lugs-downstream",
             display_name="Downstream lugs",
             metadata={"direction": "downstream"},
         ),
@@ -112,7 +114,7 @@ def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
 def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     templates = profile.get("circuit_templates") or {}
     instances: list[DeviceInstance] = []
-    for c in profile.get("circuits") or []:
+    for idx, c in enumerate(profile.get("circuits") or [], start=1):
         tabs = c.get("tabs") or [0]
         template_name = c.get("template", "")
         template: CircuitTemplateExtended | None = templates.get(template_name)
@@ -142,6 +144,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     "relay-behavior": relay_behavior,
                     "placement": str(c.get("placement", "downstream-of-lugs")),
                     "always-on": "true" if relay_behavior == "always-on" else "false",
+                    "pcs-priority": str(c.get("pcs_priority", idx)),
                 },
             ),
         )
@@ -152,16 +155,26 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
     bess_cfg = profile.get("bess") or {}
     if not bess_cfg.get("enabled"):
         return None
-    panel_id = profile["panel_config"]["serial_number"]
     bess_meta: dict[str, str] = {
         "vendor-name": str(bess_cfg.get("vendor", "Span")),
         "nameplate-capacity-kwh": str(bess_cfg.get("nameplate_capacity_kwh", 13.5)),
+        "relative-position": str(bess_cfg.get("relative_position", "UPSTREAM")),
     }
+    if "product_name" in bess_cfg:
+        bess_meta["product-name"] = str(bess_cfg["product_name"])
+    if "model" in bess_cfg:
+        bess_meta["model"] = str(bess_cfg["model"])
+    if "serial_number" in bess_cfg:
+        bess_meta["serial-number"] = str(bess_cfg["serial_number"])
+    if "firmware_version" in bess_cfg:
+        bess_meta["firmware-version"] = str(bess_cfg["firmware_version"])
+    if "feed" in bess_cfg:
+        bess_meta["feed"] = str(bess_cfg["feed"])
     if "initial_soe_kwh" in bess_cfg:
         bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
     return DeviceInstance(
         entity_class="bess",
-        instance_id=f"{panel_id}-bess",
+        instance_id=_bess_instance_id(bess_cfg),
         display_name="Battery",
         metadata=bess_meta,
     )
@@ -169,42 +182,77 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
 
 def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
     pv_cfg = profile.get("pv") or {}
-    if not pv_cfg.get("enabled"):
+    pv_feed = _feed_circuit_id(profile, "pv")
+    if not pv_cfg.get("enabled") and pv_feed is None:
         return None
-    panel_id = profile["panel_config"]["serial_number"]
     inverter_type = _normalise_inverter_type(str(pv_cfg.get("inverter_type", "ac-coupled")))
+    relative_position = pv_cfg.get("relative_position")
+    if relative_position is None:
+        relative_position = "IN_PANEL" if pv_feed is not None else "UPSTREAM"
+    metadata = {
+        "vendor-name": str(pv_cfg.get("vendor", "Enphase")),
+        "nameplate-capacity-w": str(
+            pv_cfg.get("nameplate_capacity_w") or _device_nameplate_w(profile, "pv", 5000.0),
+        ),
+        "inverter-type": inverter_type,
+        "relative-position": str(relative_position),
+    }
+    if "product_name" in pv_cfg:
+        metadata["product-name"] = str(pv_cfg["product_name"])
+    if "serial_number" in pv_cfg:
+        metadata["serial-number"] = str(pv_cfg["serial_number"])
+    if "firmware_version" in pv_cfg:
+        metadata["firmware-version"] = str(pv_cfg["firmware_version"])
+    if "feed" in pv_cfg:
+        metadata["feed"] = str(pv_cfg["feed"])
+    elif pv_feed is not None:
+        metadata["feed"] = pv_feed
     return DeviceInstance(
         entity_class="pv",
-        instance_id=f"{panel_id}-pv",
+        instance_id=str(pv_cfg.get("instance_id", "pv")),
         display_name="Solar",
-        metadata={
-            "vendor-name": str(pv_cfg.get("vendor", "Enphase")),
-            "nameplate-capacity-w": str(pv_cfg.get("nameplate_capacity_w", 5000.0)),
-            "inverter-type": inverter_type,
-        },
+        metadata=metadata,
     )
 
 
-def _evse_instance(profile: SimulationConfig) -> DeviceInstance | None:
+def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     evse_cfg = profile.get("evse") or {}
-    if not evse_cfg.get("enabled"):
-        return None
+    feed_circuits = _circuits_for_device_type(profile, "evse")
+    explicit_feed = str(evse_cfg["feed"]) if "feed" in evse_cfg else None
+    if explicit_feed:
+        feeds = [explicit_feed]
+    else:
+        feeds = [stable_circuit_uuid(circuit["id"]) for circuit in feed_circuits]
+    if not feeds and evse_cfg.get("enabled"):
+        feeds = [""]
+    if not feeds:
+        return []
+
     panel_id = profile["panel_config"]["serial_number"]
-    # Per the v0.3.0 emitter migration guide, ``software-version`` was
-    # renamed to ``firmware-version`` for all device classes.
-    return DeviceInstance(
-        entity_class="evse",
-        instance_id=f"{panel_id}-evse",
-        display_name="EV Charger",
-        metadata={
-            "vendor-name": str(evse_cfg.get("vendor", "SPAN")),
-            "product-name": str(evse_cfg.get("product", "SPAN Drive")),
-            "part-number": str(evse_cfg.get("part_number", "SPN-DRV-001")),
-            "serial-number": str(evse_cfg.get("serial_number", f"SIM-EVSE-{panel_id}")),
-            "firmware-version": str(evse_cfg.get("firmware_version", "sim/v0.1.0")),
-            "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),
-        },
-    )
+    base_metadata = {
+        "vendor-name": str(evse_cfg.get("vendor", "SPAN")),
+        "product-name": str(evse_cfg.get("product", "SPAN Drive")),
+        "part-number": str(evse_cfg.get("part_number", "SPN-DRV-001")),
+        "firmware-version": str(evse_cfg.get("firmware_version", "sim/v0.1.0")),
+        "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),
+    }
+    base_id = str(evse_cfg.get("instance_id", "evse"))
+    instances: list[DeviceInstance] = []
+    for idx, feed in enumerate(feeds, start=1):
+        instance_id = base_id if idx == 1 else f"{base_id}-{idx}"
+        metadata = dict(base_metadata)
+        metadata["serial-number"] = _evse_serial_number(evse_cfg, panel_id, idx)
+        if feed:
+            metadata["feed"] = feed
+        instances.append(
+            DeviceInstance(
+                entity_class="evse",
+                instance_id=instance_id,
+                display_name=_evse_display_name(feed_circuits, idx),
+                metadata=metadata,
+            ),
+        )
+    return instances
 
 
 def _islandable(profile: SimulationConfig) -> bool:
@@ -215,3 +263,59 @@ def _islandable(profile: SimulationConfig) -> bool:
         return bool(panel_cfg["islandable"])
     pv_cfg = profile.get("pv") or {}
     return bool(pv_cfg.get("enabled") and pv_cfg.get("inverter_type") == "hybrid")
+
+
+def _bess_instance_id(bess: BESSConfigYAML) -> str:
+    return str(bess.get("instance_id", "bess"))
+
+
+def _feed_circuit_id(profile: SimulationConfig, device_type: str) -> str | None:
+    circuit = _first_circuit_for_device_type(profile, device_type)
+    if circuit is None:
+        return None
+    return stable_circuit_uuid(circuit["id"])
+
+
+def _first_circuit_for_device_type(
+    profile: SimulationConfig,
+    device_type: str,
+) -> CircuitDefinitionExtended | None:
+    circuits = _circuits_for_device_type(profile, device_type)
+    return circuits[0] if circuits else None
+
+
+def _circuits_for_device_type(
+    profile: SimulationConfig,
+    device_type: str,
+) -> list[CircuitDefinitionExtended]:
+    templates = profile.get("circuit_templates") or {}
+    circuits: list[CircuitDefinitionExtended] = []
+    for circuit in profile.get("circuits") or []:
+        template = templates.get(circuit.get("template", ""))
+        if template is not None and template.get("device_type") == device_type:
+            circuits.append(circuit)
+    return circuits
+
+
+def _evse_serial_number(evse_cfg: object, panel_id: str, idx: int) -> str:
+    if isinstance(evse_cfg, dict) and "serial_number" in evse_cfg:
+        serial = str(evse_cfg["serial_number"])
+        return serial if idx == 1 else f"{serial}-{idx}"
+    return f"SIM-EVSE-{panel_id}" if idx == 1 else f"SIM-EVSE-{panel_id}-{idx}"
+
+
+def _evse_display_name(feed_circuits: list[CircuitDefinitionExtended], idx: int) -> str:
+    if 0 <= idx - 1 < len(feed_circuits):
+        return str(feed_circuits[idx - 1].get("name", "EV Charger"))
+    return "EV Charger"
+
+
+def _device_nameplate_w(profile: SimulationConfig, device_type: str, default: float) -> float:
+    circuit = _first_circuit_for_device_type(profile, device_type)
+    if circuit is None:
+        return default
+    template = (profile.get("circuit_templates") or {}).get(circuit.get("template", ""))
+    if template is None:
+        return default
+    energy_profile = template.get("energy_profile", {})
+    return float(energy_profile.get("nameplate_capacity_w", default))
