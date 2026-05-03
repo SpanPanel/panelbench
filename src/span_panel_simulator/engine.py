@@ -27,21 +27,16 @@ import yaml
 from span_panel_simulator.behavior_mutable_state import BehaviorEngineMutableState
 from span_panel_simulator.circuit import SimulatedCircuit
 from span_panel_simulator.clock import SimulationClock
-from span_panel_simulator.energy import (
-    EnergySystem,
-    EnergySystemConfig,
-    GridConfig,
-    LoadConfig,
-    PowerInputs,
-    PVConfig,
-)
 from span_panel_simulator.exceptions import SimulationConfigurationError
 
 if TYPE_CHECKING:
+    from ebus_emitter import BESSDevice
+
     from span_panel_simulator.config_types import (
         CircuitTemplateExtended,
         SimulationConfig,
     )
+    from span_panel_simulator.energy import EnergySystem, PowerInputs
     from span_panel_simulator.recorder import RecorderDataSource
 
 from span_panel_simulator.hvac import hvac_seasonal_factor
@@ -983,6 +978,8 @@ class DynamicSimulationEngine:
 
         Other bidirectional circuits (e.g. EVSE with V2G) are treated as load.
         """
+        from span_panel_simulator.energy import PowerInputs as _PowerInputs
+
         pv_power = 0.0
         load_power = 0.0
 
@@ -993,7 +990,7 @@ class DynamicSimulationEngine:
             else:
                 load_power += power
 
-        return PowerInputs(
+        return _PowerInputs(
             pv_available_w=pv_power,
             load_demand_w=load_power,
             grid_connected=True,  # caller overrides if needed
@@ -1292,6 +1289,18 @@ class DynamicSimulationEngine:
         if not self._config:
             return None
 
+        # Lazy-import the energy/ module: it is only used by the modelling
+        # ``compute_modeling_data`` path and by the engine's own
+        # ``_build_energy_system``.  Deferring keeps the engine module
+        # import-light for the common live-tick code path.
+        from span_panel_simulator.energy import (
+            EnergySystem,
+            EnergySystemConfig,
+            GridConfig,
+            LoadConfig,
+            PVConfig,
+        )
+
         included = {
             cid: c
             for cid, c in self._circuits.items()
@@ -1342,7 +1351,9 @@ class DynamicSimulationEngine:
 # ---------------------------------------------------------------------------
 
 
-def _build_modeling_bess(config: SimulationConfig | dict[str, Any] | None) -> Any:
+def _build_modeling_bess(
+    config: SimulationConfig | dict[str, Any] | None,
+) -> BESSDevice | None:
     """Build a fresh BESSDevice from the YAML ``bess`` block, or None when no
     BESS is configured. Imported lazily to keep the engine import-light."""
     if not config:
@@ -1351,11 +1362,16 @@ def _build_modeling_bess(config: SimulationConfig | dict[str, Any] | None) -> An
     if not (isinstance(bess_yaml, dict) and bess_yaml.get("enabled")):
         return None
 
-    from ebus_emitter import BESSConfig, BESSDevice
+    from ebus_emitter import BESSConfig
+    from ebus_emitter import BESSDevice as _BESSDevice
 
     raw_mode = bess_yaml.get("charge_mode", "self-consumption")
     mode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
-    serial = config.get("panel_config", {}).get("serial_number", "modeling-panel")
+    panel_cfg = config.get("panel_config") or {}
+    if isinstance(panel_cfg, dict):
+        serial = str(panel_cfg.get("serial_number", "modeling-panel"))
+    else:
+        serial = "modeling-panel"
     cfg = BESSConfig(
         instance_id=f"{serial}-bess",
         nameplate_capacity_kwh=float(bess_yaml.get("nameplate_capacity_kwh", 13.5)),
@@ -1368,11 +1384,11 @@ def _build_modeling_bess(config: SimulationConfig | dict[str, Any] | None) -> An
         charge_hours=tuple(bess_yaml.get("charge_hours", [10, 11, 12, 13, 14, 15])),
         discharge_hours=tuple(bess_yaml.get("discharge_hours", [17, 18, 19, 20, 21])),
     )
-    return BESSDevice(config=cfg)
+    return _BESSDevice(config=cfg)
 
 
 def _bess_dispatch(
-    device: Any,
+    device: BESSDevice | None,
     *,
     current_time: float,
     grid_online: bool,
@@ -1384,12 +1400,14 @@ def _bess_dispatch(
     no device is configured."""
     if device is None:
         return 0.0
+    from ebus_emitter.native_devices import NativeTickContext
+
     snap = device.tick(
-        {
-            "current_time": current_time,
-            "grid_online": grid_online,
-            "load_demand_w": load_demand_w,
-            "pv_available_w": pv_available_w,
-        }
+        NativeTickContext(
+            current_time=current_time,
+            grid_online=grid_online,
+            load_demand_w=load_demand_w,
+            pv_available_w=pv_available_w,
+        )
     )
     return float(snap.active_power_w)
