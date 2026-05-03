@@ -14,12 +14,13 @@ handlers (no producer-side setter wiring needed)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import aiomqtt
 from ebus_emitter import (
     BESSConfig,
     DeviceManifest,
+    EbusPanelSnapshot,
     Emitter,
     LoadSheddingConfig,
     PanelEnvelopeTick,
@@ -53,12 +54,31 @@ class BrokerConnection:
     ca_cert_path: str | None = None
 
 
+@runtime_checkable
+class MqttPublisher(Protocol):
+    """Structural subset of the MQTT client interface the emitter consumes.
+
+    Mirrors the emitter's internal ``_MqttClientLike`` protocol; we redeclare
+    it here rather than import an underscore-private symbol across packages."""
+
+    def is_connected(self) -> bool: ...
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        qos: int = 0,
+        retain: bool = False,
+    ) -> None: ...
+    async def subscribe(self, topic: str) -> None: ...
+    async def disconnect(self) -> None: ...
+
+
 @dataclass(slots=True)
 class CloneRuntime:
     engine: DynamicSimulationEngine
     manifest: DeviceManifest
     setters: SetterRegistry
-    mqtt: Any
+    mqtt: MqttPublisher
     emitter: Emitter
     uuid_to_circuit_id: dict[str, str]
 
@@ -107,6 +127,12 @@ class _AiomqttPublisher:
             self._client = None
 
     def is_connected(self) -> bool:
+        """Return True once :meth:`connect` has constructed the underlying client.
+
+        Note: this is a coarse "ready to attempt publishing" gate, not a live
+        link check — aiomqtt does not surface broker reachability synchronously.
+        A True return indicates the emitter may issue publishes; transport
+        failures will surface as exceptions from :meth:`publish` / :meth:`subscribe`."""
         return self._client is not None
 
     async def publish(
@@ -268,7 +294,7 @@ async def start_clone(
     return runtime
 
 
-async def publish_tick(runtime: CloneRuntime) -> Any:
+async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
     """Collect the engine's current per-tick driving signal into ``TickInputs``
     and hand it to the emitter for publication."""
     raw = await runtime.engine.get_tick_inputs()
