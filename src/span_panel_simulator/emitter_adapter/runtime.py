@@ -273,11 +273,17 @@ async def start_clone(
     )
     await mqtt.connect()
 
+    # The emitter Phase 2 reshape pluralised the BESS-config parameter:
+    # ``bess_configs`` is a tuple keyed internally by ``instance_id``. The
+    # simulator models a single BESS per panel today, so we wrap the
+    # optional config in a one-element tuple (or empty tuple when absent).
+    bess_cfg = bess_config_from_engine(engine)
+    bess_configs: tuple[BESSConfig, ...] = (bess_cfg,) if bess_cfg is not None else ()
     emitter = Emitter(
         manifest,
         setters,
         mqtt,
-        bess_config=bess_config_from_engine(engine),
+        bess_configs=bess_configs,
         load_shedding_config=_load_shedding_config_from_engine(engine),
     )
 
