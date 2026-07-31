@@ -39,11 +39,14 @@ dev = [
 span-simulator = "span_panel_simulator.__main__:main"
 
 [tool.hatch.build.targets.wheel]
+# `packages` already ships every file under src/span_panel_simulator, including
+# dashboard/templates and dashboard/static. A `force-include` table re-adding
+# those two directories at the same destination paths made hatchling write each
+# file twice; newer hatchling rejects that outright ("A second file is being
+# added to the wheel archive at the same path"), breaking `pip install .` in the
+# add-on Docker build. Build isolation resolves `hatchling` fresh on every build,
+# so the older, tolerant version this was authored against is not coming back.
 packages = ["src/span_panel_simulator"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/span_panel_simulator/dashboard/templates" = "span_panel_simulator/dashboard/templates"
-"src/span_panel_simulator/dashboard/static" = "span_panel_simulator/dashboard/static"
 
 [tool.ruff]
 # Pinned to py313 because ruff 0.15.x has a formatter bug under py314 that

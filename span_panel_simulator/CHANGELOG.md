@@ -20,6 +20,8 @@
 - Panel startup no longer fails with `AttributeError: 'NoneType' object has no attribute 'get'`. The developer bootstrap script re-resolved the emitter's
   dependencies against PyPI instead of its lock file and pulled an `ebus-sdk` release incompatible with the `Device` API the emitter targets; setup now installs
   the emitter's locked dependency set
+- Add-on image builds again. A redundant `force-include` in `pyproject.toml` re-added the dashboard templates and static assets that the package already
+  shipped, writing every one of them into the wheel twice; newer hatchling rejects the duplicate outright, failing `pip install .` in the Docker build
 - Stopping the simulator now clears each panel's retained MQTT topics on every stop path, not just Ctrl-C. `scripts/run-local.sh --stop`, Docker, and the Home
   Assistant supervisor all stop the process with SIGTERM, which was unhandled — the process died outright and its shutdown never ran, stranding a full retained
   topic tree on the broker with `$state` flipped to lost by the Last Will. A panel that was renamed or removed left those topics orphaned for good
