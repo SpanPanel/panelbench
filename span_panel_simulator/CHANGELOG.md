@@ -9,7 +9,6 @@
 - Published topics follow the emitter's live SPAN panel Homie 5 schema — flat node layout with topology and properties matching real hardware, so downstream
   consumers (span-panel-api, span-card) see the same structure a physical panel emits
 - Lugs node IDs renamed to `lugs-upstream` and `lugs-downstream` to match the emitter convention
-- Device metadata key `software-version` renamed to `firmware-version`
 - Multiple EVSE devices per panel are now published: every circuit whose template is tagged `device_type: evse` gets its own EVSE device (`evse`, `evse-2`, …)
   driven by that circuit's power, instead of a single hardcoded EVSE
 - BESS and PV device feeds and metadata are derived from circuit templates via stable circuit UUIDs rather than being configured independently
@@ -21,6 +20,9 @@
 - Panel startup no longer fails with `AttributeError: 'NoneType' object has no attribute 'get'`. The developer bootstrap script re-resolved the emitter's
   dependencies against PyPI instead of its lock file and pulled an `ebus-sdk` release incompatible with the `Device` API the emitter targets; setup now installs
   the emitter's locked dependency set
+- Panel startup no longer floods the console with the Homie device schema. The ebus-sdk `homie` logger pins itself to INFO and dumps every node's full property
+  table, so the dump appeared at any `--log-level`. It and `aiohttp.access` are now held to warnings unless you ask for `--log-level DEBUG`
+  (`scripts/run-local.sh --debug`), which still shows everything
 
 ## 1.0.11 — 2026-04-19
 
