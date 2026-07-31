@@ -246,23 +246,26 @@ def update_config_from_scrape(
         if not isinstance(ep, dict):
             continue
 
-        # Update energy seeds
-        imported = _float_prop(scraped.properties, prefix, node_uuid, "imported-energy")
-        if (
-            imported is not None
-            and imported > 0
-            and ep.get("initial_consumed_energy_wh") != imported
-        ):
-            ep["initial_consumed_energy_wh"] = imported
-            changed = True
-
+        # Update energy seeds. Enclosure frame: `exported-energy` is the
+        # enclosure exporting to the circuit (consumption), `imported-energy` is
+        # the circuit backfeeding the enclosure (production). See the seeding
+        # comment in `_translate_circuit`.
         exported = _float_prop(scraped.properties, prefix, node_uuid, "exported-energy")
         if (
             exported is not None
             and exported > 0
-            and ep.get("initial_produced_energy_wh") != exported
+            and ep.get("initial_consumed_energy_wh") != exported
         ):
-            ep["initial_produced_energy_wh"] = exported
+            ep["initial_consumed_energy_wh"] = exported
+            changed = True
+
+        imported = _float_prop(scraped.properties, prefix, node_uuid, "imported-energy")
+        if (
+            imported is not None
+            and imported > 0
+            and ep.get("initial_produced_energy_wh") != imported
+        ):
+            ep["initial_produced_energy_wh"] = imported
             changed = True
 
     # Update last_synced timestamp
@@ -539,7 +542,15 @@ def _translate_circuit(
         power_range = [0.0, max_power]
         typical_power = typical
 
-    # Seed energy accumulators from scraped values
+    # Seed energy accumulators from scraped values.
+    #
+    # The wire is enclosure-framed: a circuit's `exported-energy` is energy the
+    # enclosure exported TO the circuit (normal load consumption), and
+    # `imported-energy` is energy the enclosure imported FROM the circuit
+    # (backfeed). The simulator's own accumulators are device-framed, so
+    # consumption seeds from `exported-energy` and production from
+    # `imported-energy`. Requires ebus-emitter >= 0.2.1, which publishes the
+    # enclosure frame on both power and energy.
     imported_energy = _float_prop(properties, prefix, node_uuid, "imported-energy")
     exported_energy = _float_prop(properties, prefix, node_uuid, "exported-energy")
 
@@ -551,10 +562,10 @@ def _translate_circuit(
         "power_variation": 0.1,
     }
 
-    if imported_energy is not None and imported_energy > 0:
-        energy_profile["initial_consumed_energy_wh"] = imported_energy
     if exported_energy is not None and exported_energy > 0:
-        energy_profile["initial_produced_energy_wh"] = exported_energy
+        energy_profile["initial_consumed_energy_wh"] = exported_energy
+    if imported_energy is not None and imported_energy > 0:
+        energy_profile["initial_produced_energy_wh"] = imported_energy
 
     template: dict[str, object] = {
         "energy_profile": energy_profile,
