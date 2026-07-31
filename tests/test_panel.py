@@ -97,7 +97,8 @@ class TestPanelInstance:
 
 
 # Engine-only tests removed post-cutover — the legacy DynamicSimulationEngine and its
-# in-memory snapshot/total_tabs accessors were lifted into ebus_emitter.scheduleRunner.
+# in-memory snapshot/total_tabs accessors were lifted into
+# span_panel_simulator.flat_emitter.scheduleRunner.
 # Equivalent behaviour is exercised by:
 #   - tests/emitter_adapter/test_spec_generator.py (manifest + runtime spec construction)
 #   - the emitter package's own scheduleRunner test suite

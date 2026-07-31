@@ -1,0 +1,23 @@
+{
+  "$version": 1,
+  "type": "energy.ebus.device.bess",
+  "capabilities": {
+    "bess": {
+      "type": "energy.ebus.device.bess",
+      "properties": {
+        "vendor-name": {"name": "Vendor name", "datatype": "string"},
+        "product-name": {"name": "Product name", "datatype": "string"},
+        "model": {"name": "Model", "datatype": "string"},
+        "serial-number": {"name": "Serial number", "datatype": "string"},
+        "software-version": {"name": "Software version", "datatype": "string"},
+        "nameplate-capacity": {"name": "Nameplate capacity", "datatype": "float", "unit": "kWh"},
+        "relative-position": {"name": "Relative position of the commissioned backup system WRT the distribution enclosure", "datatype": "enum", "format": "UPSTREAM,DOWNSTREAM,IN_PANEL"},
+        "feed": {"name": "Circuit ID upon which the commissioned backup system is landed", "datatype": "enum"},
+        "soc": {"name": "State of charge", "datatype": "float", "unit": "%"},
+        "soe": {"name": "State of energy", "datatype": "float", "unit": "kWh"},
+        "connected": {"name": "Connected to backup system?", "datatype": "boolean"},
+        "grid-state": {"name": "Grid connection state", "datatype": "enum", "format": "UNKNOWN,ON_GRID,OFF_GRID"}
+      }
+    }
+  }
+}

@@ -67,10 +67,9 @@ ensure_prerequisites() {
 
 ensure_venv() {
     echo "==> Syncing dependencies..."
-    # ``uv sync`` alone would strip the local-path ``ebus-emitter`` editable
-    # install (it isn't declared in pyproject.toml because the path is
-    # contributor-specific; see scripts/dev-setup.sh for the .env contract).
-    # dev-setup.sh wraps ``uv sync`` and re-installs ebus-emitter editable.
+    # Every dependency now resolves from PyPI — the flat emitter is vendored at
+    # src/span_panel_simulator/flat_emitter rather than installed from a local path —
+    # so a plain sync is sufficient. dev-setup.sh remains the documented entry point.
     bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
     # shellcheck disable=SC1091
     source "${VENV_DIR}/bin/activate"

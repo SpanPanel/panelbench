@@ -1,0 +1,58 @@
+{
+  "$version": 1,
+  "type": "energy.ebus.device.distribution-enclosure",
+  "capabilities": {
+    "core": {
+      "type": "energy.ebus.device.distribution-enclosure.core",
+      "properties": {
+        "vendor-name": {"name": "Vendor name", "datatype": "string"},
+        "model": {"name": "Model", "datatype": "enum", "format": "MAIN_16,MLO_24,MAIN_32,MAIN_40,MLO_48"},
+        "serial-number": {"name": "Serial number", "datatype": "string"},
+        "hardware-version": {"name": "Hardware version", "datatype": "string"},
+        "software-version": {"name": "Software version", "datatype": "string"},
+        "door": {"name": "Door state", "datatype": "enum", "format": "UNKNOWN,OPEN,CLOSED"},
+        "grid-islandable": {"name": "Capable of operating with power while disconnected from the grid", "datatype": "boolean"},
+        "dominant-power-source": {"name": "Current dominant power source, load-shedding trigger", "datatype": "enum", "format": "GRID,BATTERY,PV,GENERATOR,NONE,UNKNOWN", "settable": true},
+        "relay": {"name": "Main relay", "datatype": "enum", "format": "UNKNOWN,OPEN,CLOSED"},
+        "l1-voltage": {"name": "L1 voltage", "datatype": "float", "unit": "V"},
+        "l2-voltage": {"name": "L2 voltage", "datatype": "float", "unit": "V"},
+        "breaker-rating": {"name": "Main breaker rating", "datatype": "integer", "unit": "A"},
+        "ethernet": {"name": "Is Ethernet network interface operational?", "datatype": "boolean"},
+        "wifi": {"name": "Is Wi-Fi network interface operational?", "datatype": "boolean"},
+        "wifi-ssid": {"name": "SSID to which Wi-Fi network interface is connected", "datatype": "string"},
+        "vendor-cloud": {"name": "Device connected to vendor cloud?", "datatype": "enum", "format": "UNKNOWN,UNCONNECTED,CONNECTED"},
+        "postal-code": {"name": "Postal (Zip) code", "datatype": "string"},
+        "time-zone": {"name": "Time zone", "datatype": "string"}
+      }
+    },
+    "pcs": {
+      "type": "energy.ebus.device.pcs",
+      "properties": {
+        "enabled": {"name": "PCS system enabled", "datatype": "boolean"},
+        "active": {"name": "PCS system actively controlling one (or more) loads", "datatype": "boolean"},
+        "import-limit": {"name": "The power import limit currently being managed to", "datatype": "float", "unit": "A"},
+        "feed-import-limit": {"name": "Limit of maximum power feeding the distribution enclosure", "datatype": "float", "unit": "A"},
+        "feed-import-limit-enablement": {"name": "Enablement status of the feed-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
+        "feed-import-limit-active": {"name": "Is feed-import-limit currently being enforced?", "datatype": "boolean"},
+        "grid-import-limit": {"name": "Grid limit maximum import power", "datatype": "float", "unit": "A"},
+        "grid-import-limit-enablement": {"name": "Enablement status of the grid-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
+        "grid-import-limit-active": {"name": "Is grid-import-limit currently being enforced?", "datatype": "boolean"},
+        "off-grid-import-limit": {"name": "Off-Grid limit maximum import power", "datatype": "float", "unit": "A"},
+        "off-grid-import-limit-enablement": {"name": "Enablement status of the off-grid-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
+        "off-grid-import-limit-active": {"name": "Is off-grid-import-limit currently being enforced?", "datatype": "boolean"},
+        "requested-import-limit": {"name": "Requested limit maximum import power", "datatype": "float", "unit": "A"},
+        "requested-import-limit-enablement": {"name": "Enablement status of the requested-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
+        "requested-import-limit-active": {"name": "Is requested-import-limit currently being enforced?", "datatype": "boolean"}
+      }
+    },
+    "power-flows": {
+      "type": "energy.ebus.device.power-flows",
+      "properties": {
+        "pv": {"name": "PV power flow", "datatype": "float", "unit": "W"},
+        "battery": {"name": "Battery/BESS power flow", "datatype": "float", "unit": "W"},
+        "grid": {"name": "Grid power flow", "datatype": "float", "unit": "W"},
+        "site": {"name": "Site power flow", "datatype": "float", "unit": "W"}
+      }
+    }
+  }
+}
