@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.12 — 2026-07-30
+
+### Emitter & Homie Schema
+
+- MQTT publishing and per-tick property emission now run through the external `ebus-emitter` package. The simulator builds a device manifest per panel and drives
+  the emitter each tick, replacing the built-in publisher
+- Published topics follow the emitter's live SPAN panel Homie 5 schema — flat node layout with topology and properties matching real hardware, so downstream
+  consumers (span-panel-api, span-card) see the same structure a physical panel emits
+- Lugs node IDs renamed to `lugs-upstream` and `lugs-downstream` to match the emitter convention
+- Device metadata key `software-version` renamed to `firmware-version`
+- Multiple EVSE devices per panel are now published: every circuit whose template is tagged `device_type: evse` gets its own EVSE device (`evse`, `evse-2`, …)
+  driven by that circuit's power, instead of a single hardcoded EVSE
+- BESS and PV device feeds and metadata are derived from circuit templates via stable circuit UUIDs rather than being configured independently
+- Each panel now owns its own MQTT connection and subscribes to its own `/set` topics, replacing the single shared connection and the central topic router
+- Stopping a panel clears its retained topics, so a shut-down clone no longer leaves stale state on the broker
+
+### Fixes
+
+- Panel startup no longer fails with `AttributeError: 'NoneType' object has no attribute 'get'`. The developer bootstrap script re-resolved the emitter's
+  dependencies against PyPI instead of its lock file and pulled an `ebus-sdk` release incompatible with the `Device` API the emitter targets; setup now installs
+  the emitter's locked dependency set
+
 ## 1.0.11 — 2026-04-19
 
 ### Fixes
