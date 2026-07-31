@@ -1,6 +1,6 @@
 # Changelog
 
-## [unreleased] — emitter live-schema alignment and abstraction (feat/emitter-integration)
+## 1.0.12 — 2026-07-30 — emitter live-schema alignment and abstraction
 
 ### Changed
 
