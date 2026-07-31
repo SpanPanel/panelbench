@@ -88,8 +88,10 @@ class EnergyProfileExtended(EnergyProfile, total=False):
 
     efficiency: float  # Energy conversion efficiency (0.0 to 1.0)
     nameplate_capacity_w: float  # PV nameplate rating in watts (positive)
-    initial_consumed_energy_wh: float  # seed from real panel's imported-energy
-    initial_produced_energy_wh: float  # seed from real panel's exported-energy
+    # The wire is enclosure-framed, these fields are device-framed, so the two
+    # cross over: a circuit's consumption is what the enclosure exported to it.
+    initial_consumed_energy_wh: float  # seed from real panel's exported-energy
+    initial_produced_energy_wh: float  # seed from real panel's imported-energy
 
 
 class CircuitTemplate(TypedDict):

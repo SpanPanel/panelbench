@@ -62,10 +62,11 @@ def _base_properties() -> dict[str, str]:
     _set("aaa111", "breaker-rating", "15")
     _set("aaa111", "relay", "CLOSED")
     _set("aaa111", "shed-priority", "NEVER")
-    _set("aaa111", "active-power", "-150.0")
+    _set("aaa111", "active-power", "-150.0")  # consuming (negative = enclosure → circuit)
     _set("aaa111", "always-on", "false")
-    _set("aaa111", "imported-energy", "54321.0")
-    _set("aaa111", "exported-energy", "0.0")
+    # Enclosure frame: a load accumulates exported-energy (enclosure → circuit).
+    _set("aaa111", "imported-energy", "0.0")
+    _set("aaa111", "exported-energy", "54321.0")
 
     # Circuit 2: Kitchen Outlets — 240V, space 3/5
     _set("bbb222", "name", "Kitchen Outlets")
@@ -84,10 +85,12 @@ def _base_properties() -> dict[str, str]:
     _set("ccc333", "breaker-rating", "30")
     _set("ccc333", "relay", "CLOSED")
     _set("ccc333", "shed-priority", "NEVER")
-    _set("ccc333", "active-power", "3000.0")  # producing (positive on eBus = export)
+    # Positive on the wire = the enclosure is importing from the circuit (backfeed).
+    _set("ccc333", "active-power", "3000.0")
     _set("ccc333", "always-on", "true")
-    _set("ccc333", "imported-energy", "0.0")
-    _set("ccc333", "exported-energy", "1234567.0")
+    # Enclosure frame: a backfeeding circuit accumulates imported-energy.
+    _set("ccc333", "imported-energy", "1234567.0")
+    _set("ccc333", "exported-energy", "0.0")
 
     # Circuit 4: Battery Storage — 240V, space 11/13, fed by bess-0
     _set("ddd444", "name", "Battery Storage")
@@ -319,8 +322,11 @@ class TestWriteCloneConfig:
 class TestEnergySeeding:
     """Tests for initial energy accumulator seeding from scraped data."""
 
-    def test_consumer_imported_energy_seeded(self) -> None:
-        """Consumer circuit gets initial_consumed_energy_wh from imported-energy."""
+    def test_consumer_exported_energy_seeded(self) -> None:
+        """Consumer circuit gets initial_consumed_energy_wh from exported-energy.
+
+        Enclosure frame: energy the enclosure exported to the circuit is that
+        circuit's consumption."""
         config = translate_scraped_panel(_make_scraped())
         templates = config["circuit_templates"]
         assert isinstance(templates, dict)
@@ -341,8 +347,11 @@ class TestEnergySeeding:
         assert isinstance(ep, dict)
         assert "initial_produced_energy_wh" not in ep
 
-    def test_producer_exported_energy_seeded(self) -> None:
-        """Producer circuit gets initial_produced_energy_wh from exported-energy."""
+    def test_producer_imported_energy_seeded(self) -> None:
+        """Producer circuit gets initial_produced_energy_wh from imported-energy.
+
+        Enclosure frame: energy the enclosure imported from the circuit is that
+        circuit's production (backfeed)."""
         config = translate_scraped_panel(_make_scraped())
         templates = config["circuit_templates"]
         assert isinstance(templates, dict)
@@ -444,7 +453,8 @@ class TestUpdateConfigFromScrape:
         config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
 
         props = _base_properties()
-        props[f"{_PREFIX}/aaa111/imported-energy"] = "99999.0"
+        # aaa111 is a load, so its consumption accumulator is exported-energy.
+        props[f"{_PREFIX}/aaa111/exported-energy"] = "99999.0"
         updated_scraped = _make_scraped(props=props)
 
         changed = update_config_from_scrape(config, updated_scraped)
