@@ -26,10 +26,10 @@ jobs:
         include:
           - arch: aarch64
             platform: linux/arm64
-            base: ghcr.io/home-assistant/aarch64-base-python:3.13-alpine3.21
+            base: ghcr.io/home-assistant/aarch64-base-python:3.14-alpine3.23
           - arch: amd64
             platform: linux/amd64
-            base: ghcr.io/home-assistant/amd64-base-python:3.13-alpine3.21
+            base: ghcr.io/home-assistant/amd64-base-python:3.14-alpine3.23
 
     steps:
       - uses: actions/checkout@v6
