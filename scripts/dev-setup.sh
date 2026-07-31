@@ -35,7 +35,18 @@ fi
 echo "Syncing simulator deps (excluding ebus-emitter, which is local)…"
 uv sync --group dev --no-install-package ebus-emitter
 
-echo "Installing ebus-emitter from ${EBUS_EMITTER_PATH} (editable)…"
-uv pip install --editable "${EBUS_EMITTER_PATH}"
+# Install the emitter's *locked* runtime deps, then the emitter itself with
+# --no-deps. A bare `uv pip install --editable <path>` re-resolves the emitter's
+# constraints against PyPI and ignores its uv.lock, so a fresh bootstrap can pull
+# a transitive dependency the emitter was never tested against — that is how
+# ebus-sdk 0.12.0 (whose Device constructor is incompatible with the 0.1.x API
+# the emitter targets) landed in this venv and broke `span-simulator` at startup.
+# Sourcing from the lock keeps this venv on exactly what the emitter pins.
+echo "Installing ebus-emitter's locked runtime deps…"
+uv export --project "${EBUS_EMITTER_PATH}" --no-dev --no-emit-project --no-hashes \
+    | uv pip install --requirements -
+
+echo "Installing ebus-emitter from ${EBUS_EMITTER_PATH} (editable, no re-resolution)…"
+uv pip install --no-deps --editable "${EBUS_EMITTER_PATH}"
 
 echo "Done. Verify with: uv run python -c 'import ebus_emitter; print(ebus_emitter.__file__)'"
