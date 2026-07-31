@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.13 — 2026-07-31 — vendor the flat emitter
+## 1.0.14 — 2026-07-31 — vendor the flat emitter
 
 ### Fixed
 
@@ -48,6 +48,13 @@
   `charge_mode` derivation in `engine.py` and `emitter_adapter/runtime.py`. Both sites
   already produced only valid values; mypy could not see it while `ebus_emitter` was an
   `ignore_missing_imports` module and `BESSConfig` was therefore `Any`.
+
+> **Version note.** This work merged as 1.0.13, the same version the circuit-energy fix
+> below had already published. The add-on image tag is derived from `config.yaml`, so the
+> second merge overwrote the first's image without changing the version — leaving anyone
+> who had already pulled 1.0.13 on the earlier build with no update signal. Re-cut as
+> 1.0.14 so Supervisor sees a change.
+
 ## 1.0.13 — 2026-07-31 — circuit energy reference frame
 
 ### Fixed
