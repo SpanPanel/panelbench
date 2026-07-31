@@ -1,9 +1,9 @@
-"""SimulatedCircuit — per-circuit simulation state and snapshot generation.
+"""SimulatedCircuit — per-circuit simulation state.
 
 Each instance is constructed once (at engine init / reload) with its
 circuit definition, resolved template, and a shared RealisticBehaviorEngine
 reference.  The engine calls ``tick()`` each cycle, then reads properties
-or calls ``to_snapshot()`` to produce the transport-agnostic dataclass.
+to drive the emitter (which builds the transport-agnostic snapshots).
 """
 
 from __future__ import annotations
@@ -11,17 +11,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import TYPE_CHECKING
 
-from span_panel_simulator.models import SpanCircuitSnapshot
-
 if TYPE_CHECKING:
     from span_panel_simulator.config_types import (
         CircuitDefinitionExtended,
         CircuitTemplateExtended,
     )
     from span_panel_simulator.engine import RealisticBehaviorEngine
-
-
-_STANDARD_BREAKER_SIZES = (15, 20, 25, 30, 40, 50, 60, 70, 80, 100, 125, 150, 200)
 
 
 class SimulatedCircuit:
@@ -129,39 +124,6 @@ class SimulatedCircuit:
 
         self._last_tick_time = int(current_time)
 
-    def to_snapshot(self) -> SpanCircuitSnapshot:
-        """Produce a frozen snapshot of the current circuit state."""
-        tabs = self._circuit_def.get("tabs", [])
-        controllable = self._template["relay_behavior"] == "controllable"
-        is_240v = len(tabs) == 2
-        voltage = 240.0 if is_240v else 120.0
-
-        breaker_rating = self._template.get("breaker_rating")
-        if breaker_rating is None:
-            max_power = max(abs(x) for x in self._template["energy_profile"]["power_range"])
-            breaker_rating = self._derive_breaker_rating(max_power, voltage)
-
-        return SpanCircuitSnapshot(
-            circuit_id=self._circuit_def["id"],
-            name=self._circuit_def["name"],
-            relay_state=self._relay_state,
-            instant_power_w=self._instant_power_w,
-            produced_energy_wh=self._produced_energy_wh,
-            consumed_energy_wh=self._consumed_energy_wh,
-            tabs=tabs,
-            priority=self._priority,
-            is_user_controllable=controllable,
-            is_sheddable=self._priority in ("OFF_GRID", "SOC_THRESHOLD"),
-            is_never_backup=False,
-            always_on=not controllable,
-            device_type=self._device_type_str,
-            is_240v=is_240v,
-            current_a=abs(self._instant_power_w) / voltage,
-            breaker_rating_a=float(breaker_rating),
-            energy_accum_update_time_s=self._last_tick_time,
-            instant_power_update_time_s=self._last_tick_time,
-        )
-
     def apply_override(self, overrides: dict[str, object]) -> None:
         """Set dynamic overrides (from dashboard / REST API)."""
         self._overrides.update(overrides)
@@ -218,15 +180,6 @@ class SimulatedCircuit:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _derive_breaker_rating(max_power_w: float, voltage: float) -> int:
-        """Derive a standard breaker rating from max power and voltage."""
-        amps = max_power_w / voltage
-        for size in _STANDARD_BREAKER_SIZES:
-            if amps <= size:
-                return size
-        return _STANDARD_BREAKER_SIZES[-1]
-
     def _derive_device_type(self) -> str:
         """Derive device_type from the template.
 
@@ -279,22 +232,9 @@ class SimulatedCircuit:
 
         if self._energy_mode == "producer":
             self._produced_energy_wh += energy_increment
-        elif self._energy_mode == "bidirectional":
-            direction = self._resolve_battery_direction(current_time)
-            if direction == "discharging":
-                self._produced_energy_wh += energy_increment
-            else:
-                # charging, idle, unknown → consumption
-                self._consumed_energy_wh += energy_increment
         else:
-            # consumer
+            # Consumer and bidirectional (EVSE/V2G): without per-circuit
+            # direction telemetry the energy is conservatively counted as
+            # consumption.  BESS is GFE on the upstream lugs and not a
+            # circuit, so the only bidirectional case at this level is V2G.
             self._consumed_energy_wh += energy_increment
-
-    def _resolve_battery_direction(self, _current_time: float) -> str:
-        """Determine bidirectional circuit energy direction.
-
-        With the battery circuit removed (BESS is GFE on upstream lugs),
-        bidirectional circuits are EVSE/V2G — direction is unknown at the
-        circuit level so energy is conservatively counted as consumption.
-        """
-        return "unknown"

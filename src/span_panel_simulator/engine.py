@@ -1,12 +1,15 @@
 """Simulation engine for the standalone eBus simulator.
 
-Orchestrates ``SimulatedCircuit`` instances, a ``SimulationClock``, and
-an ``EnergySystem`` (with ``BESSUnit``) to produce
-``SpanPanelSnapshot`` objects from YAML configuration.
+Orchestrates ``SimulatedCircuit`` instances and a ``SimulationClock``; emits
+per-tick ``TickInputs`` (signed circuit power, current_time, grid_online) to
+the emitter via ``get_tick_inputs``. The emitter owns snapshot construction,
+energy integration, panel meter aggregation, and Homie publication.
+
+The local ``EnergySystem`` is now used only by ``compute_modeling_data`` for
+read-only Before/After modelling traces; live ticks no longer go through it.
 
 Circuit-level logic lives in ``circuit.py``; time management in
-``clock.py``; config TypedDicts in ``config_types.py``.
-"""
+``clock.py``; config TypedDicts in ``config_types.py``."""
 
 from __future__ import annotations
 
@@ -14,7 +17,6 @@ import asyncio
 import copy
 import random
 import threading
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,49 +27,22 @@ import yaml
 from span_panel_simulator.behavior_mutable_state import BehaviorEngineMutableState
 from span_panel_simulator.circuit import SimulatedCircuit
 from span_panel_simulator.clock import SimulationClock
-from span_panel_simulator.const import DEFAULT_FIRMWARE_VERSION
-from span_panel_simulator.energy import (
-    BESSConfig,
-    EnergySystem,
-    EnergySystemConfig,
-    GridConfig,
-    LoadConfig,
-    PowerInputs,
-    PVConfig,
-    SystemState,
-)
 from span_panel_simulator.exceptions import SimulationConfigurationError
-from span_panel_simulator.rates.cache import RateCache
 
 if TYPE_CHECKING:
+    from ebus_emitter import BESSDevice
+
     from span_panel_simulator.config_types import (
         CircuitTemplateExtended,
         SimulationConfig,
-        TabSynchronization,
     )
+    from span_panel_simulator.energy import EnergySystem, PowerInputs
     from span_panel_simulator.recorder import RecorderDataSource
 
 from span_panel_simulator.hvac import hvac_seasonal_factor
-from span_panel_simulator.models import (
-    SpanBatterySnapshot,
-    SpanCircuitSnapshot,
-    SpanEvseSnapshot,
-    SpanPanelSnapshot,
-    SpanPcsSnapshot,
-    SpanPVSnapshot,
-)
 from span_panel_simulator.solar import daily_weather_factor, solar_production_factor
 from span_panel_simulator.validation import validate_yaml_config
 from span_panel_simulator.weather import get_cached_weather
-
-# Panel size → Homie model enum (from 202609 schema)
-_PANEL_SIZE_TO_MODEL: dict[int, str] = {
-    16: "MAIN_16",
-    24: "MLO_24",
-    32: "MAIN_32",
-    40: "MAIN_40",
-    48: "MLO_48",
-}
 
 # Constants inlined from span-panel-api (simple string values)
 DSM_ON_GRID = "DSM_ON_GRID"
@@ -605,7 +580,7 @@ class DynamicSimulationEngine:
 
     After the modular refactoring, this class is a thin orchestrator:
     it owns the clock, behaviour engine, circuits, and BSEE, and
-    coordinates them each tick to produce ``SpanPanelSnapshot``.
+    coordinates them each tick to produce ``EbusPanelSnapshot``.
     """
 
     def __init__(
@@ -628,7 +603,6 @@ class DynamicSimulationEngine:
         self._behavior_engine: RealisticBehaviorEngine | None = None
         self._circuits: dict[str, SimulatedCircuit] = {}
         self._energy_system: EnergySystem | None = None
-        self._last_system_state: SystemState | None = None
 
         # Dynamic overrides (dispatched to circuits)
         self._dynamic_overrides: dict[str, dict[str, Any]] = {}
@@ -784,12 +758,29 @@ class DynamicSimulationEngine:
 
     @property
     def has_battery(self) -> bool:
-        """Whether a BESS is configured."""
-        return self._energy_system is not None and self._energy_system.bess is not None
+        """Whether a BESS is configured per YAML (battery state lives in the emitter,
+        but the engine still needs to know whether one was declared for off-grid logic)."""
+        if self._config is None:
+            return False
+        bess = self._config.get("bess") or {}
+        return bool(bess.get("enabled", False))
 
     # ------------------------------------------------------------------
     # Public properties & accessors
     # ------------------------------------------------------------------
+
+    @property
+    def config(self) -> SimulationConfig:
+        """Loaded simulation configuration. Raises if engine not initialised."""
+        if self._config is None:
+            msg = "Engine not initialised — call initialize_async() first"
+            raise RuntimeError(msg)
+        return self._config
+
+    @property
+    def clock(self) -> SimulationClock:
+        """Simulation clock — exposed so adapters can read current_time per tick."""
+        return self._clock
 
     @property
     def serial_number(self) -> str:
@@ -822,15 +813,10 @@ class DynamicSimulationEngine:
         return "America/Los_Angeles"
 
     @property
-    def soc_percentage(self) -> float | None:
-        """Battery state-of-charge percentage, or None if no BESS."""
-        if self._energy_system is not None and self._energy_system.bess is not None:
-            return self._energy_system.bess.soe_percentage
-        return None
-
-    @property
     def soc_shed_threshold(self) -> float:
-        """SOC percentage below which SOC_THRESHOLD circuits are shed."""
+        """SOC percentage below which SOC_THRESHOLD circuits are shed.
+        The threshold lives in the YAML; live SOC enforcement is the emitter's
+        LoadSheddingDevice job."""
         if self._config is not None:
             return float(self._config["panel_config"].get("soc_shed_threshold", 20.0))
         return 20.0
@@ -862,37 +848,26 @@ class DynamicSimulationEngine:
         """
         sim_time = self.get_current_simulation_time()
 
-        if self._last_system_state is not None:
-            ss = self._last_system_state
-            grid = ss.grid_power_w
-            pv = ss.pv_power_w
-            battery = ss.bess_power_w
-            if ss.bess_state == "charging":
-                battery = -battery  # dashboard convention: negative = charging
-            consumption = ss.load_power_w
-        else:
-            # Before first snapshot — return zeroed values
-            grid = 0.0
-            pv = 0.0
-            battery = 0.0
-            consumption = 0.0
+        # Grid/PV/load aggregation moved to the emitter post-cutover; the
+        # local energy system is only used by ``compute_modeling_data``.
+        # ``PanelInstance.get_power_summary`` overlays the live numbers from
+        # the emitter snapshot, so the engine only fills in the static fields.
+        grid = 0.0
+        pv = 0.0
+        consumption = 0.0
 
-        # Shedding info
-        shed_ids: list[str] = []
-        soc_pct = self.soc_percentage
+        # Live SOC and battery power are owned by the emitter and not available here.
+        # ``PanelInstance.get_power_summary`` overlays them from the emitter's last
+        # snapshot before returning to the dashboard / HA-API.
         soc_threshold = self.soc_shed_threshold
+        shed_ids: list[str] = []
         if not self.grid_online and self.has_battery:
             for circuit in self._circuits.values():
                 if circuit.energy_mode in ("producer", "bidirectional"):
                     continue
-                if circuit._priority == "OFF_GRID" or (
-                    circuit._priority == "SOC_THRESHOLD"
-                    and soc_pct is not None
-                    and soc_pct < soc_threshold
-                ):
+                if circuit._priority == "OFF_GRID":
                     shed_ids.append(circuit.circuit_id)
 
-        # Circuits manually opened by user (via relay override)
         user_open_ids: list[str] = []
         for cid, overrides in self._dynamic_overrides.items():
             if overrides.get("relay_state") == "OPEN" and cid not in shed_ids:
@@ -903,13 +878,13 @@ class DynamicSimulationEngine:
         return {
             "grid_w": round(grid, 1),
             "pv_w": round(pv, 1),
-            "battery_w": round(battery, 1),
+            "battery_w": 0.0,
             "consumption_w": round(consumption, 1),
             "simulation_time": sim_time,
             "grid_online": self.grid_online,
             "has_battery": self.has_battery,
             "is_islandable": self.is_grid_islandable,
-            "soc_pct": round(soc_pct, 1) if soc_pct is not None else None,
+            "soc_pct": None,
             "soc_threshold": soc_threshold,
             "shed_ids": shed_ids,
             "user_open_ids": user_open_ids,
@@ -923,254 +898,44 @@ class DynamicSimulationEngine:
     # Snapshot generation
     # ------------------------------------------------------------------
 
-    async def get_snapshot(self) -> SpanPanelSnapshot:
-        """Build a transport-agnostic snapshot from current simulation state."""
+    async def get_tick_inputs(self) -> dict[str, Any]:
+        """v0.3.0 contract: return per-tick driving signal for ``Emitter.publish_tick``.
+
+        Returns a dict containing:
+            current_time: float (epoch seconds)
+            grid_online: bool
+            circuits: dict[str, float]  — keyed by emitter instance_id (UUID),
+                                          value is signed instant_power_w
+
+        The simulator no longer constructs panel-level fields, energy
+        accumulators, or device snapshots — the emitter does that work."""
         if not self._config:
             raise SimulationConfigurationError("Configuration not loaded")
 
+        from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
+
         current_time = self._clock.current_time
-
-        # 1. Tick all circuits
         for _cid, circuit in self._circuits.items():
-            sync_override = self._get_sync_power_override(circuit)
-            circuit.tick(current_time, power_override=sync_override)
-
-        # 2. Apply global overrides
+            # Tab-sync grouping currently has no override path — the
+            # behaviour engine handles per-circuit power and tab routing
+            # is done in the emitter manifest.
+            circuit.tick(current_time)
         self._apply_global_overrides()
 
-        # 2b. Handle forced grid offline + load shedding
-        shed_ids: set[str] = set()
-        if self._forced_grid_offline:
-            if self._energy_system is None or self._energy_system.bess is None:
-                # No battery: panel is dead — zero all circuits
-                for circuit in self._circuits.values():
-                    circuit._instant_power_w = 0.0
-            else:
-                soc = self._energy_system.bess.soe_percentage
-                soc_threshold = self._config["panel_config"].get("soc_shed_threshold", 20.0)
-                for circuit in self._circuits.values():
-                    # PV: shed if not islandable
-                    if circuit.energy_mode == "producer":
-                        if not self._energy_system.islandable:
-                            circuit._instant_power_w = 0.0
-                        continue
-                    # Battery: never shed
-                    if circuit.energy_mode == "bidirectional":
-                        continue
-                    # User relay override takes precedence over shedding
-                    cid_overrides = self._dynamic_overrides.get(circuit.circuit_id, {})
-                    if "relay_state" in cid_overrides:
-                        continue
-                    # Consumer shedding by priority
-                    if circuit._priority == "OFF_GRID" or (
-                        circuit._priority == "SOC_THRESHOLD" and soc < soc_threshold
-                    ):
-                        circuit._instant_power_w = 0.0
-                        shed_ids.add(circuit.circuit_id)
-
-        # 3. Collect circuit snapshots (apply shedding overlay)
-        circuit_snapshots: dict[str, SpanCircuitSnapshot] = {}
+        # Apply the v0.3.0 sign convention: producers (PV) report negative
+        # power; consumers report positive. SimulatedCircuit stores magnitudes
+        # only; the energy_mode tells direction.
+        circuit_powers: dict[str, float] = {}
         for cid, circuit in self._circuits.items():
-            snap = circuit.to_snapshot()
-            if cid in shed_ids:
-                snap = replace(
-                    snap,
-                    relay_state="OPEN",
-                    relay_requester="BACKUP",
-                    instant_power_w=0.0,
-                )
-            circuit_snapshots[cid] = snap
+            mag = circuit.instant_power_w
+            signed = -mag if circuit.energy_mode == "producer" else mag
+            circuit_powers[stable_circuit_uuid(cid)] = signed
 
-        # 4. Add unmapped tabs
-        self._add_unmapped_tabs(circuit_snapshots)
-
-        # 5. Aggregate energy accumulators
-        total_produced_energy = 0.0
-        total_consumed_energy = 0.0
-
-        for circuit in self._circuits.values():
-            total_produced_energy += circuit.produced_energy_wh
-            total_consumed_energy += circuit.consumed_energy_wh
-
-        # 5b. Resolve power flows via EnergySystem (single source of truth)
-        if self._energy_system is None:
-            raise SimulationConfigurationError("Energy system not initialized")
-
-        inputs = self._collect_power_inputs()
-        system_state = self._energy_system.tick(current_time, inputs)
-        self._last_system_state = system_state
-        site_power = system_state.load_power_w - system_state.pv_power_w
-        grid_power = system_state.grid_power_w
-
-        # Reflect PV curtailment back to producer circuits so snapshots
-        # are consistent with the resolved system state.
-        if self._energy_system.pv is not None:
-            resolved_pv_w = system_state.pv_power_w
-            raw_pv_w = inputs.pv_available_w
-            if raw_pv_w > 0 and resolved_pv_w < raw_pv_w:
-                scale = resolved_pv_w / raw_pv_w
-                for circuit in self._circuits.values():
-                    if circuit.energy_mode == "producer":
-                        circuit._instant_power_w *= scale
-
-        # 6. Battery snapshot
-        bess = self._energy_system.bess
-        if bess is not None:
-            battery_snapshot = SpanBatterySnapshot(
-                soe_percentage=system_state.soe_percentage,
-                soe_kwh=system_state.soe_kwh,
-                vendor_name=bess.vendor_name,
-                product_name=bess.product_name,
-                model=bess.model,
-                serial_number=bess.serial_number,
-                software_version=bess.software_version,
-                nameplate_capacity_kwh=bess.nameplate_capacity_kwh,
-                connected=bess.connected,
-            )
-            dominant_power_source = self._energy_system.dominant_power_source
-            grid_state = self._energy_system.grid_state
-            grid_islandable = self._energy_system.islandable
-            dsm_state = DSM_OFF_GRID if grid_state == "OFF_GRID" else DSM_ON_GRID
-            current_run_config = PANEL_OFF_GRID if grid_state == "OFF_GRID" else PANEL_ON_GRID
-
-            # Battery power flow uses SPAN panel sign convention
-            # (matches real hardware per SpanPanel/span#184):
-            #   positive = charging  (panel sending power TO battery)
-            #   negative = discharging (battery sending power TO panel)
-            if system_state.bess_state == "discharging":
-                power_flow_battery = -system_state.bess_power_w
-            else:
-                power_flow_battery = system_state.bess_power_w
-
-            # Rebuild PV circuit snapshots when curtailment reduced output
-            if (
-                self._energy_system.pv is not None
-                and inputs.pv_available_w > 0
-                and system_state.pv_power_w < inputs.pv_available_w
-            ):
-                for circuit in self._circuits.values():
-                    if circuit.energy_mode == "producer":
-                        cid = circuit.circuit_id
-                        snap = circuit.to_snapshot()
-                        if cid in shed_ids:
-                            snap = replace(
-                                snap,
-                                relay_state="OPEN",
-                                relay_requester="BACKUP",
-                                instant_power_w=0.0,
-                            )
-                        circuit_snapshots[cid] = snap
-        else:
-            battery_snapshot = SpanBatterySnapshot()
-            if self._forced_grid_offline:
-                dominant_power_source = None
-                grid_state = "OFF_GRID"
-                grid_islandable = False
-                dsm_state = DSM_OFF_GRID
-                current_run_config = PANEL_OFF_GRID
-            else:
-                dominant_power_source = "GRID"
-                grid_state = None
-                grid_islandable = False
-                dsm_state = DSM_ON_GRID
-                current_run_config = PANEL_ON_GRID
-            power_flow_battery = 0.0
-
-        # 7. PV
-        pv_snapshot = SpanPVSnapshot()
-        pv_power = 0.0
-        for cid, circ in circuit_snapshots.items():
-            if circ.device_type == "pv":
-                pv_snapshot = SpanPVSnapshot(
-                    node_id=f"sim_pv_{cid}",
-                    feed_circuit_id=cid,
-                    vendor_name="Simulated",
-                    product_name="Virtual PV Inverter",
-                    nameplate_capacity_w=5000.0,
-                    software_version=DEFAULT_FIRMWARE_VERSION,
-                )
-                pv_power = circ.instant_power_w
-                break
-
-        # 8. EVSE
-        evse_devices: dict[str, SpanEvseSnapshot] = {}
-        for cid, circ in circuit_snapshots.items():
-            if circ.device_type == "evse":
-                evse_devices[f"sim_evse_{cid}"] = SpanEvseSnapshot(
-                    node_id=f"sim_evse_{cid}",
-                    feed_circuit_id=cid,
-                    status="CHARGING" if circ.instant_power_w > 100 else "AVAILABLE",
-                    lock_state="LOCKED" if circ.instant_power_w > 100 else "UNLOCKED",
-                    advertised_current_a=32.0,
-                    vendor_name="SPAN",
-                    product_name="SPAN Drive",
-                    part_number="SPN-DRV-001",
-                    serial_number=f"SIM-EVSE-{cid.upper()}",
-                    software_version=DEFAULT_FIRMWARE_VERSION,
-                )
-
-        # 9. Build panel snapshot
-        total_tabs = self._config["panel_config"]["total_tabs"]
-        main_size = self._config["panel_config"].get("main_size", 200)
-        feedthrough_power = 0.0
-
-        # Main relay is open when grid is disconnected
-        main_relay = "OPEN" if self._forced_grid_offline else MAIN_RELAY_CLOSED
-        # Voltage drops to 0 when offline without battery
-        has_bess = self._energy_system is not None and self._energy_system.bess is not None
-        line_voltage = 0.0 if (self._forced_grid_offline and not has_bess) else 120.0
-
-        # Panel model derived from tab count
-        panel_model = _PANEL_SIZE_TO_MODEL.get(total_tabs)
-
-        # Config-driven fields with sensible defaults
-        postal_code = self._config["panel_config"].get("postal_code", "94103")
-        time_zone = self._config["panel_config"].get("time_zone", "America/Los_Angeles")
-
-        return SpanPanelSnapshot(
-            serial_number=self._config["panel_config"]["serial_number"],
-            firmware_version=DEFAULT_FIRMWARE_VERSION,
-            main_relay_state=main_relay,
-            instant_grid_power_w=grid_power,
-            feedthrough_power_w=feedthrough_power,
-            main_meter_energy_consumed_wh=total_consumed_energy,
-            main_meter_energy_produced_wh=total_produced_energy,
-            feedthrough_energy_consumed_wh=0.0,
-            feedthrough_energy_produced_wh=0.0,
-            dsm_state=dsm_state,
-            current_run_config=current_run_config,
-            door_state="CLOSED",
-            proximity_proven=True,
-            uptime_s=3600000,
-            eth0_link=True,
-            wlan_link=True,
-            wwan_link=False,
-            dominant_power_source=dominant_power_source,
-            grid_state=grid_state,
-            grid_islandable=grid_islandable,
-            l1_voltage=line_voltage,
-            l2_voltage=line_voltage,
-            main_breaker_rating_a=main_size,
-            wifi_ssid="SimulatedNetwork",
-            vendor_cloud="CONNECTED",
-            postal_code=postal_code,
-            time_zone=time_zone,
-            panel_model=panel_model,
-            panel_size=total_tabs,
-            power_flow_battery=power_flow_battery,
-            power_flow_site=site_power,
-            power_flow_grid=grid_power,
-            power_flow_pv=pv_power,
-            upstream_l1_current_a=abs(grid_power / 240.0),
-            upstream_l2_current_a=abs(grid_power / 240.0),
-            downstream_l1_current_a=abs(feedthrough_power / 240.0),
-            downstream_l2_current_a=abs(feedthrough_power / 240.0),
-            circuits=circuit_snapshots,
-            battery=battery_snapshot,
-            pv=pv_snapshot,
-            evse=evse_devices,
-            pcs=SpanPcsSnapshot(),
-        )
+        return {
+            "current_time": current_time,
+            "grid_online": self.grid_online,
+            "circuits": circuit_powers,
+        }
 
     # ------------------------------------------------------------------
     # Modeling computation
@@ -1213,6 +978,8 @@ class DynamicSimulationEngine:
 
         Other bidirectional circuits (e.g. EVSE with V2G) are treated as load.
         """
+        from span_panel_simulator.energy import PowerInputs as _PowerInputs
+
         pv_power = 0.0
         load_power = 0.0
 
@@ -1223,7 +990,7 @@ class DynamicSimulationEngine:
             else:
                 load_power += power
 
-        return PowerInputs(
+        return _PowerInputs(
             pv_available_w=pv_power,
             load_demand_w=load_power,
             grid_connected=True,  # caller overrides if needed
@@ -1307,6 +1074,13 @@ class DynamicSimulationEngine:
         if cloned_behavior is None or after_energy_system is None:
             return {"error": "Simulation not initialised"}
 
+        # Modeling-only BESS dispatchers — isolated from the live emitter's
+        # BESSDevice so the read-only modeling pass doesn't perturb runtime
+        # SOC. Each pass gets its own dispatcher seeded from the matching
+        # config (baseline = Before, current = After).
+        before_bess = _build_modeling_bess(baseline_config or self._config)
+        after_bess = _build_modeling_bess(self._config)
+
         # Result arrays
         site_power_arr: list[float] = []
         grid_power_arr: list[float] = []
@@ -1332,15 +1106,19 @@ class DynamicSimulationEngine:
             inputs_b = self._powers_to_energy_inputs(powers_b)
             if before_energy_system is not None:
                 state_b = before_energy_system.tick(ts, inputs_b)
-                grid_before = state_b.grid_power_w
+                pre_grid_before = state_b.grid_power_w
                 pv_before = state_b.pv_power_w
-                batt_before = state_b.bess_power_w
-                if state_b.bess_state == "discharging":
-                    batt_before = -batt_before
             else:
-                grid_before = inputs_b.load_demand_w - inputs_b.pv_available_w
+                pre_grid_before = inputs_b.load_demand_w - inputs_b.pv_available_w
                 pv_before = inputs_b.pv_available_w
-                batt_before = 0.0
+            batt_before = _bess_dispatch(
+                before_bess,
+                current_time=ts,
+                grid_online=True,
+                load_demand_w=inputs_b.load_demand_w,
+                pv_available_w=inputs_b.pv_available_w,
+            )
+            grid_before = pre_grid_before - batt_before
 
             cloned_behavior.restore_mutable_state(modeling_checkpoint)
 
@@ -1354,10 +1132,14 @@ class DynamicSimulationEngine:
             inputs_a = self._powers_to_energy_inputs(powers_a)
 
             state_a = after_energy_system.tick(ts, inputs_a)
-            grid_after = state_a.grid_power_w
-            batt_after = state_a.bess_power_w
-            if state_a.bess_state == "discharging":
-                batt_after = -batt_after
+            batt_after = _bess_dispatch(
+                after_bess,
+                current_time=ts,
+                grid_online=True,
+                load_demand_w=inputs_a.load_demand_w,
+                pv_available_w=inputs_a.pv_available_w,
+            )
+            grid_after = state_a.grid_power_w - batt_after
 
             site_power_arr.append(round(grid_before, 1))
             pv_before_arr.append(round(pv_before, 1))
@@ -1443,35 +1225,6 @@ class DynamicSimulationEngine:
         for sync_group_id in set(self._tab_sync_groups.values()):
             self._sync_group_power[sync_group_id] = 0.0
 
-    def _get_sync_power_override(self, circuit: SimulatedCircuit) -> float | None:
-        """Return a power override if the circuit belongs to a sync group, else None."""
-        circuit_tabs = circuit.tabs
-        sync_config = None
-        for tab_num in circuit_tabs:
-            sync_config = self._get_tab_sync_config(tab_num)
-            if sync_config:
-                break
-
-        if not sync_config or len(circuit_tabs) <= 1:
-            return None
-
-        # Multi-tab synced circuits: return None to use normal power calculation
-        # but store sync group power for unmapped tab reference
-        return None
-
-    def _get_tab_sync_config(self, tab_num: int) -> TabSynchronization | None:
-        """Get synchronization configuration for a specific tab."""
-        if not self._config:
-            raise SimulationConfigurationError(
-                "Simulation configuration is required for tab synchronization."
-            )
-
-        tab_syncs = self._config.get("tab_synchronizations", [])
-        for sync_config in tab_syncs:
-            if tab_num in sync_config["tabs"]:
-                return sync_config
-        return None
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -1483,60 +1236,6 @@ class DynamicSimulationEngine:
         multiplier = float(self._global_overrides["power_multiplier"])
         for circuit in self._circuits.values():
             circuit._instant_power_w *= multiplier
-
-    def _add_unmapped_tabs(self, circuit_snapshots: dict[str, SpanCircuitSnapshot]) -> None:
-        """Fill in unmapped tabs as zero-power placeholder circuits."""
-        if not self._config:
-            return
-
-        occupied_tabs: set[int] = set()
-        for circuit in circuit_snapshots.values():
-            occupied_tabs.update(circuit.tabs)
-
-        if not occupied_tabs:
-            return
-
-        total_tabs = self._config["panel_config"]["total_tabs"]
-        panel_size = max(*occupied_tabs, total_tabs)
-        for tab in range(1, panel_size + 1):
-            if tab not in occupied_tabs:
-                cid = f"unmapped_tab_{tab}"
-                circuit_snapshots[cid] = SpanCircuitSnapshot(
-                    circuit_id=cid,
-                    name=f"Unmapped Tab {tab}",
-                    relay_state="CLOSED",
-                    instant_power_w=0.0,
-                    produced_energy_wh=0.0,
-                    consumed_energy_wh=0.0,
-                    tabs=[tab],
-                    priority="UNKNOWN",
-                    is_user_controllable=False,
-                    is_sheddable=False,
-                    is_never_backup=False,
-                )
-
-    def _collect_power_inputs(self) -> PowerInputs:
-        """Collect current circuit state into PowerInputs for the energy system.
-
-        This method gathers raw measurements from circuits — it does NOT
-        resolve energy scheduling.  Schedule resolution is the energy
-        module's responsibility (inside ``EnergySystem.tick``).
-        """
-        pv_power = 0.0
-        load_power = 0.0
-
-        for circuit in self._circuits.values():
-            power = circuit.instant_power_w
-            if circuit.energy_mode == "producer":
-                pv_power += power
-            else:
-                load_power += power
-
-        return PowerInputs(
-            pv_available_w=pv_power,
-            load_demand_w=load_power,
-            grid_connected=not self._forced_grid_offline,
-        )
 
     def _build_baseline_config(self) -> dict[str, Any] | None:
         """Reconstruct the original config state from panel_source snapshots.
@@ -1569,23 +1268,6 @@ class DynamicSimulationEngine:
 
         return baseline
 
-    def _resolve_rate_record(self, rate_label: str) -> dict[str, Any] | None:
-        """Load a URDB rate record from the simulator rate cache.
-
-        Returns the raw URDB dict if the label exists in the cache,
-        or ``None`` if the cache file is missing or the label is absent.
-        """
-        if self._config_path is None:
-            return None
-        cache_path = self._config_path.parent / "rates" / "rates_cache.yaml"
-        if not cache_path.exists():
-            return None
-        cache = RateCache(cache_path)
-        entry = cache.get_cached_rate(rate_label)
-        if entry is None:
-            return None
-        return dict(entry.record)
-
     def _build_energy_system(
         self,
         *,
@@ -1606,6 +1288,18 @@ class DynamicSimulationEngine:
         """
         if not self._config:
             return None
+
+        # Lazy-import the energy/ module: it is only used by the modelling
+        # ``compute_modeling_data`` path and by the engine's own
+        # ``_build_energy_system``.  Deferring keeps the engine module
+        # import-light for the common live-tick code path.
+        from span_panel_simulator.energy import (
+            EnergySystem,
+            EnergySystemConfig,
+            GridConfig,
+            LoadConfig,
+            PVConfig,
+        )
 
         included = {
             cid: c
@@ -1635,51 +1329,85 @@ class DynamicSimulationEngine:
                 pv_config = PVConfig(nameplate_w=abs(nameplate), inverter_type=inverter_type)
                 break
 
-        bess_config: BESSConfig | None = None
-        config_source = baseline_config if baseline_config is not None else self._config
-        bess_yaml = config_source.get("bess", {})
-        if isinstance(bess_yaml, dict) and bess_yaml.get("enabled", False):
-            nameplate = float(bess_yaml.get("nameplate_capacity_kwh", 13.5))
-            hybrid = pv_config is not None and pv_config.inverter_type == "hybrid"
-            charge_hours_raw: list[int] = bess_yaml.get("charge_hours", [])
-            discharge_hours_raw: list[int] = bess_yaml.get("discharge_hours", [])
-            panel_tz = (
-                str(self._behavior_engine.panel_timezone)
-                if self._behavior_engine is not None
-                else RealisticBehaviorEngine._DEFAULT_TZ
-            )
-            charge_mode = str(bess_yaml.get("charge_mode", "self-consumption"))
-            rate_label = bess_yaml.get("rate_label")
-            rate_record: dict[str, Any] | None = None
-            if isinstance(rate_label, str) and rate_label:
-                rate_record = self._resolve_rate_record(rate_label)
-            bess_config = BESSConfig(
-                nameplate_kwh=nameplate,
-                max_charge_w=abs(float(bess_yaml.get("max_charge_w", 3500.0))),
-                max_discharge_w=abs(float(bess_yaml.get("max_discharge_w", 3500.0))),
-                charge_efficiency=float(bess_yaml.get("charge_efficiency", 0.95)),
-                discharge_efficiency=float(bess_yaml.get("discharge_efficiency", 0.95)),
-                backup_reserve_pct=float(bess_yaml.get("backup_reserve_pct", 20.0)),
-                hybrid=hybrid,
-                initial_soe_kwh=(
-                    self._energy_system.bess.soe_kwh
-                    if self._energy_system is not None and self._energy_system.bess is not None
-                    else None
-                ),
-                panel_serial=self._config["panel_config"]["serial_number"],
-                charge_hours=tuple(charge_hours_raw),
-                discharge_hours=tuple(discharge_hours_raw),
-                panel_timezone=panel_tz,
-                charge_mode=charge_mode,
-                rate_record=rate_record,
-            )
-
         loads = [LoadConfig() for c in included.values() if c.energy_mode == "consumer"]
 
         config = EnergySystemConfig(
             grid=grid_config,
             pv=pv_config,
-            bess=bess_config,
             loads=loads,
         )
-        return EnergySystem.from_config(config)
+        system = EnergySystem.from_config(config)
+        # Whether the system can island depends on whether the YAML declares a
+        # hybrid PV inverter; the simulator's PV stays online off-grid only when
+        # so configured. (Battery presence no longer affects this — the BESS
+        # native device runs independently in the emitter.)
+        system.islandable = pv_config is not None and pv_config.inverter_type == "hybrid"
+        return system
+
+
+# ---------------------------------------------------------------------------
+# Modeling-pass BESS helpers — isolated from the live emitter's BESSDevice
+# so the read-only Before/After modeling pass doesn't perturb runtime SOC.
+# ---------------------------------------------------------------------------
+
+
+def _build_modeling_bess(
+    config: SimulationConfig | dict[str, Any] | None,
+) -> BESSDevice | None:
+    """Build a fresh BESSDevice from the YAML ``bess`` block, or None when no
+    BESS is configured. Imported lazily to keep the engine import-light."""
+    if not config:
+        return None
+    bess_yaml = config.get("bess") or {}
+    if not (isinstance(bess_yaml, dict) and bess_yaml.get("enabled")):
+        return None
+
+    from ebus_emitter import BESSConfig
+    from ebus_emitter import BESSDevice as _BESSDevice
+
+    raw_mode = bess_yaml.get("charge_mode", "self-consumption")
+    mode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
+    panel_cfg = config.get("panel_config") or {}
+    if isinstance(panel_cfg, dict):
+        serial = str(panel_cfg.get("serial_number", "modeling-panel"))
+    else:
+        serial = "modeling-panel"
+    cfg = BESSConfig(
+        instance_id=f"{serial}-bess",
+        nameplate_capacity_kwh=float(bess_yaml.get("nameplate_capacity_kwh", 13.5)),
+        max_charge_w=float(bess_yaml.get("max_charge_w", 3500.0)),
+        max_discharge_w=float(bess_yaml.get("max_discharge_w", 3500.0)),
+        charge_efficiency=float(bess_yaml.get("charge_efficiency", 0.95)),
+        discharge_efficiency=float(bess_yaml.get("discharge_efficiency", 0.95)),
+        backup_reserve_pct=float(bess_yaml.get("backup_reserve_pct", 20.0)),
+        charge_mode=mode,
+        charge_hours=tuple(bess_yaml.get("charge_hours", [10, 11, 12, 13, 14, 15])),
+        discharge_hours=tuple(bess_yaml.get("discharge_hours", [17, 18, 19, 20, 21])),
+    )
+    return _BESSDevice(config=cfg)
+
+
+def _bess_dispatch(
+    device: BESSDevice | None,
+    *,
+    current_time: float,
+    grid_online: bool,
+    load_demand_w: float,
+    pv_available_w: float,
+) -> float:
+    """Tick the modeling BESSDevice with synthetic context; return signed
+    active power (positive = discharging, negative = charging). Returns 0 when
+    no device is configured."""
+    if device is None:
+        return 0.0
+    from ebus_emitter.native_devices import NativeTickContext
+
+    snap = device.tick(
+        NativeTickContext(
+            current_time=current_time,
+            grid_online=grid_online,
+            load_demand_w=load_demand_w,
+            pv_available_w=pv_available_w,
+        )
+    )
+    return float(snap.active_power_w)

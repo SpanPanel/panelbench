@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "span-panel-simulator"
-version = "1.0.11"
+version = "1.0.12"
 description = "Standalone eBus simulator for SPAN panels"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "aiomqtt>=2.0.0",
     "aiohttp>=3.9.0",
@@ -18,6 +18,11 @@ dependencies = [
     "timezonefinder>=6.0",
 ]
 
+# `ebus-emitter` is a runtime dependency but is not listed here because it is not on
+# PyPI and its checkout location varies per developer. Run `scripts/dev-setup.sh`
+# (which reads `.env` for `EBUS_EMITTER_PATH`) to install it editable into the venv.
+# See `.env.example` for the expected variable.
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -27,6 +32,7 @@ dev = [
     "mypy>=1.10",
     "pre-commit>=4.0",
     "types-pyyaml>=6.0",
+    "amqtt>=0.11.3",
 ]
 
 [project.scripts]
@@ -40,20 +46,39 @@ packages = ["src/span_panel_simulator"]
 "src/span_panel_simulator/dashboard/static" = "span_panel_simulator/dashboard/static"
 
 [tool.ruff]
-target-version = "py312"
+# Pinned to py313 because ruff 0.15.x has a formatter bug under py314 that
+# rewrites ``except (A, B):`` into the Python-2 ``except A, B:`` syntax.
+# Bump back to py314 once the upstream bug is fixed.
+target-version = "py313"
 line-length = 99
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
+# TC002 (move third-party import into TYPE_CHECKING) conflicts with mypy's need for runtime
+# resolution of imported names referenced from generic functions/methods. Disable to allow
+# straightforward runtime imports.
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 
 [[tool.mypy.overrides]]
 module = "timezonefinder"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ebus_emitter"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ebus_emitter.*"
+ignore_missing_imports = true
+
+# CloneRuntime is defined in runtime.py, but setter_handlers references it through a
+# TYPE_CHECKING import. mypy under --strict still complains about the forward ref when
+# runtime.py hasn't been written; relax for the emitter_adapter subpackage during the
+# integration build-out.

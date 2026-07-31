@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from span_panel_simulator.config_types import BESSConfigYAML
 
 from span_panel_simulator.dashboard.defaults import make_defaults
 from span_panel_simulator.dashboard.presets import (
@@ -150,10 +152,15 @@ class ConfigStore:
 
     # -- BESS config --
 
-    def get_bess_config(self) -> dict[str, Any]:
+    def get_bess_config(self) -> BESSConfigYAML:
         """Return the top-level BESS configuration, or empty dict if absent."""
         bess = self._state.get("bess")
-        return dict(bess) if isinstance(bess, dict) else {}
+        if isinstance(bess, dict):
+            # ``_state`` holds the raw YAML mapping; the runtime invariant is
+            # that ``_state["bess"]`` matches the BESSConfigYAML schema, so we
+            # cast through ``cast`` rather than re-validating each access.
+            return cast("BESSConfigYAML", dict(bess))
+        return {}
 
     def has_bess(self) -> bool:
         """Whether a BESS is configured and enabled."""
@@ -673,9 +680,17 @@ class ConfigStore:
     # -- Battery charge mode --
 
     def get_battery_charge_mode(self) -> str:
-        """Return the BESS charge mode (default ``"self-consumption"``)."""
+        """Return the BESS charge mode (default ``"self-consumption"``).
+
+        Legacy configs may carry mode strings outside the dashboard's known set
+        (e.g. ``solar-gen`` from earlier defaults). Normalize anything not in
+        the supported set to ``self-consumption`` so the UI dropdown renders a
+        real value instead of blank."""
         bess = self.get_bess_config()
-        return str(bess.get("charge_mode", "self-consumption"))
+        raw = str(bess.get("charge_mode", "self-consumption"))
+        if raw in ("self-consumption", "custom", "backup-only"):
+            return raw
+        return "self-consumption"
 
     def update_battery_charge_mode(
         self,

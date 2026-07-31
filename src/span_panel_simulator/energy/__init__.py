@@ -1,15 +1,12 @@
-"""Component-based energy system for the SPAN panel simulator.
+"""Simulator-side energy package — grid + PV + load resolver only.
 
-Public API:
-    EnergySystem    — top-level resolver (construct via from_config)
-    SystemState     — resolved output of a tick
-    PowerInputs     — external inputs that drive each tick
-    EnergySystemConfig, GridConfig, PVConfig, BESSConfig, LoadConfig — configuration
-"""
+BESS dispatch lives in the emitter (`ebus_emitter.native_devices.bess`), driven
+each tick by ``per_tick_context`` (load_demand_w, pv_available_w, grid_online,
+current_time). The simulator's ``DynamicSimulationEngine`` uses ``EnergySystem``
+here to compute pre-battery grid power for the snapshot it hands the emitter."""
 
 from span_panel_simulator.energy.system import EnergySystem
 from span_panel_simulator.energy.types import (
-    BESSConfig,
     EnergySystemConfig,
     GridConfig,
     LoadConfig,
@@ -19,7 +16,6 @@ from span_panel_simulator.energy.types import (
 )
 
 __all__ = [
-    "BESSConfig",
     "EnergySystem",
     "EnergySystemConfig",
     "GridConfig",

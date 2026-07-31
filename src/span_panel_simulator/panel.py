@@ -1,9 +1,8 @@
-"""PanelInstance — encapsulates a single simulated panel.
-
-Each instance owns a DynamicSimulationEngine and HomiePublisher pair,
-running an independent tick loop that publishes state changes to the
-shared MQTT broker under its own serial-based topic namespace.
-"""
+"""PanelInstance — wraps a single ``DynamicSimulationEngine`` plus its emitter
+runtime. The tick loop calls ``emitter_runtime.publish_tick`` which collects the
+engine's per-circuit signed power into ``TickInputs``; the emitter resolves BESS
+dispatch, relay state, energy integration, panel meter aggregation, and
+publishes the resulting snapshot."""
 
 from __future__ import annotations
 
@@ -12,41 +11,43 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
+from span_panel_simulator.emitter_adapter import runtime as emitter_runtime
 from span_panel_simulator.engine import DynamicSimulationEngine
-from span_panel_simulator.homie_const import HOMIE_STATE_DISCONNECTED, STATE_TOPIC_FMT
-from span_panel_simulator.publisher import HomiePublisher
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Coroutine
     from pathlib import Path
     from typing import Any
 
+    from ebus_emitter import EbusBatterySnapshot
+
+    from span_panel_simulator.config_types import BESSConfigYAML
+    from span_panel_simulator.emitter_adapter.runtime import BrokerConnection, CloneRuntime
     from span_panel_simulator.recorder import RecorderDataSource
-    from span_panel_simulator.schema import HomieSchemaRegistry
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class PanelInstance:
-    """A single simulated panel with its own engine and publisher."""
+    """A single simulated panel: engine + emitter, with its own tick loop."""
 
     def __init__(
         self,
         config_path: Path,
-        publish_fn: Callable[[str, str, bool], Coroutine[Any, Any, None]],
         *,
         tick_interval: float = 1.0,
-        schema: HomieSchemaRegistry | None = None,
         recorder: RecorderDataSource | None = None,
+        broker: BrokerConnection | None = None,
     ) -> None:
         self._config_path = config_path
-        self._publish_fn = publish_fn
         self._tick_interval = tick_interval
-        self._schema = schema
         self._recorder = recorder
+        # App-level broker connection. Used when the YAML config doesn't carry
+        # its own broker section (the typical case — clones share the simulator
+        # process's MQTT broker).
+        self._broker = broker
 
         self._engine: DynamicSimulationEngine | None = None
-        self._publisher: HomiePublisher | None = None
+        self._runtime: CloneRuntime | None = None
         self._tick_task: asyncio.Task[None] | None = None
         self._running = False
 
@@ -77,14 +78,94 @@ class PanelInstance:
         return self._engine
 
     @property
-    def publisher(self) -> HomiePublisher | None:
-        return self._publisher
+    def runtime(self) -> CloneRuntime | None:
+        return self._runtime
+
+    # ------------------------------------------------------------------
+    # Battery state accessors — read-through to the emitter's last snapshot.
+    # The simulator no longer models BESS state; the emitter's BESSDevice owns
+    # SOC/SOE and active power, and writes them into snapshot.battery on every
+    # publish. These helpers give the dashboard / HA-API a stable read path.
+    # ------------------------------------------------------------------
+
+    @property
+    def has_battery(self) -> bool:
+        if self._engine is None:
+            return False
+        return self._engine.has_battery
+
+    @property
+    def soc_percentage(self) -> float | None:
+        snap = self._last_battery()
+        return snap.soe_percentage if snap is not None else None
+
+    @property
+    def battery_active_power_w(self) -> float:
+        """Positive = discharging, negative = charging."""
+        snap = self._last_battery()
+        return snap.active_power_w if snap is not None else 0.0
+
+    def _last_battery(self) -> EbusBatterySnapshot | None:
+        """First battery from the emitter's snapshot (the simulator models a
+        single BESS per panel today). The emitter's Phase 2 reshape pluralised
+        ``snapshot.battery`` into a dict keyed by ``instance_id``; we collapse
+        to the first entry for the simulator's single-BESS world."""
+        if self._runtime is None:
+            return None
+        last = self._runtime.emitter.last_snapshot
+        if last is None:
+            return None
+        return next(iter(last.battery.values()), None)
+
+    def get_power_summary(self) -> dict[str, Any] | None:
+        """Power summary in the legacy shape dashboard / HA-API consumers expect.
+
+        Live values (grid, pv, battery, consumption, SOC) are sourced from the
+        emitter's last snapshot — the authoritative post-redesign location for
+        panel state. The engine still owns the static envelope (grid_online
+        flag, configured battery presence, shed/override sets, recorder bounds,
+        clock acceleration, timezone, soc threshold)."""
+        if self._engine is None:
+            return None
+        summary = self._engine.get_power_summary()
+        snap = self._runtime.emitter.last_snapshot if self._runtime is not None else None
+        if snap is not None:
+            summary["grid_w"] = round(snap.meter.instant_grid_power_w, 1)
+            summary["pv_w"] = round(snap.power_flows.pv or 0.0, 1)
+
+            # Battery is now a dict keyed by instance_id. The simulator models a
+            # single BESS per panel today, so collapse to the first entry. If
+            # multiple natives ever land here, snapshot.power_flows.battery is
+            # the authoritative panel-level aggregate — but the per-device SOC
+            # would still need a policy decision (which one to surface).
+            batt = next(iter(snap.battery.values()), None)
+            if batt is not None:
+                # Sign flip from emitter → SPAN dashboard convention:
+                # emitter ``active_power_w`` is positive = discharging, negative = charging.
+                # SPAN dashboards / HA-API consumers expect positive = charging
+                # (panel→battery), negative = discharging (battery→panel). See SPAN
+                # hardware sign convention reference in SpanPanel/span#184.
+                summary["battery_w"] = round(-batt.active_power_w, 1)
+                summary["soc_pct"] = (
+                    round(batt.soe_percentage, 1) if batt.soe_percentage is not None else None
+                )
+            else:
+                summary["battery_w"] = 0.0
+                summary["soc_pct"] = None
+
+            summary["consumption_w"] = round(snap.power_flows.site or 0.0, 1)
+        return summary
+
+    def update_bess_config(self, bess_yaml: BESSConfigYAML) -> None:
+        """Apply a fresh BESS configuration mid-run (e.g. dashboard edit). The
+        emitter's BESSDevice swaps configs; SOC/SOE state persists across the
+        swap, the change takes effect on the next published tick."""
+        if self._runtime is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        emitter_runtime.update_bess_config_live(self._runtime, bess_yaml)
 
     async def start(self) -> str:
-        """Initialise the engine and begin the tick loop.
-
-        Returns the panel's serial number.
-        """
         engine = DynamicSimulationEngine(
             config_path=self._config_path,
             recorder=self._recorder,
@@ -92,25 +173,27 @@ class PanelInstance:
         await engine.initialize_async()
         self._engine = engine
 
-        serial = engine.serial_number
-        self._publisher = HomiePublisher(
-            serial_number=serial,
-            publish_fn=self._publish_fn,
-            schema=self._schema,
+        self._runtime = await emitter_runtime.start_clone(
+            engine,
+            broker=self._broker,
         )
 
-        # Initial full publish
-        snapshot = await engine.get_snapshot()
-        await self._publisher.publish_init(snapshot)
+        await emitter_runtime.publish_tick(self._runtime)
 
         self._running = True
-        self._tick_task = asyncio.create_task(self._tick_loop(), name=f"tick-{serial}")
+        self._tick_task = asyncio.create_task(
+            self._tick_loop(),
+            name=f"tick-{engine.serial_number}",
+        )
 
-        _LOGGER.info("Panel %s started (config=%s)", serial, self._config_path.name)
-        return serial
+        _LOGGER.info(
+            "Panel %s started (config=%s)",
+            engine.serial_number,
+            self._config_path.name,
+        )
+        return engine.serial_number
 
-    async def stop(self) -> None:
-        """Stop the tick loop and publish disconnected state."""
+    async def stop(self, *, graceful: bool = True) -> None:
         self._running = False
 
         if self._tick_task is not None:
@@ -119,34 +202,29 @@ class PanelInstance:
                 await self._tick_task
             self._tick_task = None
 
-        # Publish $state = disconnected
-        if self._engine is not None:
-            topic = STATE_TOPIC_FMT.format(serial=self._engine.serial_number)
+        if self._runtime is not None:
             try:
-                await self._publish_fn(topic, HOMIE_STATE_DISCONNECTED, True)
+                await emitter_runtime.stop_clone(self._runtime, graceful=graceful)
             except Exception:
-                _LOGGER.debug("Failed to publish disconnect for %s", self._engine.serial_number)
+                _LOGGER.exception("Error stopping emitter runtime")
+            self._runtime = None
 
         serial = self._engine.serial_number if self._engine else "unknown"
         self._engine = None
-        self._publisher = None
         _LOGGER.info("Panel %s stopped", serial)
 
     async def reload(self) -> str:
-        """Stop, re-read configuration, and restart.
-
-        Returns the (possibly changed) serial number.
-        """
         _LOGGER.info("Reloading panel from %s", self._config_path.name)
         await self.stop()
         return await self.start()
 
     async def _tick_loop(self) -> None:
-        """Produce snapshots and publish diffs on each tick."""
         assert self._engine is not None
-        assert self._publisher is not None
+        assert self._runtime is not None
 
         while self._running:
             await asyncio.sleep(self._tick_interval)
-            snapshot = await self._engine.get_snapshot()
-            await self._publisher.publish_diff(snapshot)
+            try:
+                await emitter_runtime.publish_tick(self._runtime)
+            except Exception:
+                _LOGGER.exception("Tick publish failed for %s", self._engine.serial_number)

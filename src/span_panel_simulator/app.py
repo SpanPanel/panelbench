@@ -1,8 +1,8 @@
 """SimulatorApp — multi-panel orchestrator.
 
 Scans a configuration directory for YAML files, creates a PanelInstance
-per file, and manages their lifecycle through a shared MQTT connection.
-Each panel gets its own bootstrap HTTP server on a unique port, matching
+per file, and manages their lifecycle.  Each panel owns its own emitter,
+MQTT publisher, and bootstrap HTTP server on a unique port — matching
 real SPAN hardware where each panel is a separate network device.
 Supports on-demand reload: re-scans configs, starts new panels, stops
 removed panels, and restarts panels whose configs have changed.
@@ -17,7 +17,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import aiomqtt
 import yaml
 from aiohttp import web
 
@@ -34,13 +33,15 @@ from span_panel_simulator.const import (
 )
 from span_panel_simulator.dashboard import DashboardContext, create_dashboard_app
 from span_panel_simulator.discovery import PanelAdvertiser, PanelBrowser
-from span_panel_simulator.engine import _PANEL_SIZE_TO_MODEL
+from span_panel_simulator.emitter_adapter.runtime import BrokerConnection
 from span_panel_simulator.panel import PanelInstance
+from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
 from span_panel_simulator.recorder import RecorderDataSource
 from span_panel_simulator.schema import HomieSchemaRegistry, load_schema, render_for_panel
 
 if TYPE_CHECKING:
     from span_panel_simulator.certs import CertificateBundle
+    from span_panel_simulator.config_types import BESSConfigYAML
     from span_panel_simulator.engine import DynamicSimulationEngine
     from span_panel_simulator.ha_api.client import HAClient, HAConnectionConfig
     from span_panel_simulator.supervisor_discovery import SupervisorDiscovery
@@ -91,9 +92,8 @@ class SimulatorApp:
     """Orchestrates multiple simulated panels from a config directory.
 
     Each ``.yaml`` file in the config directory becomes an independent
-    panel with its own serial number, MQTT topic namespace, and HTTP
-    bootstrap server on a unique port.  All panels share a single MQTT
-    broker connection.
+    panel with its own serial number, MQTT topic namespace, MQTT publisher,
+    and HTTP bootstrap server on a unique port.
 
     Call ``reload()`` at any time to re-scan the directory: new configs
     are started, removed configs are stopped, and changed configs are
@@ -146,7 +146,6 @@ class SimulatorApp:
         self._certs: CertificateBundle | None = None
         self._schema: HomieSchemaRegistry | None = None
         self._running = False
-        self._mqtt_client: aiomqtt.Client | None = None
         self._reload_event: asyncio.Event = asyncio.Event()
         self._ha_config = ha_config
         self._ha_client: HAClient | None = None
@@ -185,7 +184,8 @@ class SimulatorApp:
         return dict(self._panel_start_errors)
 
     def _get_first_engine(self) -> DynamicSimulationEngine | None:
-        """Return the engine of the first running panel, if any."""
+        """Return the engine of the first running panel, or None if no panels are
+        running. Used by HA-API endpoints that operate on a single panel."""
         for panel in self._panels.values():
             if panel.engine is not None:
                 return panel.engine
@@ -194,75 +194,81 @@ class SimulatorApp:
     def _get_engine_for_config_file(
         self, config_filename: str | None
     ) -> DynamicSimulationEngine | None:
-        """Resolve the running engine for a dashboard YAML filename, if any."""
-        if config_filename:
-            path = self._config_dir / config_filename
-            panel = self._panels.get(path)
-            if panel is not None and panel.engine is not None:
+        """Look up a panel's engine by its config filename."""
+        if config_filename is None:
+            return self._get_first_engine()
+        for path, panel in self._panels.items():
+            if path.name == config_filename and panel.engine is not None:
                 return panel.engine
-        return self._get_first_engine()
+        return None
 
     def _get_power_summary(self) -> dict[str, object] | None:
-        """Return current power flows from the first running panel."""
-        engine = self._get_first_engine()
-        if engine is None:
-            return None
-        return engine.get_power_summary()
+        # Route through the first running PanelInstance so battery state from the
+        # emitter is overlaid onto the engine's grid/PV/load summary.
+        for panel in self._panels.values():
+            summary = panel.get_power_summary()
+            if summary is not None:
+                return summary
+        return None
+
+    def apply_bess_config_live(self, filename: str, bess_yaml: BESSConfigYAML) -> bool:
+        """Apply a fresh BESS config to the running panel for ``filename`` without
+        restarting it. SOC/SOE persists across the swap. Refreshes the cached
+        config hash so the reload watcher doesn't see the on-disk YAML change as
+        a restart trigger. Returns True when applied, False when no panel matches."""
+        for path, panel in self._panels.items():
+            if path.name != filename:
+                continue
+            if panel.runtime is None:
+                return False
+            panel.update_bess_config(bess_yaml)
+            # Refresh the cached hash so the reload watcher sees the file as
+            # already-current.
+            self._config_hashes[path] = _file_hash(path)
+            return True
+        return False
 
     def _set_simulation_time(self, iso_str: str) -> None:
-        """Set the simulation time on the first running panel."""
         engine = self._get_first_engine()
         if engine is not None:
             engine.override_simulation_start_time(iso_str)
 
     def _set_time_acceleration(self, accel: float) -> None:
-        """Set the time acceleration on the first running panel."""
         engine = self._get_first_engine()
         if engine is not None:
             engine.set_time_acceleration(accel)
 
     def _set_grid_online(self, online: bool) -> None:
-        """Set the grid online/offline state on the first running panel."""
         engine = self._get_first_engine()
         if engine is not None:
             engine.set_grid_online(online)
 
     def _set_grid_islandable(self, islandable: bool) -> None:
-        """Set the grid islandable flag on the first running panel."""
         engine = self._get_first_engine()
         if engine is not None:
             engine.set_grid_islandable(islandable)
 
     def _set_circuit_priority(self, circuit_id: str, priority: str) -> None:
-        """Push a circuit priority change to the running engine immediately."""
         engine = self._get_first_engine()
         if engine is not None:
             engine.set_dynamic_overrides(circuit_overrides={circuit_id: {"priority": priority}})
 
     def _set_circuit_relay(self, circuit_id: str, relay_state: str) -> None:
-        """Push a circuit relay change to the running engine immediately."""
         engine = self._get_first_engine()
         if engine is not None:
             engine.set_dynamic_overrides(
-                circuit_overrides={circuit_id: {"relay_state": relay_state}}
+                circuit_overrides={circuit_id: {"relay_state": relay_state}},
             )
 
     async def _get_modeling_data(
-        self, horizon_hours: int, config_filename: str | None = None
+        self,
+        horizon_hours: int,
+        config_filename: str | None = None,
     ) -> dict[str, Any] | None:
-        """Compute modeling data from the engine for the active dashboard config."""
         engine = self._get_engine_for_config_file(config_filename)
         if engine is None:
             return None
         return await engine.compute_modeling_data(horizon_hours)
-
-    # ------------------------------------------------------------------
-    # MQTT publish callback (shared across all panels)
-    # ------------------------------------------------------------------
-
-    async def _publish(self, topic: str, payload: str, retain: bool) -> None:
-        assert self._mqtt_client is not None
-        await self._mqtt_client.publish(topic, payload, retain=retain)
 
     # ------------------------------------------------------------------
     # Panel lifecycle
@@ -274,16 +280,30 @@ class SimulatorApp:
         assert self._schema is not None
 
         # Load recorder replay data if HA is connected and config has
-        # recorder_entity mappings.  The RecorderDataSource is populated
-        # here (outside the engine) so the engine stays backend-agnostic.
+        # recorder_entity mappings. The RecorderDataSource is populated here
+        # (outside the engine) so the engine stays backend-agnostic, then
+        # threaded into PanelInstance so the engine has it for both per-tick
+        # power overrides AND the Before/After modeling traces in
+        # ``compute_modeling_data``.
         recorder = await self._load_recorder_data(config_path)
 
+        ca_cert_path = (
+            str(self._certs.ca_cert_path)
+            if self._certs is not None and self._certs.ca_cert_path is not None
+            else None
+        )
+        broker = BrokerConnection(
+            host=self._broker_host,
+            port=self._broker_port,
+            username=self._broker_username,
+            password=self._broker_password,
+            ca_cert_path=ca_cert_path,
+        )
         panel = PanelInstance(
             config_path=config_path,
-            publish_fn=self._publish,
             tick_interval=self._tick_interval,
-            schema=self._schema,
             recorder=recorder,
+            broker=broker,
         )
         serial = await panel.start()
 
@@ -293,7 +313,7 @@ class SimulatorApp:
         # without a bootstrap HTTP server to match.
         try:
             total_tabs = panel.total_tabs
-            panel_model = _PANEL_SIZE_TO_MODEL[total_tabs]
+            panel_model = PANEL_SIZE_TO_MODEL[total_tabs]
             panel_schema = render_for_panel(self._schema, total_tabs)
         except Exception:
             await panel.stop()
@@ -308,12 +328,14 @@ class SimulatorApp:
             while f"{base_serial}-{suffix}" in self._serial_to_panel:
                 suffix += 1
             serial = f"{base_serial}-{suffix}"
-            assert panel.engine is not None  # narrowed by panel.total_tabs above
-            panel.engine.override_serial_number(serial)
-            if panel.publisher is not None:
-                panel.publisher.override_serial(serial)
+            # Serial-override post-cutover requires emitter restart to propagate the
+            # new serial through the manifest + lifecycle. For v0.1.0 of the emitter
+            # integration this is a degraded path: log the duplicate and skip the
+            # rename. Follow-up: implement runtime serial override by tearing down
+            # and restarting the panel's CloneRuntime with the new serial.
             _LOGGER.warning(
-                "Duplicate serial %s detected — renamed to %s",
+                "Duplicate serial %s detected — renamed to %s "
+                "(emitter restart required to take effect)",
                 base_serial,
                 serial,
             )
@@ -716,71 +738,21 @@ class SimulatorApp:
         self._reload_event.set()
 
     # ------------------------------------------------------------------
-    # /set message routing
-    # ------------------------------------------------------------------
-
-    async def _handle_set_messages(self) -> None:
-        """Subscribe to /set topics for all panels and route to the correct engine."""
-        assert self._mqtt_client is not None
-
-        # Subscribe to wildcard for all panel serials
-        for panel in self._panels.values():
-            if panel.publisher is not None:
-                for topic in panel.publisher.get_set_topics():
-                    await self._mqtt_client.subscribe(topic)
-
-        async for message in self._mqtt_client.messages:
-            topic_str = str(message.topic)
-            payload_str = (
-                message.payload.decode("utf-8")
-                if isinstance(message.payload, bytes | bytearray)
-                else str(message.payload)
-            )
-
-            # Route to the correct panel by trying each publisher
-            for panel in self._panels.values():
-                if panel.publisher is None or panel.engine is None:
-                    continue
-                parsed = panel.publisher.resolve_set_message(topic_str)
-                if parsed is None:
-                    continue
-
-                target_type, circuit_id, prop = parsed
-                _LOGGER.info(
-                    "Set command [%s]: %s/%s = %s",
-                    panel.serial_number,
-                    target_type,
-                    prop,
-                    payload_str,
-                )
-
-                if target_type == "circuit" and prop == "relay":
-                    panel.engine.set_dynamic_overrides(
-                        circuit_overrides={circuit_id: {"relay_state": payload_str}}
-                    )
-                elif target_type == "circuit" and prop == "shed-priority":
-                    panel.engine.set_dynamic_overrides(
-                        circuit_overrides={circuit_id: {"priority": payload_str}}
-                    )
-                break  # Only one panel should match
-
-    # ------------------------------------------------------------------
     # Reload watcher
     # ------------------------------------------------------------------
 
     async def _reload_watcher(self) -> None:
-        """Wait for reload signals and execute them."""
+        """Wait for reload signals and execute them. Per-panel /set re-subscription
+        is now handled by each panel's emitter on restart."""
         while self._running:
             await self._reload_event.wait()
             self._reload_event.clear()
+            # `stop()` wakes this watcher by setting the same event, so re-check
+            # before reloading — otherwise shutdown would run one last reload.
+            if not self._running:
+                break
             try:
                 await self.reload()
-                # Re-subscribe for any new panels' /set topics
-                if self._mqtt_client is not None:
-                    for panel in self._panels.values():
-                        if panel.publisher is not None:
-                            for topic in panel.publisher.get_set_topics():
-                                await self._mqtt_client.subscribe(topic)
             except Exception:
                 _LOGGER.exception("Reload failed")
 
@@ -854,6 +826,7 @@ class SimulatorApp:
             set_grid_islandable=self._set_grid_islandable,
             set_circuit_priority=self._set_circuit_priority,
             set_circuit_relay=self._set_circuit_relay,
+            apply_bess_config_live=self.apply_bess_config_live,
             get_modeling_data=self._get_modeling_data,
             ha_client=ha_client,
             history_provider=ha_client,
@@ -866,27 +839,16 @@ class SimulatorApp:
         await dashboard_site.start()
         _LOGGER.info("Dashboard listening on http://0.0.0.0:%d", self._dashboard_port)
 
-        # 5. Connect to MQTT broker and run
+        # 5. Each panel owns its own emitter+publisher (MQTT connection),
+        # so the app no longer holds a top-level MQTT client.  Just start
+        # all panels and run the reload watcher.
         self._running = True
         try:
-            async with aiomqtt.Client(
-                hostname=self._broker_host,
-                port=self._broker_port,
-                username=self._broker_username,
-                password=self._broker_password,
-                tls_params=aiomqtt.TLSParameters(
-                    ca_certs=str(certs.ca_cert_path),
-                ),
-            ) as client:
-                self._mqtt_client = client
+            # 6. Initial config scan — start all panels
+            await self.reload()
 
-                # 6. Initial config scan — start all panels
-                await self.reload()
-
-                # 7. Run /set handler and reload watcher concurrently
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(self._handle_set_messages())
-                    tg.create_task(self._reload_watcher())
+            # 7. Run reload watcher
+            await self._reload_watcher()
 
         finally:
             self._running = False
@@ -907,5 +869,11 @@ class SimulatorApp:
             _LOGGER.info("Simulator shut down")
 
     async def stop(self) -> None:
-        """Signal the simulator to stop."""
+        """Signal the simulator to stop.
+
+        Clearing the flag alone is not enough: `_reload_watcher` is parked on
+        `_reload_event.wait()` and would never notice. Setting the event wakes it
+        so it can fall out of `run()` into the cleanup that stops every panel —
+        which is what clears each panel's retained MQTT topics."""
         self._running = False
+        self._reload_event.set()

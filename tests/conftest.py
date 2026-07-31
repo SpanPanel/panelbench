@@ -1,126 +1,54 @@
-"""Shared test fixtures for the simulator test suite."""
+"""Shared test fixtures for the simulator test suite.
+
+Post-emitter cutover: the legacy snapshot/publisher fixtures have been removed because
+the underlying types (SpanPanelSnapshot, HomiePublisher) no longer exist on the
+simulator side — they live in the emitter package as Ebus*Snapshot."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+import asyncio
+import socket
+from typing import TYPE_CHECKING
 
-import pytest
+import pytest_asyncio
+from amqtt.broker import Broker
 
-from span_panel_simulator.const import DEFAULT_FIRMWARE_VERSION
-from span_panel_simulator.models import (
-    SpanBatterySnapshot,
-    SpanCircuitSnapshot,
-    SpanPanelSnapshot,
-    SpanPcsSnapshot,
-    SpanPVSnapshot,
-)
-from span_panel_simulator.publisher import HomiePublisher
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
-@pytest.fixture
-def sample_snapshot() -> SpanPanelSnapshot:
-    """A minimal but complete snapshot for testing."""
-    circuits = {
-        "living_room_lights": SpanCircuitSnapshot(
-            circuit_id="living_room_lights",
-            name="Living Room Lights",
-            relay_state="CLOSED",
-            instant_power_w=150.0,
-            produced_energy_wh=0.0,
-            consumed_energy_wh=5000.0,
-            tabs=[1],
-            priority="MUST_HAVE",
-            is_user_controllable=True,
-            is_sheddable=False,
-            is_never_backup=False,
-            current_a=1.25,
-            breaker_rating_a=15.0,
-        ),
-        "kitchen_outlets": SpanCircuitSnapshot(
-            circuit_id="kitchen_outlets",
-            name="Kitchen Outlets",
-            relay_state="CLOSED",
-            instant_power_w=800.0,
-            produced_energy_wh=0.0,
-            consumed_energy_wh=25000.0,
-            tabs=[3, 5],
-            priority="NICE_TO_HAVE",
-            is_user_controllable=True,
-            is_sheddable=True,
-            is_never_backup=False,
-            is_240v=True,
-            current_a=6.7,
-            breaker_rating_a=20.0,
-        ),
-        "unmapped_tab_2": SpanCircuitSnapshot(
-            circuit_id="unmapped_tab_2",
-            name="Unmapped Tab 2",
-            relay_state="CLOSED",
-            instant_power_w=0.0,
-            produced_energy_wh=0.0,
-            consumed_energy_wh=0.0,
-            tabs=[2],
-            priority="UNKNOWN",
-            is_user_controllable=False,
-            is_sheddable=False,
-            is_never_backup=False,
-        ),
-    }
+def _free_port() -> int:
+    sock = socket.socket()
+    sock.bind(("", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
 
-    return SpanPanelSnapshot(
-        serial_number="SPAN-TEST-001",
-        firmware_version=DEFAULT_FIRMWARE_VERSION,
-        main_relay_state="CLOSED",
-        instant_grid_power_w=950.0,
-        feedthrough_power_w=0.0,
-        main_meter_energy_consumed_wh=100000.0,
-        main_meter_energy_produced_wh=0.0,
-        feedthrough_energy_consumed_wh=0.0,
-        feedthrough_energy_produced_wh=0.0,
-        dsm_state="DSM_ON_GRID",
-        current_run_config="PANEL_ON_GRID",
-        door_state="CLOSED",
-        proximity_proven=True,
-        uptime_s=3600,
-        eth0_link=True,
-        wlan_link=False,
-        wwan_link=False,
-        panel_size=32,
-        dominant_power_source="GRID",
-        grid_islandable=False,
-        l1_voltage=121.3,
-        l2_voltage=119.8,
-        main_breaker_rating_a=200,
-        wifi_ssid="TestNetwork",
-        vendor_cloud="CONNECTED",
-        postal_code="94103",
-        time_zone="America/Los_Angeles",
-        panel_model="MAIN_32",
-        power_flow_grid=950.0,
-        power_flow_site=950.0,
-        power_flow_pv=0.0,
-        power_flow_battery=0.0,
-        upstream_l1_current_a=3.96,
-        upstream_l2_current_a=3.96,
-        downstream_l1_current_a=0.0,
-        downstream_l2_current_a=0.0,
-        circuits=circuits,
-        battery=SpanBatterySnapshot(),
-        pv=SpanPVSnapshot(),
-        pcs=SpanPcsSnapshot(),
+
+@pytest_asyncio.fixture
+async def amqtt_broker() -> AsyncIterator[tuple[str, int]]:
+    """In-process pure-Python MQTT broker (amqtt) for tests that need a live broker.
+    Yields (host, port). No system mosquitto required."""
+    port = _free_port()
+    # Use the v0.11+ "plugins" config form instead of EntryPoint-based discovery
+    # (which amqtt deprecated). Declare the anonymous-auth plugin explicitly so
+    # tests can connect without credentials; declaring `plugins` here means
+    # `auth` / `topic-check` sections of config are ignored.
+    broker = Broker(
+        config={
+            "listeners": {
+                "default": {"type": "tcp", "bind": f"127.0.0.1:{port}"},
+            },
+            "plugins": {
+                "amqtt.plugins.authentication.AnonymousAuthPlugin": {
+                    "allow_anonymous": True,
+                },
+            },
+        },
     )
-
-
-@pytest.fixture
-def publish_mock() -> AsyncMock:
-    """Mock publish function that records calls."""
-    return AsyncMock()
-
-
-@pytest.fixture
-def publisher(publish_mock: AsyncMock) -> HomiePublisher:
-    """HomiePublisher wired to a mock publish function."""
-    return HomiePublisher(
-        serial_number="SPAN-TEST-001",
-        publish_fn=publish_mock,
-    )
+    await broker.start()
+    await asyncio.sleep(0.05)
+    try:
+        yield ("127.0.0.1", port)
+    finally:
+        await broker.shutdown()

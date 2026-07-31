@@ -29,3 +29,11 @@ span_panel_simulator/docs/cost-and-montecarlo-specs.md
 # Rate cache contains API keys — never commit
 configs/rates/
 configs/*_history.db
+
+# Only default_* templates are tracked in configs/; user clones are local-only
+configs/*.yaml
+!configs/default_*.yaml
+
+# Local-developer source overrides + env. See .env.example and uv.toml.example.
+.env
+uv.toml

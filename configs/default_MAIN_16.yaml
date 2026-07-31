@@ -16,7 +16,7 @@ bess:
   charge_efficiency: 0.95
   discharge_efficiency: 0.95
   backup_reserve_pct: 20.0
-  charge_mode: solar-gen
+  charge_mode: self-consumption
   charge_hours: [8, 9, 10, 11, 12, 13, 14, 15]
   discharge_hours: [16, 17, 18, 19, 20, 21, 22]
 
@@ -59,7 +59,7 @@ circuit_templates:
       power_variation: 0.2
       efficiency: 0.85
       nameplate_capacity_w: 5000.0
-    relay_behavior: "non_controllable"
+    relay_behavior: "non-controllable"
     priority: "NEVER"
     device_type: "pv"
     breaker_rating: 30

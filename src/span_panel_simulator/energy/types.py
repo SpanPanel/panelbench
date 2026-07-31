@@ -1,10 +1,11 @@
-"""Core types for the component-based energy system."""
+"""Core types for the component-based energy system. Battery (BESS) modeling lives
+in the emitter (`ebus_emitter.native_devices.bess`) — this module only covers the
+grid + PV + load balance the simulator owns."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any
 
 
 class ComponentRole(IntEnum):
@@ -12,8 +13,7 @@ class ComponentRole(IntEnum):
 
     LOAD = 1
     SOURCE = 2
-    STORAGE = 3
-    SLACK = 4
+    SLACK = 3
 
 
 @dataclass
@@ -34,7 +34,6 @@ class BusState:
 
     total_demand_w: float = 0.0
     total_supply_w: float = 0.0
-    storage_contribution_w: float = 0.0
     grid_power_w: float = 0.0
 
     @property
@@ -51,10 +50,8 @@ class BusState:
 class PowerInputs:
     """External inputs fed into the energy resolution pipeline.
 
-    Contains only raw measurements and grid status.  All energy
-    scheduling (charge mode, TOU hours, islanding overrides) is
-    resolved internally by ``EnergySystem.tick`` — callers should
-    not pre-compute BESS state.
+    Contains only raw measurements and grid status. Battery dispatch is
+    resolved by the emitter's BESS native device, not here.
     """
 
     pv_available_w: float = 0.0
@@ -64,15 +61,11 @@ class PowerInputs:
 
 @dataclass
 class SystemState:
-    """Resolved system state after energy dispatch."""
+    """Resolved system state after energy dispatch (grid + PV + load only)."""
 
     grid_power_w: float
     pv_power_w: float
-    bess_power_w: float
-    bess_state: str
     load_power_w: float
-    soe_kwh: float
-    soe_percentage: float
     balanced: bool
 
 
@@ -92,27 +85,6 @@ class PVConfig:
 
 
 @dataclass(frozen=True)
-class BESSConfig:
-    """Configuration for a battery energy storage system."""
-
-    nameplate_kwh: float = 13.5
-    max_charge_w: float = 3500.0
-    max_discharge_w: float = 3500.0
-    charge_efficiency: float = 0.95
-    discharge_efficiency: float = 0.95
-    backup_reserve_pct: float = 20.0
-    hard_min_pct: float = 5.0
-    hybrid: bool = False
-    initial_soe_kwh: float | None = None
-    panel_serial: str = ""
-    charge_hours: tuple[int, ...] = ()
-    discharge_hours: tuple[int, ...] = ()
-    panel_timezone: str = "America/Los_Angeles"
-    charge_mode: str = "self-consumption"
-    rate_record: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
 class LoadConfig:
     """Configuration for a load group."""
 
@@ -121,9 +93,8 @@ class LoadConfig:
 
 @dataclass(frozen=True)
 class EnergySystemConfig:
-    """Top-level configuration for the entire energy system."""
+    """Top-level configuration for the energy system (grid + PV + loads only)."""
 
     grid: GridConfig
     pv: PVConfig | None = None
-    bess: BESSConfig | None = None
     loads: list[LoadConfig] = field(default_factory=list)

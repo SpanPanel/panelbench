@@ -67,7 +67,11 @@ ensure_prerequisites() {
 
 ensure_venv() {
     echo "==> Syncing dependencies..."
-    uv sync --quiet
+    # ``uv sync`` alone would strip the local-path ``ebus-emitter`` editable
+    # install (it isn't declared in pyproject.toml because the path is
+    # contributor-specific; see scripts/dev-setup.sh for the .env contract).
+    # dev-setup.sh wraps ``uv sync`` and re-installs ebus-emitter editable.
+    bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
     # shellcheck disable=SC1091
     source "${VENV_DIR}/bin/activate"
 }
@@ -75,7 +79,7 @@ ensure_venv() {
 generate_certs() {
     echo "==> Checking TLS certificates..."
     mkdir -p "${CERT_DIR}"
-    ADVERTISE_ADDRESS="${ADVERTISE_ADDR}" CERT_DIR="${CERT_DIR}" python3 -c "
+    ADVERTISE_ADDRESS="${ADVERTISE_ADDR}" CERT_DIR="${CERT_DIR}" "${VENV_DIR}/bin/python3" -c "
 import os
 from span_panel_simulator.certs import generate_certificates
 from pathlib import Path

@@ -20,8 +20,15 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from span_panel_simulator.homie_const import TYPE_BESS, TYPE_CIRCUIT, TYPE_EVSE, TYPE_PV
 from span_panel_simulator.validation import validate_yaml_config
+
+# Homie node type strings used by the scraping path to identify entity classes from
+# a discovered panel's MQTT topology. Inlined here (rather than imported from a
+# central module) because the scraping path is the only consumer post-emitter cutover.
+TYPE_CIRCUIT = "energy.ebus.device.circuit"
+TYPE_BESS = "energy.ebus.device.bess"
+TYPE_PV = "energy.ebus.device.pv"
+TYPE_EVSE = "energy.ebus.device.evse"
 
 if TYPE_CHECKING:
     from pathlib import Path
