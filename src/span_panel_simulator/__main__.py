@@ -20,6 +20,47 @@ from span_panel_simulator.const import (
 )
 
 
+class _NoisyDependencyFilter(logging.Filter):
+    """Drop sub-threshold records from dependencies that log at the wrong level.
+
+    ebus-sdk's ``homie`` logger pins *itself* to INFO at import time
+    (``ebus_sdk/homie.py``) and dumps every node's full property table through
+    ``pformat()`` — thousands of lines per panel while the device graph is built,
+    emitted no matter what ``--log-level`` the operator asked for.
+    ``aiohttp.access`` logs a line per HTTP request.
+
+    This filters on the root handler rather than calling ``setLevel()`` on those
+    loggers, so it holds regardless of when the offending module is imported or
+    whether it re-pins its own level afterwards.
+    """
+
+    NOISY = ("homie", "aiohttp.access")
+
+    def __init__(self, threshold: int) -> None:
+        super().__init__()
+        self._threshold = threshold
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= self._threshold:
+            return True
+        return not record.name.startswith(self.NOISY)
+
+
+def _configure_logging(log_level: str) -> None:
+    """Set up root logging and hold back the chatty dependencies.
+
+    The noisy loggers are silenced unless the operator explicitly asked for DEBUG
+    (``--log-level DEBUG``, or ``scripts/run-local.sh --debug``), which still
+    shows everything."""
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+    threshold = logging.DEBUG if log_level == "DEBUG" else logging.WARNING
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(_NoisyDependencyFilter(threshold))
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="span-simulator",
@@ -127,12 +168,7 @@ def main(argv: list[str] | None = None) -> None:
         logging.warning("--http-port is deprecated, use --base-http-port instead")
         base_http_port = args.http_port
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    )
-    # Suppress noisy per-request access logs unless explicitly at DEBUG.
-    logging.getLogger("aiohttp.access").setLevel(logging.DEBUG)
+    _configure_logging(args.log_level)
 
     config_dir: Path = args.config_dir
     if not config_dir.is_dir():
