@@ -95,7 +95,7 @@ networking), but the integration can connect by manual configuration. On Linux, 
 ```bash
 # Build (use aarch64 base on Apple Silicon, amd64 on Intel/Linux)
 docker build -f span_panel_simulator/Dockerfile \
-  --build-arg BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.13-alpine3.21 \
+  --build-arg BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.14-alpine3.23 \
   -t span-panel-simulator:local .
 
 # Run

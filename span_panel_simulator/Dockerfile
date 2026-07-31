@@ -1,4 +1,4 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.13-alpine3.21
+ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.14-alpine3.23
 FROM ${BUILD_FROM}
 
 # Install mosquitto, jq, and build tools needed for native Python extensions
