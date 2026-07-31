@@ -747,6 +747,10 @@ class SimulatorApp:
         while self._running:
             await self._reload_event.wait()
             self._reload_event.clear()
+            # `stop()` wakes this watcher by setting the same event, so re-check
+            # before reloading — otherwise shutdown would run one last reload.
+            if not self._running:
+                break
             try:
                 await self.reload()
             except Exception:
@@ -865,5 +869,11 @@ class SimulatorApp:
             _LOGGER.info("Simulator shut down")
 
     async def stop(self) -> None:
-        """Signal the simulator to stop."""
+        """Signal the simulator to stop.
+
+        Clearing the flag alone is not enough: `_reload_watcher` is parked on
+        `_reload_event.wait()` and would never notice. Setting the event wakes it
+        so it can fall out of `run()` into the cleanup that stops every panel —
+        which is what clears each panel's retained MQTT topics."""
         self._running = False
+        self._reload_event.set()

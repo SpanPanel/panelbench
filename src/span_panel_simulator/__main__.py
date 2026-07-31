@@ -6,8 +6,10 @@ import argparse
 import asyncio
 import logging
 import os
+import signal
 import sys
 from pathlib import Path
+from typing import Protocol
 
 from span_panel_simulator.app import SimulatorApp
 from span_panel_simulator.const import (
@@ -44,6 +46,46 @@ class _NoisyDependencyFilter(logging.Filter):
         if record.levelno >= self._threshold:
             return True
         return not record.name.startswith(self.NOISY)
+
+
+class _StoppableApp(Protocol):
+    """The slice of `SimulatorApp` the signal wiring needs."""
+
+    async def run(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+
+async def _run_until_signalled(app: _StoppableApp) -> None:
+    """Run the simulator, shutting it down gracefully on SIGTERM/SIGINT.
+
+    SIGTERM is how `scripts/run-local.sh --stop`, Docker, and the Home Assistant
+    supervisor stop the simulator. Python's default disposition for it kills the
+    process outright, so `SimulatorApp.run`'s cleanup never ran — and that cleanup
+    is what stops each panel, which is what clears the panel's retained MQTT
+    topics. Every SIGTERM stop therefore left a full retained tree on the broker
+    with `$state` flipped to lost by the Last Will, orphaned for good if that
+    panel never came back.
+
+    Routing both signals through `app.stop()` gives every stop path the same
+    deterministic shutdown that Ctrl-C previously got only by way of
+    `KeyboardInterrupt` unwinding the stack."""
+    loop = asyncio.get_running_loop()
+
+    # The stop task is held until it finishes: a bare create_task() reference can
+    # be garbage-collected mid-flight, which would drop the shutdown on the floor.
+    stop_tasks: set[asyncio.Task[None]] = set()
+
+    def request_stop(signal_name: str) -> None:
+        logging.info("%s received — shutting down", signal_name)
+        task = loop.create_task(app.stop())
+        stop_tasks.add(task)
+        task.add_done_callback(stop_tasks.discard)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, request_stop, sig.name)
+
+    await app.run()
 
 
 def _configure_logging(log_level: str) -> None:
@@ -227,7 +269,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     try:
-        asyncio.run(app.run())
+        asyncio.run(_run_until_signalled(app))
     except KeyboardInterrupt:
         logging.info("Interrupted — shutting down")
 

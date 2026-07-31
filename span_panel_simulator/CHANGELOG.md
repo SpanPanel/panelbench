@@ -20,6 +20,9 @@
 - Panel startup no longer fails with `AttributeError: 'NoneType' object has no attribute 'get'`. The developer bootstrap script re-resolved the emitter's
   dependencies against PyPI instead of its lock file and pulled an `ebus-sdk` release incompatible with the `Device` API the emitter targets; setup now installs
   the emitter's locked dependency set
+- Stopping the simulator now clears each panel's retained MQTT topics on every stop path, not just Ctrl-C. `scripts/run-local.sh --stop`, Docker, and the Home
+  Assistant supervisor all stop the process with SIGTERM, which was unhandled — the process died outright and its shutdown never ran, stranding a full retained
+  topic tree on the broker with `$state` flipped to lost by the Last Will. A panel that was renamed or removed left those topics orphaned for good
 - Panel startup no longer floods the console with the Homie device schema. The ebus-sdk `homie` logger pins itself to INFO and dumps every node's full property
   table, so the dump appeared at any `--log-level`. It and `aiohttp.access` are now held to warnings unless you ask for `--log-level DEBUG`
   (`scripts/run-local.sh --debug`), which still shows everything
