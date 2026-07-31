@@ -30,13 +30,12 @@ from span_panel_simulator.clock import SimulationClock
 from span_panel_simulator.exceptions import SimulationConfigurationError
 
 if TYPE_CHECKING:
-    from ebus_emitter import BESSDevice
-
     from span_panel_simulator.config_types import (
         CircuitTemplateExtended,
         SimulationConfig,
     )
     from span_panel_simulator.energy import EnergySystem, PowerInputs
+    from span_panel_simulator.flat_emitter import BESSDevice
     from span_panel_simulator.recorder import RecorderDataSource
 
 from span_panel_simulator.hvac import hvac_seasonal_factor
@@ -1362,11 +1361,11 @@ def _build_modeling_bess(
     if not (isinstance(bess_yaml, dict) and bess_yaml.get("enabled")):
         return None
 
-    from ebus_emitter import BESSConfig
-    from ebus_emitter import BESSDevice as _BESSDevice
+    from span_panel_simulator.flat_emitter import BESSConfig, ChargeMode
+    from span_panel_simulator.flat_emitter import BESSDevice as _BESSDevice
 
     raw_mode = bess_yaml.get("charge_mode", "self-consumption")
-    mode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
+    mode: ChargeMode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
     panel_cfg = config.get("panel_config") or {}
     if isinstance(panel_cfg, dict):
         serial = str(panel_cfg.get("serial_number", "modeling-panel"))
@@ -1400,7 +1399,7 @@ def _bess_dispatch(
     no device is configured."""
     if device is None:
         return 0.0
-    from ebus_emitter.native_devices import NativeTickContext
+    from span_panel_simulator.flat_emitter.native_devices import NativeTickContext
 
     snap = device.tick(
         NativeTickContext(

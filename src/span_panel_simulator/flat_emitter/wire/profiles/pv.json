@@ -1,0 +1,18 @@
+{
+  "$version": 1,
+  "type": "energy.ebus.device.pv",
+  "capabilities": {
+    "pv": {
+      "type": "energy.ebus.device.pv",
+      "properties": {
+        "vendor-name": {"name": "Vendor name", "datatype": "string"},
+        "product-name": {"name": "Product name", "datatype": "string"},
+        "serial-number": {"name": "Serial number", "datatype": "string"},
+        "software-version": {"name": "Software version", "datatype": "string"},
+        "nameplate-capacity": {"name": "Nameplate capacity", "datatype": "float", "unit": "W"},
+        "relative-position": {"name": "Relative position of the commissioned PV system WRT the distribution enclosure", "datatype": "enum", "format": "UPSTREAM,DOWNSTREAM,IN_PANEL"},
+        "feed": {"name": "Circuit ID upon which the commissioned PV system is landed", "datatype": "enum"}
+      }
+    }
+  }
+}

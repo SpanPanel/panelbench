@@ -5,7 +5,7 @@ which returns a ``PowerContribution`` given the current ``BusState``. All power
 values are non-negative magnitudes; direction is expressed by which field
 (``demand_w`` vs ``supply_w``) is populated.
 
-BESS modeling lives in the emitter (`ebus_emitter.native_devices.bess`); the
+BESS modeling lives in the emitter (`span_panel_simulator.flat_emitter.native_devices.bess`); the
 simulator's energy bus is grid + PV + load only.
 """
 

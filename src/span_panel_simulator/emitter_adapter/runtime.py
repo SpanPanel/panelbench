@@ -17,8 +17,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import aiomqtt
-from ebus_emitter import (
+
+from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
+from span_panel_simulator.emitter_adapter.spec_generator import build_manifest
+from span_panel_simulator.flat_emitter import (
     BESSConfig,
+    ChargeMode,
     DeviceManifest,
     EbusPanelSnapshot,
     Emitter,
@@ -27,9 +31,6 @@ from ebus_emitter import (
     SetterRegistry,
     TickInputs,
 )
-
-from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
-from span_panel_simulator.emitter_adapter.spec_generator import build_manifest
 
 if TYPE_CHECKING:
     from span_panel_simulator.config_types import (
@@ -163,7 +164,7 @@ def _build_bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig |
     if not bess.get("enabled"):
         return None
     raw_mode = bess.get("charge_mode", "self-consumption")
-    mode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
+    mode: ChargeMode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
     del serial_number
     return BESSConfig(
         instance_id=str(bess.get("instance_id", "bess")),

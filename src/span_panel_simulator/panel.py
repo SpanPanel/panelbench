@@ -18,10 +18,9 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
-    from ebus_emitter import EbusBatterySnapshot
-
     from span_panel_simulator.config_types import BESSConfigYAML
     from span_panel_simulator.emitter_adapter.runtime import BrokerConnection, CloneRuntime
+    from span_panel_simulator.flat_emitter import EbusBatterySnapshot
     from span_panel_simulator.recorder import RecorderDataSource
 
 _LOGGER = logging.getLogger(__name__)

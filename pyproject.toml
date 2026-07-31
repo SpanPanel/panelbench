@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "span-panel-simulator"
-version = "1.0.12"
+version = "1.0.13"
 description = "Standalone eBus simulator for SPAN panels"
 requires-python = ">=3.14"
 dependencies = [
@@ -16,12 +16,29 @@ dependencies = [
     "pyyaml>=6.0",
     "zeroconf>=0.131.0",
     "timezonefinder>=6.0",
+    # Runtime dependencies of the vendored flat emitter
+    # (`src/span_panel_simulator/flat_emitter`, see its module docstring for provenance).
+    #
+    # ebus-sdk is upper-bounded at 0.2: the vendored `wire/graph_builder.py` targets the
+    # 0.1.x `Device` constructor. 0.2.0 introduced parent/child device trees, replaced the
+    # `children_ids`/`root_id`/`parent_id` kwargs with a `parent=` Device reference, removed
+    # `Device.add_child()`, and changed the `mqtt_cfg` default from `{}` to `None` — which
+    # makes the root Device we build as a passive topic/schema model raise in
+    # `connect_broker()`. Raising this bound requires porting graph_builder to the tree API
+    # and deciding who owns the broker connection (today the producer's client publishes
+    # everything). This simulator publishes the flat schema, so the port has no urgency.
+    #
+    # Pinned exactly, not ranged, so vendoring is behaviour-neutral: 0.1.5 is what the
+    # emitter's lockfile resolved and what this code was developed and tested against.
+    # Letting it float within <0.2 resolves 0.1.10, which drops the module-level
+    # `setLevel(INFO)` on the `homie` logger that `tests/test_main_logging.py` guards —
+    # the noise-filter premise documented in `__main__.py`. The add-on image installs from
+    # this file rather than the lockfile, so the declared bound is the operative control
+    # in production. Raising it is a deliberate follow-up with its own testing, not a
+    # side effect of moving code.
+    "ebus-sdk==0.1.5",
+    "paho-mqtt>=2.0.0",
 ]
-
-# `ebus-emitter` is a runtime dependency but is not listed here because it is not on
-# PyPI and its checkout location varies per developer. Run `scripts/dev-setup.sh`
-# (which reads `.env` for `EBUS_EMITTER_PATH`) to install it editable into the venv.
-# See `.env.example` for the expected variable.
 
 [dependency-groups]
 dev = [
@@ -46,6 +63,12 @@ span-simulator = "span_panel_simulator.__main__:main"
 # added to the wheel archive at the same path"), breaking `pip install .` in the
 # add-on Docker build. Build isolation resolves `hatchling` fresh on every build,
 # so the older, tolerant version this was authored against is not coming back.
+#
+# The same applies to the vendored flat emitter's data files
+# (`flat_emitter/wire/profiles/*.json`, `flat_emitter/wire/mapping/*.yaml`): they live
+# under `src/span_panel_simulator`, so `packages` already ships them. Upstream declared
+# them via `force-include` because its package root was elsewhere; re-adding that here
+# would reintroduce the duplicate-path collision described above.
 packages = ["src/span_panel_simulator"]
 
 [tool.ruff]
@@ -57,9 +80,16 @@ line-length = 99
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
-# TC002 (move third-party import into TYPE_CHECKING) conflicts with mypy's need for runtime
-# resolution of imported names referenced from generic functions/methods. Disable to allow
-# straightforward runtime imports.
+# TC001/TC002/TC003 (move imports into TYPE_CHECKING blocks) conflict with mypy's need for
+# runtime resolution of imported names referenced from generic functions/methods. Disable to
+# allow straightforward runtime imports.
+#
+# This ignore was previously described by this comment but never actually declared — none of
+# the simulator's own modules happened to trigger the rules, so the omission was invisible.
+# The vendored flat emitter does trigger them, and was authored under an identical select
+# list plus this same ignore, so declaring it here restores the intent rather than relaxing
+# the bar for vendored code.
+ignore = ["TC001", "TC002", "TC003"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -73,12 +103,15 @@ strict = true
 module = "timezonefinder"
 ignore_missing_imports = true
 
+# ebus-sdk ships without a py.typed marker. Previously these overrides lived in the emitter's
+# own pyproject; they move here with the vendored code. Both forms are needed — the wildcard
+# alone does not match the top-level `ebus_sdk` import in `flat_emitter/wire/_sdk_seam.py`.
 [[tool.mypy.overrides]]
-module = "ebus_emitter"
+module = "ebus_sdk"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "ebus_emitter.*"
+module = "ebus_sdk.*"
 ignore_missing_imports = true
 
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a

@@ -1,0 +1,18 @@
+{
+  "$version": 1,
+  "type": "energy.ebus.device.lugs",
+  "capabilities": {
+    "lugs": {
+      "type": "energy.ebus.device.lugs",
+      "properties": {
+        "direction": {"name": "Lugs feed direction: upstream or downstream", "datatype": "enum", "format": "UPSTREAM,DOWNSTREAM"},
+        "feed": {"name": "Device the lugs are connected to, if known", "datatype": "string"},
+        "l1-current": {"name": "L1 current", "datatype": "float", "unit": "A"},
+        "l2-current": {"name": "L2 current", "datatype": "float", "unit": "A"},
+        "active-power": {"name": "Active power", "datatype": "float", "unit": "W"},
+        "imported-energy": {"name": "Imported energy", "datatype": "float", "unit": "Wh"},
+        "exported-energy": {"name": "Exported energy", "datatype": "float", "unit": "Wh"}
+      }
+    }
+  }
+}

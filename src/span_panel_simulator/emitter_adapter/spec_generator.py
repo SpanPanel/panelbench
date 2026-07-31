@@ -14,9 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ebus_emitter import DeviceInstance, DeviceManifest
-
 from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
+from span_panel_simulator.flat_emitter import DeviceInstance, DeviceManifest
 from span_panel_simulator.panel_models import PANEL_SIZE_TO_MODEL
 
 if TYPE_CHECKING:
