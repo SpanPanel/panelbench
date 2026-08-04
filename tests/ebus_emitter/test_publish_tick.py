@@ -565,11 +565,11 @@ async def test_internal_setters_registered_when_no_producer_handler() -> None:
     manifest = DeviceManifest(instances=(_panel_inst(), _circuit_inst()))
     setters = SetterRegistry()
     em = Emitter(manifest, setters, FakeMqttClient())
-    # All four required handlers should now be present.
-    assert setters.get("circuit", "circuit/relay") is not None
-    assert setters.get("circuit", "circuit/shed-priority") is not None
-    assert setters.get("circuit", "circuit/name") is not None
-    assert setters.get("panel", "core/dominant-power-source") is not None
+    # The settable set in v1.0; info/name is read-only and gets no handler.
+    assert setters.get("circuit", "switch/relay") is not None
+    assert setters.get("circuit", "load-shed/priority") is not None
+    assert setters.get("panel", "shed/asserted-islanding-state") is not None
+    assert setters.get("circuit", "info/name") is None
     del em  # silence unused
 
 
@@ -580,10 +580,10 @@ async def test_internal_relay_setter_routes_to_relay_resolver() -> None:
     em = Emitter(manifest, setters, FakeMqttClient())
     await em.start()
 
-    # Simulate /set circuit/relay = false (open).
-    handler = setters.get("circuit", "circuit/relay")
+    # Simulate /set switch/relay = false (open).
+    handler = setters.get("circuit", "switch/relay")
     assert handler is not None
-    await handler("circuit", "kitchen", "circuit/relay", False)
+    await handler("circuit", "kitchen", "switch/relay", False)
 
     snap = await em.publish_tick(
         TickInputs(current_time=0.0, grid_online=True, circuits={"kitchen": 1000.0}),
@@ -650,9 +650,9 @@ async def test_internal_priority_setter_changes_shed_decision() -> None:
     assert snap.circuits["ev"].relay_state == "CLOSED"
 
     # Operator changes priority to OFF_GRID.
-    handler = setters.get("circuit", "circuit/shed-priority")
+    handler = setters.get("circuit", "load-shed/priority")
     assert handler is not None
-    await handler("circuit", "ev", "circuit/shed-priority", "OFF_GRID")
+    await handler("circuit", "ev", "load-shed/priority", "OFF_GRID")
 
     snap2 = await em.publish_tick(
         TickInputs(current_time=1.0, grid_online=False, circuits={"ev": 7000.0}),

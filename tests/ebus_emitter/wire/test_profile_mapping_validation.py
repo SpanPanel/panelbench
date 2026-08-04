@@ -71,14 +71,23 @@ discovery:
         mapping.validate_against(profiles)
 
 
-def test_settable_properties_circuit_includes_relay_and_priority() -> None:
-    profiles = load_profiles()
-    settables = profiles["circuit"].settable_properties()
-    assert ("circuit", "relay") in settables
-    assert ("circuit", "shed-priority") in settables
+def test_settable_properties_match_the_v1_0_set_exactly() -> None:
+    """v1.0 defines four settable topics and nothing else is writable.
 
-
-def test_settable_properties_panel_includes_dominant_power_source() -> None:
+    Asserted as an exact match rather than membership, because the risk runs both
+    ways: a missing entry breaks control, and a spurious one advertises a write the
+    panel will not honour. `<circuit>/info/name` in particular is read-only — there
+    is no circuit rename over eBus — and the old flat `core/dominant-power-source`
+    was split into a read-only identity on the MID plus this settable assertion.
+    """
     profiles = load_profiles()
-    settables = profiles["panel"].settable_properties()
-    assert ("core", "dominant-power-source") in settables
+    settable = {
+        entity_class: sorted(profiles[entity_class].settable_properties())
+        for entity_class in profiles
+        if profiles[entity_class].settable_properties()
+    }
+    assert settable == {
+        "circuit": [("load-shed", "priority"), ("switch", "relay")],
+        "evse": [("config", "user-max-charge-current")],
+        "panel": [("shed", "asserted-islanding-state")],
+    }

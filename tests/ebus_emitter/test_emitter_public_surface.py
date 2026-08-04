@@ -137,15 +137,19 @@ def test_imports_succeed() -> None:
 
 
 def test_emitter_init_fills_in_default_setter_handlers() -> None:
-    """v0.3.0 contract: emitter registers internal default handlers for the
-    four settable properties when the producer hasn't supplied one. An empty
-    SetterRegistry no longer triggers MissingSetterError."""
+    """The emitter registers internal defaults for the settable properties it owns
+    when the producer has not supplied one, so an empty SetterRegistry no longer
+    raises MissingSetterError.
+
+    Paths are the parent/child ones. `circuit/name` is deliberately absent: v1.0
+    makes `<circuit>/info/name` read-only, so a handler there could never fire.
+    """
     setters = SetterRegistry()
     Emitter(_manifest(), setters, FakeMqttClient())
-    assert setters.get("circuit", "circuit/relay") is not None
-    assert setters.get("circuit", "circuit/shed-priority") is not None
-    assert setters.get("circuit", "circuit/name") is not None
-    assert setters.get("panel", "core/dominant-power-source") is not None
+    assert setters.get("circuit", "switch/relay") is not None
+    assert setters.get("circuit", "load-shed/priority") is not None
+    assert setters.get("panel", "shed/asserted-islanding-state") is not None
+    assert setters.get("circuit", "info/name") is None
 
 
 @pytest.mark.asyncio
