@@ -33,11 +33,13 @@ from span_panel_simulator.ebus_emitter.snapshot import (
     EbusCircuitSnapshot,
     EbusEvseSnapshot,
     EbusLugsSnapshot,
+    EbusMidSnapshot,
     EbusPanelDoor,
     EbusPanelInfo,
     EbusPanelMeter,
     EbusPanelPcs,
     EbusPanelPowerFlows,
+    EbusPanelShed,
     EbusPanelSnapshot,
     EbusPanelStatus,
     EbusPvSnapshot,
@@ -111,8 +113,11 @@ class Emitter:
         self._relays = RelayResolver()
         self._energy = EnergyIntegrator()
         self._priority_overrides: dict[str, str] = {}
-        self._name_overrides: dict[str, str] = {}
-        self._dominant_power_source_override: str | None = None
+        # Consumer-asserted islanding state: NONE | ON_GRID | OFF_GRID. NONE defers
+        # to the sensed state. Successor to the settable half of the flat schema's
+        # `dominant-power-source`; the identity half became the MID's read-only
+        # `grid-forming-entity`.
+        self._asserted_islanding_state: str = "NONE"
 
         for cid, cphys in self._physics.all_circuits().items():
             self._relays.register(cid, always_on=cphys.always_on)
@@ -294,10 +299,14 @@ class Emitter:
         return self._relays
 
     @property
-    def dominant_power_source_override(self) -> str | None:
-        """Operator-set dominant power source override, or None if not set.
-        Set via /set ``panel.pcs/dominant-power-source`` topic."""
-        return self._dominant_power_source_override
+    def asserted_islanding_state(self) -> str:
+        """The consumer-asserted islanding state: ``NONE``, ``ON_GRID`` or ``OFF_GRID``.
+
+        Set via ``panel.shed/asserted-islanding-state``. ``NONE`` (the default) defers
+        to the sensed state; the other two force shed treatment during a loss of
+        communication with the MID or BESS.
+        """
+        return self._asserted_islanding_state
 
     # ---- internal --------------------------------------------------------
 
@@ -337,32 +346,23 @@ class Emitter:
             del entity_class, prop_path
             self._priority_overrides[instance_id] = str(value).upper()
 
-        async def on_circuit_name(
-            entity_class: str,
-            instance_id: str,
-            prop_path: str,
-            value: object,
-        ) -> None:
-            del entity_class, prop_path
-            self._name_overrides[instance_id] = str(value)
-
-        async def on_dom_power_source(
+        async def on_asserted_islanding_state(
             entity_class: str,
             instance_id: str,
             prop_path: str,
             value: object,
         ) -> None:
             del entity_class, instance_id, prop_path
-            self._dominant_power_source_override = str(value).upper()
+            self._asserted_islanding_state = str(value).upper()
 
         if registry.get("circuit", "switch/relay") is None:
             registry.register("circuit", "switch/relay", on_circuit_relay)
         if registry.get("circuit", "load-shed/priority") is None:
             registry.register("circuit", "load-shed/priority", on_shed_priority)
-        if registry.get("circuit", "info/name") is None:
-            registry.register("circuit", "info/name", on_circuit_name)
         if registry.get("panel", "shed/asserted-islanding-state") is None:
-            registry.register("panel", "shed/asserted-islanding-state", on_dom_power_source)
+            registry.register(
+                "panel", "shed/asserted-islanding-state", on_asserted_islanding_state
+            )
 
     async def _publish_diff(self, snapshot: EbusPanelSnapshot) -> None:
         bag = self._bag_builder.build(snapshot)
@@ -425,8 +425,21 @@ class Emitter:
                 cid: self._priority_overrides.get(cid, cphys.default_priority)
                 for cid, cphys in circuits_phys.items()
             }
+            # Effective islanding state: the consumer assertion wins when it is
+            # ON_GRID or OFF_GRID, otherwise the sensed state. Auto-shed runs when the
+            # effective state is not ON_GRID.
+            #
+            # The assertion overrides SHED TREATMENT only, never physics — asserting
+            # ON_GRID must not convince the BESS the grid returned. That is why this
+            # resolves here rather than by rewriting `tick.grid_online` upstream.
+            sensed = "ON_GRID" if tick.grid_online else "OFF_GRID"
+            effective_islanding = (
+                self._asserted_islanding_state
+                if self._asserted_islanding_state in ("ON_GRID", "OFF_GRID")
+                else sensed
+            )
             shed_ids = self._load_shedding.decide_shed(
-                grid_online=tick.grid_online,
+                grid_online=effective_islanding == "ON_GRID",
                 bess_soc_pct=min_soc,
                 priorities=effective_priorities,
             )
@@ -467,10 +480,9 @@ class Emitter:
             gated_p = gated_powers[cid]
             estate = self._energy.state(cid)
             effective_priority = self._priority_overrides.get(cid, cphys.default_priority)
-            effective_name = self._name_overrides.get(
-                cid,
-                self._manifest.get("circuit", cid).display_name,
-            )
+            # No override layer: `<circuit>/info/name` is read-only in v1.0 — the
+            # migration guide is explicit that there is no circuit rename over eBus.
+            effective_name = self._manifest.get("circuit", cid).display_name
             circuit_snaps[cid] = EbusCircuitSnapshot(
                 circuit_id=cid,
                 name=effective_name,
@@ -627,11 +639,12 @@ class Emitter:
         pcs = EbusPanelPcs(
             main_breaker_rating_a=panel_phys.main_breaker_rating_a,
             grid_islandable=meter.grid_islandable,
-            dominant_power_source=(
-                self._dominant_power_source_override
-                if self._dominant_power_source_override is not None
-                else meter.dominant_power_source
-            ),
+            # No override layer: the settable half of the flat `dominant-power-source`
+            # became `shed/asserted-islanding-state`, which is a shed-treatment
+            # assertion rather than a claim about which source is carrying the panel.
+            # Conflating them would let a consumer's comms-loss override masquerade as
+            # a sensed reading.
+            dominant_power_source=meter.dominant_power_source,
             grid_state=meter.grid_state,
             dsm_state=meter.dsm_state,
             current_run_config=meter.current_run_config,
@@ -643,6 +656,30 @@ class Emitter:
             site=meter.power_flow_site,
         )
 
+        shed = EbusPanelShed(asserted_islanding_state=self._asserted_islanding_state)
+
+        # The MID owns the sensed islanding state and the grid-forming identity — the
+        # read-only half of the flat schema's `dominant-power-source`. The catalog
+        # types it as a string: "GRID", or the Homie device id of the DER that is
+        # forming the grid. Enumerated from the manifest rather than the physics view,
+        # which has no MID accessor yet.
+        grid_forming_entity: str | None
+        if meter.dominant_power_source == "GRID":
+            grid_forming_entity = "GRID"
+        elif meter.dominant_power_source == "BATTERY":
+            grid_forming_entity = next(iter(battery_snapshots), None)
+        else:
+            grid_forming_entity = None
+        sensed_islanding = "ON_GRID" if tick.grid_online else "OFF_GRID"
+        mid_snaps: dict[str, EbusMidSnapshot] = {
+            inst.instance_id: EbusMidSnapshot(
+                instance_id=inst.instance_id,
+                islanding_state=sensed_islanding,
+                grid_state=meter.grid_state,
+                grid_forming_entity=grid_forming_entity,
+            )
+            for inst in self._manifest.of_class("mid")
+        }
         return EbusPanelSnapshot(
             info=info,
             door=door,
@@ -650,9 +687,11 @@ class Emitter:
             status=status,
             pcs=pcs,
             power_flows=power_flows,
+            shed=shed,
             circuits=circuit_snaps,
             battery=battery_snapshots,
             pv=pv_snaps,
             evse=evse_snaps,
             lugs=lugs_snaps,
+            mid=mid_snaps,
         )

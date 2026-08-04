@@ -593,20 +593,28 @@ async def test_internal_relay_setter_routes_to_relay_resolver() -> None:
 
 
 @pytest.mark.asyncio
-async def test_internal_name_setter_overrides_display_name() -> None:
+async def test_circuit_name_is_read_only() -> None:
+    """`<circuit>/info/name` is read-only in v1.0 — there is no circuit rename over eBus.
+
+    The complete settable set is four topics: circuit `switch/relay`, circuit
+    `load-shed/priority`, panel `shed/asserted-islanding-state`, and evse
+    `config/user-max-charge-current`. This guards the absence, because the emitter
+    previously registered a name handler that could never fire — the SPAN overlay
+    publishes `info/name` without `settable`, so no `/set` ever arrives.
+    """
     manifest = DeviceManifest(instances=(_panel_inst(), _circuit_inst()))
     setters = SetterRegistry()
     em = Emitter(manifest, setters, FakeMqttClient())
     await em.start()
 
-    handler = setters.get("circuit", "circuit/name")
-    assert handler is not None
-    await handler("circuit", "kitchen", "circuit/name", "Kitchen Lights")
+    assert setters.get("circuit", "info/name") is None
+    assert setters.get("circuit", "circuit/name") is None
 
     snap = await em.publish_tick(
         TickInputs(current_time=0.0, grid_online=True, circuits={"kitchen": 1000.0}),
     )
-    assert snap.circuits["kitchen"].name == "Kitchen Lights"
+    # The name comes from the manifest, with no override layer in between.
+    assert snap.circuits["kitchen"].name == manifest.get("circuit", "kitchen").display_name
 
 
 @pytest.mark.asyncio
@@ -654,26 +662,76 @@ async def test_internal_priority_setter_changes_shed_decision() -> None:
 
 
 @pytest.mark.asyncio
-async def test_internal_dom_power_source_setter_overrides_meter() -> None:
+async def test_asserted_islanding_state_does_not_masquerade_as_a_sensed_reading() -> None:
+    """The assertion is a shed-treatment override, not a claim about the power source.
+
+    The flat schema's `dominant-power-source` was split: the identity half became the
+    MID's read-only `grid-forming-entity`, and the settable half became the panel's
+    `shed/asserted-islanding-state`. Writing the assertion must therefore leave
+    `pcs/dominant-power-source` reporting what the meter actually senses — conflating
+    them would let a consumer's comms-loss override look like a measurement.
+    """
     manifest = DeviceManifest(instances=(_panel_inst(), _circuit_inst()))
     setters = SetterRegistry()
     em = Emitter(manifest, setters, FakeMqttClient())
     await em.start()
 
-    # Default on-grid → GRID
     snap1 = await em.publish_tick(
         TickInputs(current_time=0.0, grid_online=True, circuits={"kitchen": 100.0}),
     )
     assert snap1.pcs.dominant_power_source == "GRID"
+    assert snap1.shed.asserted_islanding_state == "NONE"
 
-    handler = setters.get("panel", "core/dominant-power-source")
+    handler = setters.get("panel", "shed/asserted-islanding-state")
     assert handler is not None
-    await handler("panel", "abc-123", "core/dominant-power-source", "BATTERY")
+    await handler("panel", "abc-123", "shed/asserted-islanding-state", "OFF_GRID")
 
     snap2 = await em.publish_tick(
         TickInputs(current_time=1.0, grid_online=True, circuits={"kitchen": 100.0}),
     )
-    assert snap2.pcs.dominant_power_source == "BATTERY"
+    # The assertion is published as itself...
+    assert snap2.shed.asserted_islanding_state == "OFF_GRID"
+    # ...and the sensed reading is untouched by it.
+    assert snap2.pcs.dominant_power_source == "GRID"
+
+
+@pytest.mark.asyncio
+async def test_asserted_islanding_state_drives_shed_treatment() -> None:
+    """Auto-shed runs when the *effective* islanding state is not ON_GRID.
+
+    Effective = the assertion when it is ON_GRID or OFF_GRID, otherwise the sensed
+    state. So asserting OFF_GRID while the grid is up must shed an OFF_GRID-priority
+    circuit. Before the split this override reached only a published value and never
+    influenced a shed decision at all.
+    """
+    manifest = DeviceManifest(
+        instances=(_panel_inst(), _circuit_inst("patio", priority="OFF_GRID"), _bess_inst()),
+    )
+    setters = SetterRegistry()
+    em = Emitter(
+        manifest, setters, FakeMqttClient(), load_shedding_config=LoadSheddingConfig()
+    )
+    await em.start()
+
+    grid_up = TickInputs(current_time=0.0, grid_online=True, circuits={"patio": 500.0})
+    snap1 = await em.publish_tick(grid_up)
+    assert snap1.circuits["patio"].relay_state == "CLOSED"
+
+    handler = setters.get("panel", "shed/asserted-islanding-state")
+    assert handler is not None
+    await handler("panel", "abc-123", "shed/asserted-islanding-state", "OFF_GRID")
+
+    snap2 = await em.publish_tick(
+        TickInputs(current_time=1.0, grid_online=True, circuits={"patio": 500.0}),
+    )
+    assert snap2.circuits["patio"].relay_state == "OPEN"
+
+    # NONE defers to the sensed state, so the circuit comes back.
+    await handler("panel", "abc-123", "shed/asserted-islanding-state", "NONE")
+    snap3 = await em.publish_tick(
+        TickInputs(current_time=2.0, grid_online=True, circuits={"patio": 500.0}),
+    )
+    assert snap3.circuits["patio"].relay_state == "CLOSED"
 
 
 @pytest.mark.asyncio
