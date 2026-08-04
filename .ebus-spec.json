@@ -1,0 +1,36 @@
+{
+  "$schema": "https://ebus.energy/schemas/ebus-spec.json",
+  "spec_repo": "https://github.com/electrification-bus/specification",
+  "synced_commit": "6e582c994fff4c77853a79d8bab26ef9924e22c7",
+  "synced_date": "2026-08-03",
+  "role": "publisher",
+  "framework": "0.7",
+  "implements": {
+    "capabilities": {
+      "info": "0.2",
+      "meter": "0.2",
+      "switch": "0.1",
+      "breaker": "0.1",
+      "connection": "0.1",
+      "load-shed": "0.3",
+      "pcs": "0.3",
+      "shed": "0.2",
+      "shed-forecast": "0.1",
+      "grid": "0.1",
+      "power-flows": "0.1",
+      "door": "0.1",
+      "status": "0.1",
+      "soc": "0.1"
+    },
+    "devices": {
+      "distribution-enclosure": "0.12",
+      "circuit": "0.3",
+      "bess": "0.14"
+    },
+    "registries": {
+      "capability-types": "0.19",
+      "device-types": "0.4"
+    }
+  },
+  "notes": "role=publisher: SpanPanel/simulator publishes a Homie 5 distribution-enclosure tree (enclosure + circuits + upstream/downstream lugs + bess/pv/evse/mid children) as a SPAN-faithful test fixture, and is the reference producer our consumer-side work is developed against. PROVENANCE: the capability catalogs in src/span_panel_simulator/ebus_emitter/wire/catalogs/ are byte copies of the specification's capabilities/ at synced_commit, verified by byte comparison of all 15 files on 2026-08-03. Base profiles (wire/profiles/*.json) and the placement/addressing descriptors (wire/mapping/*.yaml) are adopted from panel-sim (electrification-bus/distribution-enclosure-simulator) rather than from the spec directly, and are hydrated against those vendored catalogs; they are not spec artifacts and so are not pinned here. Base copies are treated as READ-ONLY: every SPAN divergence is carried in the wire/profiles/span/ overlay, never as an edit to a base file, so the byte comparison above stays a valid check. PINNING RULE (following panel-sim): pin what the profiles actually publish AND that exists in the current spec catalog. charge-limit 0.1 is vendored but NOT pinned, because it is not yet composed into the EVSE profile, which still publishes the legacy `config` grab-bag; `config` is not a spec capability and is therefore also unpinned. pv/evse/mid/lugs have no standalone versioned device model upstream yet and are covered transitively as child device_types of distribution-enclosure 0.12, so they are not separately pinned. STATE: the parent/child re-vendor is in progress on branch feat/ebus-parent-child-schema. Transport-free construction still goes through a two-step SDK-internals workaround pending an ebus-sdk pin bump, and the child-state cascade and setter routing are incomplete. These pins describe the schema version this repository targets; they are not a claim that every pinned capability is fully exercised yet."
+}
