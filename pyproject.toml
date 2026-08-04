@@ -63,7 +63,7 @@ span-simulator = "span_panel_simulator.__main__:main"
 # add-on Docker build. Build isolation resolves `hatchling` fresh on every build,
 # so the older, tolerant version this was authored against is not coming back.
 #
-# The same applies to the vendored flat emitter's data files
+# The same applies to the vendored emitter's data files
 # (`ebus_emitter/wire/profiles/*.json`, `ebus_emitter/wire/mapping/*.yaml`): they live
 # under `src/span_panel_simulator`, so `packages` already ships them. Upstream declared
 # them via `force-include` because its package root was elsewhere; re-adding that here
@@ -85,7 +85,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
 #
 # This ignore was previously described by this comment but never actually declared — none of
 # the simulator's own modules happened to trigger the rules, so the omission was invisible.
-# The vendored flat emitter does trigger them, and was authored under an identical select
+# The vendored emitter does trigger them, and was authored under an identical select
 # list plus this same ignore, so declaring it here restores the intent rather than relaxing
 # the bar for vendored code.
 ignore = ["TC001", "TC002", "TC003"]

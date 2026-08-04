@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased — parent/child eBus schema
+
+### Changed
+
+- **The emitter publishes the parent/child (v1.0) Homie data model** instead of the flat
+  schema. Every circuit, BESS, PV, EVSE, lugs and MID is now its own Homie device with its
+  own `$description` and `$state`, rather than a namespaced node hanging off the panel.
+  Topics move from `ebus/5/<panel>/<circuit>/<prop>` to
+  `ebus/5/<circuit>/<capability>/<prop>`.
+- **The package is `ebus_emitter`**, renamed from `flat_emitter` — the old name described
+  the schema rather than the component, so it would have needed renaming again at the next
+  schema change.
+- **`dominant-power-source` is split**, following the upstream migration. Its identity half
+  is the MID's read-only `grid/grid-forming-entity`; its settable half is the panel's
+  `shed/asserted-islanding-state` (`NONE` / `ON_GRID` / `OFF_GRID`). The assertion now
+  drives load-shed treatment — auto-shed runs when the effective islanding state is not
+  `ON_GRID` — where previously the override reached only a published value and influenced
+  no decision. It overrides shed treatment only, never physics.
+- **`<circuit>/info/name` is read-only.** There is no circuit rename over eBus in v1.0, so
+  the settable-name handler is gone. The complete settable set is four topics: circuit
+  `switch/relay`, circuit `load-shed/priority`, panel `shed/asserted-islanding-state`, and
+  EVSE `config/user-max-charge-current`.
+- **`ebus-sdk` moves to 0.17.0**, which carries two fixes this depends on: a transport-free
+  root that accepts children, and a missing client logged at `debug` rather than `warning`
+  when the tree is transport-free by design.
+
+### Added
+
+- **`.ebus-spec.json`**, the eBus specification provenance lockfile, declaring the spec
+  commit this repository was reconciled against and the artifacts it implements. CI verifies
+  every vendored capability catalog is byte-identical to the specification at that commit,
+  so the base copies are read-only by enforcement rather than convention, and reports drift
+  against the current spec.
+- **The panel publishes `info/data-model-version`**, overridable from manifest metadata so a
+  fixture can advertise a stale or future version and exercise a consumer's drift detection
+  — something real firmware cannot be asked to do on demand.
+
+### Fixed
+
+- **Voltage properties published with no unit.** `_to_sdk_unit` resolved through a hand-written
+  table that mapped `"V"` to a non-existent SDK enum member; it now resolves by enum value.
+- **`set_property_value` assigned to `Property.coerced_value`**, which is a zero-arg getter —
+  the assignment would have replaced the method rather than setting a value. Unreachable in
+  practice, since the SDK has always exposed `set_value`.
+
 ## 1.0.14 — 2026-07-31 — vendor the flat emitter
 
 ### Fixed
@@ -15,7 +60,7 @@
 
 ### Changed
 
-- **The flat emitter is vendored at `src/span_panel_simulator/ebus_emitter`**, copied from
+- **The flat emitter is vendored at `src/span_panel_simulator/flat_emitter`**, copied from
   `ebus-emitter` 0.2.1 (commit `5b84de8`) — MIT, same copyright holders. The upstream repo
   has permanently diverged onto the parent/child (v1.0) Homie data model while this
   simulator continues to publish the flat schema, so the dependency delivered no upstream

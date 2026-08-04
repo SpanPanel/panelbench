@@ -2,7 +2,7 @@
 #
 # Developer bootstrap.
 #
-# The flat emitter used to be an external checkout installed editable from
+# The emitter used to be an external checkout installed editable from
 # EBUS_EMITTER_PATH. It is now vendored at `src/span_panel_simulator/ebus_emitter`
 # (see that package's docstring for provenance and rationale), so every dependency
 # resolves from PyPI and this script is a thin wrapper over `uv sync`.
