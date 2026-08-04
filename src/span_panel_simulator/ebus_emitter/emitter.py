@@ -118,6 +118,9 @@ class Emitter:
         # `dominant-power-source`; the identity half became the MID's read-only
         # `grid-forming-entity`.
         self._asserted_islanding_state: str = "NONE"
+        # Per-EVSE user cap from `config/user-max-charge-current`, clamped on write to
+        # `max-charge-current` because the catalog requires user <= max.
+        self._evse_user_max_current: dict[str, float] = {}
 
         for cid, cphys in self._physics.all_circuits().items():
             self._relays.register(cid, always_on=cphys.always_on)
@@ -359,6 +362,23 @@ class Emitter:
             registry.register("circuit", "switch/relay", on_circuit_relay)
         if registry.get("circuit", "load-shed/priority") is None:
             registry.register("circuit", "load-shed/priority", on_shed_priority)
+
+        async def on_evse_user_max_current(
+            entity_class: str,
+            instance_id: str,
+            prop_path: str,
+            value: object,
+        ) -> None:
+            del entity_class, prop_path
+            try:
+                requested = float(str(value))
+            except ValueError:
+                return
+            ceiling = self._physics.all_evse()[instance_id].max_current_a
+            self._evse_user_max_current[instance_id] = max(0.0, min(requested, ceiling))
+
+        if registry.get("evse", "config/user-max-charge-current") is None:
+            registry.register("evse", "config/user-max-charge-current", on_evse_user_max_current)
         if registry.get("panel", "shed/asserted-islanding-state") is None:
             registry.register(
                 "panel", "shed/asserted-islanding-state", on_asserted_islanding_state
@@ -577,6 +597,10 @@ class Emitter:
                 status="CHARGING" if charging else "AVAILABLE",
                 lock_state="LOCKED" if charging else "UNLOCKED",
                 advertised_current_a=ephys.max_current_a,
+                max_charge_current_a=ephys.max_current_a,
+                user_max_charge_current_a=self._evse_user_max_current.get(
+                    eid, ephys.max_current_a
+                ),
                 vendor_name=ephys.vendor_name,
                 product_name=ephys.product_name,
                 part_number=ephys.part_number,
