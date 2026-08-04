@@ -39,9 +39,17 @@ def test_build_graph_is_deterministic() -> None:
     g2 = build_graph(_manifest_panel_with_one_circuit(), mapping, profiles)
     assert sorted(g1.properties.keys()) == sorted(g2.properties.keys())
     assert sorted(g1.devices) == sorted(g2.devices)
+
     # `description_payloads` is gone: the SDK composes each device's $description
     # itself, correctly scoped, so there is no parallel copy of ours to compare.
-    assert g1.devices["p1"].description() == g2.devices["p1"].description()
+    #
+    # `version` is excluded deliberately — it is a millisecond timestamp, so two
+    # builds agree only when they land in the same millisecond. Comparing it made
+    # this test pass or fail on timing rather than on determinism.
+    def _structure(payload: dict[str, object]) -> dict[str, object]:
+        return {k: v for k, v in payload.items() if k != "version"}
+
+    assert _structure(g1.devices["p1"].description()) == _structure(g2.devices["p1"].description())
 
 
 def test_build_graph_includes_panel_settable_property() -> None:
