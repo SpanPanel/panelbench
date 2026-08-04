@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import yaml
+from ebus_sdk import DiscoveredDevice
 
 from span_panel_simulator.clone import (
+    TYPE_BESS,
+    TYPE_CIRCUIT,
+    TYPE_EVSE,
+    TYPE_PV,
     translate_scraped_panel,
     update_config_from_scrape,
     write_clone_config,
@@ -17,121 +23,189 @@ from span_panel_simulator.validation import validate_yaml_config
 if TYPE_CHECKING:
     from pathlib import Path
 
-# A realistic $description fixture with circuits, BESS, PV, and EVSE nodes
+# A realistic parent/child device tree. Under v1.0 every entity is its own Homie
+# device in its own namespace — circuits, BESS, PV and EVSE are SIBLINGS of the panel
+# on the wire, not nodes hanging off it — so the fixture builds real
+# `DiscoveredDevice` objects rather than a topic map. Property layout is taken from
+# the emitter's own profiles, so a change there shows up here as a failure rather
+# than as an invented shape that quietly disagrees with what a panel publishes.
 _SERIAL = "nj-2316-1234"
-_PREFIX = f"ebus/5/{_SERIAL}"
 
-_DESCRIPTION: dict[str, dict[str, dict[str, str]]] = {
-    "nodes": {
-        "core": {"type": "energy.ebus.device.distribution-enclosure.core"},
-        "upstream-lugs": {"type": "energy.ebus.device.lugs"},
-        "downstream-lugs": {"type": "energy.ebus.device.lugs"},
-        "aaa111": {"type": "energy.ebus.device.circuit"},  # Living Room Lights, space 1
-        "bbb222": {"type": "energy.ebus.device.circuit"},  # Kitchen Outlets, space 3/5 (240V)
-        "ccc333": {"type": "energy.ebus.device.circuit"},  # Solar Inverter, space 7/9 (240V)
-        "ddd444": {"type": "energy.ebus.device.circuit"},  # Battery Storage, space 11/13 (240V)
-        "eee555": {"type": "energy.ebus.device.circuit"},  # SPAN Drive, space 15/17 (240V)
-        "bess-0": {"type": "energy.ebus.device.bess"},
-        "pv-0": {"type": "energy.ebus.device.pv"},
-        "evse-0": {"type": "energy.ebus.device.evse"},
-        "pcs-0": {"type": "energy.ebus.device.pcs"},
-        "power-flows": {"type": "energy.ebus.device.power-flows"},
+TYPE_PANEL = "energy.ebus.device.distribution-enclosure"
+
+
+def _device(
+    device_id: str,
+    device_type: str,
+    capabilities: dict[str, dict[str, str]],
+    *,
+    parent: str | None = None,
+    children: list[str] | None = None,
+) -> DiscoveredDevice:
+    """Build a DiscoveredDevice from a {capability: {property: value}} map."""
+    device = DiscoveredDevice(device_id)
+    nodes = {
+        cap: {
+            "name": cap,
+            "properties": {prop: {"name": prop, "datatype": "string"} for prop in props},
+        }
+        for cap, props in capabilities.items()
     }
-}
+    description: dict[str, object] = {
+        "homie": "5.0",
+        "name": device_id,
+        "type": device_type,
+        "nodes": nodes,
+        "root": _SERIAL,
+    }
+    if parent is not None:
+        description["parent"] = parent
+    if children:
+        description["children"] = children
+    device.update_description(json.dumps(description))
+    for cap, props in capabilities.items():
+        for prop, value in props.items():
+            device.update_property(cap, prop, value)
+    return device
 
 
-def _base_properties() -> dict[str, str]:
-    """Build a minimal but complete set of scraped properties."""
-    p: dict[str, str] = {}
+def _circuit(
+    device_id: str,
+    name: str,
+    spaces: str,
+    *,
+    rating: str,
+    priority: str,
+    active_power: str,
+    imported: str = "0.0",
+    exported: str = "0.0",
+    managed: str = "true",
+    controllable: str = "true",
+    feeds: tuple[str, str] | None = None,
+) -> DiscoveredDevice:
+    """A circuit device.
 
-    def _set(node: str, prop: str, val: str) -> None:
-        p[f"{_PREFIX}/{node}/{prop}"] = val
-
-    # Core
-    _set("core", "serial-number", _SERIAL)
-    _set("core", "breaker-rating", "200")
-
-    # $state
-    p[f"{_PREFIX}/$state"] = "ready"
-    p[f"{_PREFIX}/$description"] = "{}"  # not used by translator (it gets parsed description)
-
-    # Circuit 1: Living Room Lights — single-pole, space 1
-    _set("aaa111", "name", "Living Room Lights")
-    _set("aaa111", "space", "1")
-    _set("aaa111", "dipole", "false")
-    _set("aaa111", "breaker-rating", "15")
-    _set("aaa111", "relay", "CLOSED")
-    _set("aaa111", "shed-priority", "NEVER")
-    _set("aaa111", "active-power", "-150.0")  # consuming (negative = enclosure → circuit)
-    _set("aaa111", "always-on", "false")
-    # Enclosure frame: a load accumulates exported-energy (enclosure → circuit).
-    _set("aaa111", "imported-energy", "0.0")
-    _set("aaa111", "exported-energy", "54321.0")
-
-    # Circuit 2: Kitchen Outlets — 240V, space 3/5
-    _set("bbb222", "name", "Kitchen Outlets")
-    _set("bbb222", "space", "3")
-    _set("bbb222", "dipole", "true")
-    _set("bbb222", "breaker-rating", "20")
-    _set("bbb222", "relay", "CLOSED")
-    _set("bbb222", "shed-priority", "SOC_THRESHOLD")
-    _set("bbb222", "active-power", "-800.0")
-    _set("bbb222", "always-on", "false")
-
-    # Circuit 3: Solar Inverter — 240V, space 7/9, fed by pv-0
-    _set("ccc333", "name", "Solar Inverter")
-    _set("ccc333", "space", "7")
-    _set("ccc333", "dipole", "true")
-    _set("ccc333", "breaker-rating", "30")
-    _set("ccc333", "relay", "CLOSED")
-    _set("ccc333", "shed-priority", "NEVER")
-    # Positive on the wire = the enclosure is importing from the circuit (backfeed).
-    _set("ccc333", "active-power", "3000.0")
-    _set("ccc333", "always-on", "true")
-    # Enclosure frame: a backfeeding circuit accumulates imported-energy.
-    _set("ccc333", "imported-energy", "1234567.0")
-    _set("ccc333", "exported-energy", "0.0")
-
-    # Circuit 4: Battery Storage — 240V, space 11/13, fed by bess-0
-    _set("ddd444", "name", "Battery Storage")
-    _set("ddd444", "space", "11")
-    _set("ddd444", "dipole", "true")
-    _set("ddd444", "breaker-rating", "40")
-    _set("ddd444", "relay", "CLOSED")
-    _set("ddd444", "shed-priority", "NEVER")
-    _set("ddd444", "active-power", "-2000.0")
-    _set("ddd444", "always-on", "true")
-
-    # Circuit 5: SPAN Drive — 240V, space 15/17, fed by evse-0
-    _set("eee555", "name", "SPAN Drive")
-    _set("eee555", "space", "15")
-    _set("eee555", "dipole", "true")
-    _set("eee555", "breaker-rating", "50")
-    _set("eee555", "relay", "CLOSED")
-    _set("eee555", "shed-priority", "OFF_GRID")
-    _set("eee555", "active-power", "-7200.0")
-    _set("eee555", "always-on", "false")
-
-    # Device feeds
-    _set("bess-0", "feed", "ddd444")
-    _set("bess-0", "nameplate-capacity", "13.5")
-    _set("bess-0", "soc", "85.0")
-    _set("pv-0", "feed", "ccc333")
-    _set("pv-0", "nameplate-capacity", "5000.0")
-    _set("evse-0", "feed", "eee555")
-
-    return p
+    `spaces` is the v1.0 replacement for the flat `space` + `dipole` pair: the panel
+    states the positions it occupies as a comma list, so the +2 split-phase companion
+    is no longer inferred by the consumer.
+    """
+    caps: dict[str, dict[str, str]] = {
+        "info": {"name": name, "spaces": spaces},
+        "breaker": {"rating": rating, "poles": str(len(spaces.split(",")))},
+        "switch": {
+            "relay": "CLOSED",
+            "relay-requester": "UNKNOWN",
+            "relay-controllable": controllable,
+        },
+        "load-shed": {"priority": priority},
+        "meter": {
+            "active-power": active_power,
+            "imported-energy": imported,
+            "exported-energy": exported,
+        },
+        "pcs": {"managed": managed, "priority": "0"},
+    }
+    if feeds is not None:
+        device_ref, device_kind = feeds
+        caps["connection"] = {
+            "feeds-device-id": device_ref,
+            "feeds-device-type": device_kind,
+            "feeds-device-status": "OK",
+            "count": "1",
+        }
+    return _device(device_id, TYPE_CIRCUIT, caps, parent=_SERIAL)
 
 
-def _make_scraped(
-    props: dict[str, str] | None = None,
-    desc: dict[str, dict[str, dict[str, str]]] | None = None,
-) -> ScrapedPanel:
+def _base_devices() -> dict[str, DiscoveredDevice]:
+    """The panel and its children, mirroring the pre-parent/child fixture's content."""
+    circuits = {
+        # Living Room Lights — single-pole, position 1, a load.
+        # Enclosure frame: a load accumulates exported-energy (enclosure -> circuit).
+        "aaa111": _circuit(
+            "aaa111",
+            "Living Room Lights",
+            "1",
+            rating="15",
+            priority="NEVER",
+            active_power="-150.0",
+            exported="54321.0",
+        ),
+        # Kitchen Outlets — 240 V across positions 3 and 5.
+        "bbb222": _circuit(
+            "bbb222",
+            "Kitchen Outlets",
+            "3,5",
+            rating="20",
+            priority="SOC_THRESHOLD",
+            active_power="-800.0",
+        ),
+        # Solar Inverter — backfeeding, so positive on the wire and accumulating
+        # imported-energy in the enclosure frame.
+        "ccc333": _circuit(
+            "ccc333",
+            "Solar Inverter",
+            "7,9",
+            rating="30",
+            priority="NEVER",
+            active_power="3000.0",
+            imported="1234567.0",
+            controllable="false",
+            feeds=("pv-0", "energy.ebus.device.pv"),
+        ),
+        "ddd444": _circuit(
+            "ddd444",
+            "Battery Storage",
+            "11,13",
+            rating="40",
+            priority="NEVER",
+            active_power="-2000.0",
+            controllable="false",
+            feeds=("bess-0", "energy.ebus.device.bess"),
+        ),
+        "eee555": _circuit(
+            "eee555",
+            "SPAN Drive",
+            "15,17",
+            rating="50",
+            priority="OFF_GRID",
+            active_power="-7200.0",
+            feeds=("evse-0", "energy.ebus.device.evse"),
+        ),
+    }
+
+    devices: dict[str, DiscoveredDevice] = {
+        _SERIAL: _device(
+            _SERIAL,
+            TYPE_PANEL,
+            {
+                "info": {"serial-number": _SERIAL, "data-model-version": "1.0"},
+                "breaker": {"rating": "200"},
+            },
+            children=[*circuits, "bess-0", "pv-0", "evse-0"],
+        ),
+        "bess-0": _device(
+            "bess-0",
+            TYPE_BESS,
+            {"info": {"nameplate-capacity": "13.5"}, "soc": {"soc": "85.0"}},
+            parent=_SERIAL,
+        ),
+        "pv-0": _device(
+            "pv-0",
+            TYPE_PV,
+            {"info": {"nominal-power": "5000.0"}},
+            parent=_SERIAL,
+        ),
+        "evse-0": _device("evse-0", TYPE_EVSE, {"info": {"model": "SPAN Drive"}}, parent=_SERIAL),
+    }
+    devices.update(circuits)
+    return devices
+
+
+def _make_scraped(devices: dict[str, DiscoveredDevice] | None = None) -> ScrapedPanel:
     """Build a ScrapedPanel fixture."""
     return ScrapedPanel(
         serial_number=_SERIAL,
-        description=desc or _DESCRIPTION,
-        properties=props or _base_properties(),
+        devices=devices if devices is not None else _base_devices(),
         mqtts_port=8883,
         ca_pem=b"fake-ca-pem",
     )
@@ -232,12 +306,16 @@ class TestTranslateScrapedPanel:
         assert isinstance(ep, dict)
         assert ep["mode"] == "consumer"
 
-    def test_always_on_non_controllable(self) -> None:
-        """Circuit with always-on=true gets non_controllable relay behavior."""
+    def test_non_controllable_relay(self) -> None:
+        """A circuit whose relay is not controllable maps to non_controllable.
+
+        v1.0 publishes `switch/relay-controllable` directly; the flat schema inferred
+        this from `always-on`.
+        """
         config = translate_scraped_panel(_make_scraped())
         templates = config["circuit_templates"]
         assert isinstance(templates, dict)
-        # Solar inverter (space 7) has always_on=true
+        # Solar inverter (positions 7,9) is not relay-controllable.
         t = templates["clone_7"]
         assert isinstance(t, dict)
         assert t["relay_behavior"] == "non_controllable"
@@ -438,9 +516,9 @@ class TestUpdateConfigFromScrape:
         original_typical = ep["typical_power"]
 
         # Modify scraped data to simulate changed active-power
-        props = _base_properties()
-        props[f"{_PREFIX}/aaa111/active-power"] = "-250.0"
-        updated_scraped = _make_scraped(props=props)
+        devices = _base_devices()
+        devices["aaa111"].update_property("meter", "active-power", "-250.0")
+        updated_scraped = _make_scraped(devices)
 
         update_config_from_scrape(config, updated_scraped)
 
@@ -452,10 +530,10 @@ class TestUpdateConfigFromScrape:
         """Energy accumulators are updated from new scrape."""
         config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
 
-        props = _base_properties()
+        devices = _base_devices()
         # aaa111 is a load, so its consumption accumulator is exported-energy.
-        props[f"{_PREFIX}/aaa111/exported-energy"] = "99999.0"
-        updated_scraped = _make_scraped(props=props)
+        devices["aaa111"].update_property("meter", "exported-energy", "99999.0")
+        updated_scraped = _make_scraped(devices)
 
         changed = update_config_from_scrape(config, updated_scraped)
         assert changed is True

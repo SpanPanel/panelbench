@@ -1,13 +1,14 @@
-"""eBus-to-YAML translation — converts scraped panel data to simulator config.
+"""eBus-to-YAML translation — converts a discovered panel into a simulator config.
 
-Pure data transformation: takes a ``ScrapedPanel`` (description + retained
-property values) and produces a complete YAML config dict matching the
-``SimulationConfig`` TypedDict shape.
+Pure data transformation: takes a ``ScrapedPanel`` (a tree of discovered Homie
+devices) and produces a complete YAML config dict matching the ``SimulationConfig``
+TypedDict shape.
 
 Design principles:
-  - Each circuit gets its own template (``clone_{space}``) for per-circuit
+  - Each circuit gets its own template (``clone_{first position}``) for per-circuit
     fidelity.  Users can consolidate via the dashboard later.
-  - Energy profile mode is inferred from device node ``feed`` cross-references.
+  - Energy profile mode is inferred from the circuit's ``connection`` capability,
+    which names the DER it feeds.
   - No unit conversion is needed — all eBus power values are in watts.
   - The clone serial is ``{original_serial}-clone``.
 """
@@ -15,16 +16,19 @@ Design principles:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import yaml
+from ebus_sdk import DiscoveredDevice
 
 from span_panel_simulator.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
 # a discovered panel's MQTT topology. Inlined here (rather than imported from a
 # central module) because the scraping path is the only consumer post-emitter cutover.
+TYPE_PANEL = "energy.ebus.device.distribution-enclosure"
 TYPE_CIRCUIT = "energy.ebus.device.circuit"
 TYPE_BESS = "energy.ebus.device.bess"
 TYPE_PV = "energy.ebus.device.pv"
@@ -98,23 +102,20 @@ def translate_scraped_panel(
     Returns a dict matching the ``SimulationConfig`` TypedDict shape,
     ready for YAML serialisation and ``validate_yaml_config()``.
     """
-    nodes = scraped.description.get("nodes", {})
-    prefix = f"ebus/5/{scraped.serial_number}"
-
-    # Classify nodes by type
-    circuit_nodes = _nodes_of_type(nodes, TYPE_CIRCUIT)
-    bess_nodes = _nodes_of_type(nodes, TYPE_BESS)
-    pv_nodes = _nodes_of_type(nodes, TYPE_PV)
-    evse_nodes = _nodes_of_type(nodes, TYPE_EVSE)
+    root = scraped.serial_number
+    circuit_nodes = _devices_of_type(scraped.devices, root, TYPE_CIRCUIT)
+    bess_nodes = _devices_of_type(scraped.devices, root, TYPE_BESS)
+    pv_nodes = _devices_of_type(scraped.devices, root, TYPE_PV)
+    evse_nodes = _devices_of_type(scraped.devices, root, TYPE_EVSE)
 
     # Build feed cross-reference: circuit_uuid → device_type
-    feed_map = _build_feed_map(scraped.properties, prefix, pv_nodes, evse_nodes)
+    feed_map = _build_feed_map(scraped.devices, circuit_nodes)
 
     # Extract panel-level values
-    main_breaker = _int_prop(scraped.properties, prefix, "core", "breaker-rating") or 200
+    main_breaker = _int_prop(scraped.devices, scraped.serial_number, "breaker", "rating") or 200
 
     # Derive panel size from maximum space value across all circuits
-    total_tabs = _derive_total_tabs(scraped.properties, prefix, circuit_nodes)
+    total_tabs = _derive_total_tabs(scraped.devices, circuit_nodes)
 
     clone_serial = make_clone_serial(scraped.serial_number)
 
@@ -133,8 +134,7 @@ def translate_scraped_panel(
 
     for node_uuid in sorted(circuit_nodes):
         result = _translate_circuit(
-            scraped.properties,
-            prefix,
+            scraped.devices,
             node_uuid,
             feed_map,
         )
@@ -148,11 +148,11 @@ def translate_scraped_panel(
 
     # Enrich PV circuit template
     for pv_id in pv_nodes:
-        _enrich_pv_template(scraped.properties, prefix, pv_id, feed_map, templates)
+        _enrich_pv_template(scraped.devices, pv_id, feed_map, templates)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(scraped.properties, prefix, evse_id, feed_map, templates)
+        _enrich_evse_template(scraped.devices, evse_id, feed_map, templates)
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -173,7 +173,7 @@ def translate_scraped_panel(
 
     # Build top-level BESS config (only when a battery is actually connected)
     for bess_id in bess_nodes:
-        bess_cfg = _build_bess_config(scraped.properties, prefix, bess_id)
+        bess_cfg = _build_bess_config(scraped.devices, bess_id)
         if bess_cfg is not None:
             config["bess"] = bess_cfg
 
@@ -222,22 +222,20 @@ def update_config_from_scrape(
 
     Returns True if any values were changed.
     """
-    prefix = f"ebus/5/{scraped.serial_number}"
     templates = config.get("circuit_templates")
     if not isinstance(templates, dict):
         return False
 
-    nodes = scraped.description.get("nodes", {})
-    circuit_nodes = _nodes_of_type(nodes, TYPE_CIRCUIT)
+    circuit_nodes = _devices_of_type(scraped.devices, scraped.serial_number, TYPE_CIRCUIT)
 
     changed = False
 
     for node_uuid in circuit_nodes:
-        space = _int_prop(scraped.properties, prefix, node_uuid, "space")
-        if space is None:
+        spaces = _spaces_prop(scraped.devices, node_uuid)
+        if not spaces:
             continue
 
-        template_name = f"clone_{space}"
+        template_name = f"clone_{spaces[0]}"
         template = templates.get(template_name)
         if not isinstance(template, dict):
             continue
@@ -250,7 +248,7 @@ def update_config_from_scrape(
         # enclosure exporting to the circuit (consumption), `imported-energy` is
         # the circuit backfeeding the enclosure (production). See the seeding
         # comment in `_translate_circuit`.
-        exported = _float_prop(scraped.properties, prefix, node_uuid, "exported-energy")
+        exported = _float_prop(scraped.devices, node_uuid, "meter", "exported-energy")
         if (
             exported is not None
             and exported > 0
@@ -259,7 +257,7 @@ def update_config_from_scrape(
             ep["initial_consumed_energy_wh"] = exported
             changed = True
 
-        imported = _float_prop(scraped.properties, prefix, node_uuid, "imported-energy")
+        imported = _float_prop(scraped.devices, node_uuid, "meter", "imported-energy")
         if (
             imported is not None
             and imported > 0
@@ -370,25 +368,38 @@ def update_config_location(config_path: Path, latitude: float, longitude: float)
 # ------------------------------------------------------------------
 
 
+# --- property access ------------------------------------------------------------
+#
+# These read the discovered tree rather than a topic map. Under parent/child every
+# entity is its own Homie device with its own namespace, so a property is addressed
+# by (device id, capability, property) instead of by string-building
+# `<panel>/<node>/<prop>`. The SDK already resolved the topics during discovery;
+# rebuilding them here would be a second implementation of the same rule, which is
+# exactly the drift the emitting side avoids by asking the graph for its topics.
+
+
 def _get_prop(
-    properties: dict[str, str],
-    prefix: str,
-    node_id: str,
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    capability: str,
     prop: str,
 ) -> str | None:
-    """Extract a single property value from the scraped topic map."""
-    topic = f"{prefix}/{node_id}/{prop}"
-    return properties.get(topic)
+    """A single property value from the discovered tree, or None if absent."""
+    device = devices.get(device_id)
+    if device is None:
+        return None
+    value = device.get_property(capability, prop)
+    return None if value is None else str(value)
 
 
 def _float_prop(
-    properties: dict[str, str],
-    prefix: str,
-    node_id: str,
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    capability: str,
     prop: str,
 ) -> float | None:
-    """Extract a float property, returning None if absent or unparseable."""
-    raw = _get_prop(properties, prefix, node_id, prop)
+    """A float property, or None if absent or unparseable."""
+    raw = _get_prop(devices, device_id, capability, prop)
     if raw is None:
         return None
     try:
@@ -398,13 +409,13 @@ def _float_prop(
 
 
 def _int_prop(
-    properties: dict[str, str],
-    prefix: str,
-    node_id: str,
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    capability: str,
     prop: str,
 ) -> int | None:
-    """Extract an integer property."""
-    raw = _get_prop(properties, prefix, node_id, prop)
+    """An integer property, tolerating a float-formatted payload."""
+    raw = _get_prop(devices, device_id, capability, prop)
     if raw is None:
         return None
     try:
@@ -414,75 +425,130 @@ def _int_prop(
 
 
 def _bool_prop(
-    properties: dict[str, str],
-    prefix: str,
-    node_id: str,
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    capability: str,
     prop: str,
 ) -> bool | None:
-    """Extract a boolean property (Homie convention: ``"true"``/``"false"``)."""
-    raw = _get_prop(properties, prefix, node_id, prop)
+    """A boolean property (Homie convention: the strings ``true`` / ``false``)."""
+    raw = _get_prop(devices, device_id, capability, prop)
     if raw is None:
         return None
     return raw.lower() == "true"
 
 
-def _nodes_of_type(
-    nodes: dict[str, dict[str, str]],
-    node_type: str,
+def _spaces_prop(
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+) -> list[int]:
+    """The breaker positions a circuit occupies, from ``info/spaces``.
+
+    Replaces the flat schema's ``space`` (a single integer) plus ``dipole`` (a bool
+    whose True meant "also occupies space + 2"). v1.0 publishes the positions
+    directly as a comma-separated string, so the +2 split-phase convention is no
+    longer inferred here — the panel states it.
+    """
+    raw = _get_prop(devices, device_id, "info", "spaces")
+    if not raw:
+        return []
+    out: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(int(part))
+        except ValueError:
+            _LOGGER.warning("Circuit %s has unparseable spaces %r", device_id, raw)
+            return []
+    return out
+
+
+def _devices_of_type(
+    devices: Mapping[str, DiscoveredDevice],
+    root: str,
+    device_type: str,
 ) -> list[str]:
-    """Return node IDs matching the given Homie type string."""
-    return [
-        node_id
-        for node_id, node_def in nodes.items()
-        if isinstance(node_def, dict) and node_def.get("type") == node_type
-    ]
+    """Device ids of a given Homie ``$type`` belonging to ``root``'s tree.
+
+    Flat read the panel's own ``nodes`` map, which listed every entity. Under
+    parent/child each device declares its own type and its own ``root``, so the
+    filter is on membership rather than on containment — a broker serving two panels
+    hands back both trees in the same namespace.
+    """
+    out: list[str] = []
+    for device_id, device in devices.items():
+        if device.root_id != root:
+            continue
+        description = device.description
+        if isinstance(description, dict) and description.get("type") == device_type:
+            out.append(device_id)
+    return sorted(out)
+
+
+def _circuit_feeding(
+    devices: Mapping[str, DiscoveredDevice],
+    target_device_id: str,
+) -> str | None:
+    """The circuit that feeds ``target_device_id``, or None.
+
+    The reverse of the flat schema's lookup. A DER used to name its circuit through
+    ``feed``; now the circuit names the DER through ``connection/feeds-device-id``,
+    so finding a DER's circuit means searching the circuits rather than reading one
+    property off the DER.
+    """
+    for device_id in devices:
+        if _get_prop(devices, device_id, "connection", "feeds-device-id") == target_device_id:
+            return device_id
+    return None
 
 
 def _build_feed_map(
-    properties: dict[str, str],
-    prefix: str,
-    pv_nodes: list[str],
-    evse_nodes: list[str],
+    devices: Mapping[str, DiscoveredDevice],
+    circuit_nodes: list[str],
 ) -> dict[str, str]:
     """Build a mapping from circuit UUID to device type based on feed properties.
 
-    PV and EVSE nodes have a ``feed`` property whose value is the UUID of the
-    circuit they're associated with.  BESS nodes no longer use a feed circuit —
-    their config goes to the top-level ``bess`` section.
+    The relationship reversed direction in v1.0. Flat had each DER carry a ``feed``
+    naming its circuit; the parent/child model gives the CIRCUIT a ``connection``
+    capability naming what it feeds. That is the better direction — the circuit is
+    the thing that always exists, so the edge no longer disappears when a DER is
+    absent — but it means reading the circuits, not the DERs.
+
+    BESS is deliberately not mapped: its config goes to the top-level ``bess``
+    section rather than onto a circuit template.
     """
+    kind_by_type = {TYPE_PV: "pv", TYPE_EVSE: "evse"}
     feed_map: dict[str, str] = {}
 
-    for node_id in pv_nodes:
-        circuit_uuid = _get_prop(properties, prefix, node_id, "feed")
-        if circuit_uuid:
-            feed_map[circuit_uuid] = "pv"
-
-    for node_id in evse_nodes:
-        circuit_uuid = _get_prop(properties, prefix, node_id, "feed")
-        if circuit_uuid:
-            feed_map[circuit_uuid] = "evse"
+    for circuit_uuid in circuit_nodes:
+        target = _get_prop(devices, circuit_uuid, "connection", "feeds-device-id")
+        if not target:
+            continue
+        target_type = _get_prop(devices, circuit_uuid, "connection", "feeds-device-type")
+        kind = kind_by_type.get(target_type or "")
+        if kind is not None:
+            feed_map[circuit_uuid] = kind
 
     return feed_map
 
 
 def _derive_total_tabs(
-    properties: dict[str, str],
-    prefix: str,
+    devices: Mapping[str, DiscoveredDevice],
     circuit_nodes: list[str],
 ) -> int:
-    """Derive panel size from the maximum space value across circuits."""
+    """Derive panel size from the highest breaker position any circuit occupies.
+
+    v1.0 publishes the positions directly in ``info/spaces``, so a 240 V circuit
+    already reports both. The flat schema published one position plus a ``dipole``
+    flag and left the consumer to infer the companion as position + 2 — that
+    inference is gone, along with the class of bug where a panel wired against the
+    convention was silently mis-sized.
+    """
     max_space = 0
     for node_id in circuit_nodes:
-        space = _int_prop(properties, prefix, node_id, "space")
-        if space is not None and space > max_space:
-            max_space = space
-
-        # If dipole, the companion tab is space + 2
-        is_dipole = _bool_prop(properties, prefix, node_id, "dipole")
-        if is_dipole and space is not None:
-            companion = space + 2
-            if companion > max_space:
-                max_space = companion
+        for space in _spaces_prop(devices, node_id):
+            max_space = max(max_space, space)
 
     # Round up to standard panel sizes
     for standard_size in (16, 24, 32, 40, 48):
@@ -493,8 +559,7 @@ def _derive_total_tabs(
 
 
 def _translate_circuit(
-    properties: dict[str, str],
-    prefix: str,
+    devices: Mapping[str, DiscoveredDevice],
     node_uuid: str,
     feed_map: dict[str, str],
 ) -> tuple[str, dict[str, object], dict[str, object], list[int]] | None:
@@ -503,28 +568,33 @@ def _translate_circuit(
     Returns (template_name, template_dict, circuit_def, tabs) or None
     if the circuit cannot be translated (missing space).
     """
-    space = _int_prop(properties, prefix, node_uuid, "space")
-    if space is None:
-        _LOGGER.warning("Circuit %s has no space property, skipping", node_uuid)
+    tabs = _spaces_prop(devices, node_uuid)
+    if not tabs:
+        _LOGGER.warning("Circuit %s has no info/spaces property, skipping", node_uuid)
         return None
+    space = tabs[0]
 
-    name = _get_prop(properties, prefix, node_uuid, "name") or f"Circuit {space}"
-    is_dipole = _bool_prop(properties, prefix, node_uuid, "dipole") or False
-    breaker_rating = _int_prop(properties, prefix, node_uuid, "breaker-rating") or 20
-    active_power = _float_prop(properties, prefix, node_uuid, "active-power")
-    priority = _get_prop(properties, prefix, node_uuid, "shed-priority") or "NEVER"
-    always_on = _bool_prop(properties, prefix, node_uuid, "always-on") or False
+    name = _get_prop(devices, node_uuid, "info", "name") or f"Circuit {space}"
+    breaker_rating = _int_prop(devices, node_uuid, "breaker", "rating") or 20
+    active_power = _float_prop(devices, node_uuid, "meter", "active-power")
+    priority = _get_prop(devices, node_uuid, "load-shed", "priority") or "NEVER"
+    # v1.0 publishes controllability directly as `switch/relay-controllable`, where
+    # flat inferred it from `always-on`. Not a rename: `pcs/managed` is the opposite
+    # sense (PCS manages this circuit), so mapping always-on onto it inverts the
+    # meaning and makes every circuit read as non-controllable.
+    relay_controllable = _bool_prop(devices, node_uuid, "switch", "relay-controllable")
+    if relay_controllable is None:
+        relay_controllable = True
 
-    # Tabs
-    tabs = [space, space + 2] if is_dipole else [space]
-    voltage = 240.0 if is_dipole else 120.0
+    # Multi-position means split-phase, which is how 240 V presents on this panel.
+    voltage = 240.0 if len(tabs) > 1 else 120.0
 
     # Energy profile mode from feed cross-reference
     device_role = feed_map.get(node_uuid)
     mode = _device_role_to_mode(device_role)
 
     # Relay behavior
-    relay_behavior = "non_controllable" if always_on else "controllable"
+    relay_behavior = "controllable" if relay_controllable else "non_controllable"
 
     # Power range and typical power
     max_power = breaker_rating * voltage
@@ -551,8 +621,8 @@ def _translate_circuit(
     # consumption seeds from `exported-energy` and production from
     # `imported-energy`. Requires ebus-emitter >= 0.2.1, which publishes the
     # enclosure frame on both power and energy.
-    imported_energy = _float_prop(properties, prefix, node_uuid, "imported-energy")
-    exported_energy = _float_prop(properties, prefix, node_uuid, "exported-energy")
+    imported_energy = _float_prop(devices, node_uuid, "meter", "imported-energy")
+    exported_energy = _float_prop(devices, node_uuid, "meter", "exported-energy")
 
     # Build template
     energy_profile: dict[str, object] = {
@@ -603,8 +673,7 @@ def _device_role_to_mode(device_role: str | None) -> str:
 
 
 def _build_bess_config(
-    properties: dict[str, str],
-    prefix: str,
+    devices: Mapping[str, DiscoveredDevice],
     bess_node_id: str,
 ) -> dict[str, object] | None:
     """Build top-level bess config from scraped BESS node properties.
@@ -612,7 +681,7 @@ def _build_bess_config(
     Returns ``None`` when the BESS node is an empty slot (no battery
     connected) — indicated by a missing or zero nameplate capacity.
     """
-    nameplate = _float_prop(properties, prefix, bess_node_id, "nameplate-capacity")
+    nameplate = _float_prop(devices, bess_node_id, "info", "nameplate-capacity")
     if not nameplate:
         return None
 
@@ -631,19 +700,19 @@ def _build_bess_config(
 
 
 def _enrich_pv_template(
-    properties: dict[str, str],
-    prefix: str,
+    devices: Mapping[str, DiscoveredDevice],
     pv_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
 ) -> None:
     """Enrich the PV circuit template with nameplate capacity and solar profile."""
-    circuit_uuid = _get_prop(properties, prefix, pv_node_id, "feed")
-    template = _find_template_for_feed(circuit_uuid, feed_map, templates, properties, prefix)
+    circuit_uuid = _circuit_feeding(devices, pv_node_id)
+    template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
         return
 
-    nameplate = _float_prop(properties, prefix, pv_node_id, "nameplate-capacity")
+    # PV publishes `info/nominal-power`; `nameplate-capacity` is the BESS property.
+    nameplate = _float_prop(devices, pv_node_id, "info", "nominal-power")
     if nameplate is not None and nameplate > 0:
         ep = template.get("energy_profile")
         if isinstance(ep, dict):
@@ -653,15 +722,14 @@ def _enrich_pv_template(
 
 
 def _enrich_evse_template(
-    properties: dict[str, str],
-    prefix: str,
+    devices: Mapping[str, DiscoveredDevice],
     evse_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
 ) -> None:
     """Enrich the EVSE circuit template with time-of-day charging profile."""
-    circuit_uuid = _get_prop(properties, prefix, evse_node_id, "feed")
-    template = _find_template_for_feed(circuit_uuid, feed_map, templates, properties, prefix)
+    circuit_uuid = _circuit_feeding(devices, evse_node_id)
+    template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
         return
 
@@ -675,21 +743,19 @@ def _find_template_for_feed(
     circuit_uuid: str | None,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
-    properties: dict[str, str],
-    prefix: str,
+    devices: Mapping[str, DiscoveredDevice],
 ) -> dict[str, object] | None:
     """Find the template associated with a circuit UUID via the feed map.
 
-    The feed map maps circuit_uuid → device_role.  We need to find which
-    template_name (``clone_{space}``) corresponds to that circuit UUID by
-    looking up the circuit's ``space`` property.
+    The feed map maps circuit_uuid -> device_role. Templates are keyed
+    ``clone_{first position}``, so this resolves the circuit's ``info/spaces`` and
+    takes the first entry — the same key ``_translate_circuit`` built it under.
     """
     if circuit_uuid is None:
         return None
 
-    space = _int_prop(properties, prefix, circuit_uuid, "space")
-    if space is None:
+    spaces = _spaces_prop(devices, circuit_uuid)
+    if not spaces:
         return None
 
-    template_name = f"clone_{space}"
-    return templates.get(template_name)
+    return templates.get(f"clone_{spaces[0]}")
