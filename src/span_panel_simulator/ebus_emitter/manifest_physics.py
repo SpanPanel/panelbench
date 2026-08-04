@@ -45,6 +45,12 @@ class PanelPhysics:
     # ``parent-child`` = post-migration shape where children become separate
     # Homie devices. Producer-overridable via metadata key ``schema-topology``.
     topology: Literal["flat", "parent-child"] = "flat"
+    # The eBus data model this panel claims to publish, emitted as the panel's
+    # ``info/data-model-version``. Producer-overridable via metadata key
+    # ``data-model-version`` — deliberately free-form so a fixture can advertise a
+    # stale or future version and exercise a consumer's drift detection, which real
+    # firmware cannot be asked to do on demand.
+    data_model_version: str = "1.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +299,7 @@ def _parse_panel(inst: DeviceInstance) -> PanelPhysics:
         line_voltage_v=_opt_float(md, "line-voltage-v", 120.0),
         islandable=_opt_bool(md, "islandable", False),
         topology=topology,
+        data_model_version=_opt_str(md, "data-model-version") or "1.0",
     )
 
 

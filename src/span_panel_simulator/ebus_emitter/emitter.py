@@ -581,6 +581,7 @@ class Emitter:
             panel_size=panel_phys.panel_size,
             panel_model=panel_phys.panel_model,
             schema_topology=panel_phys.topology,
+            data_model_version=panel_phys.data_model_version,
         )
         door = EbusPanelDoor(
             state=tick.envelope.door_state,

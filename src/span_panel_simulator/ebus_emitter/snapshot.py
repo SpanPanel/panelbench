@@ -137,6 +137,10 @@ class EbusPanelInfo:
     panel_size: int = 0
     panel_model: str | None = None
     schema_topology: Literal["flat", "parent-child"] = "flat"
+    # Published as ``info/data-model-version`` (catalog: string, SHOULD). A consumer
+    # reads this off the bus rather than the REST schema endpoint, which carries no
+    # version — so this is the only place the value appears on the wire.
+    data_model_version: str = "1.0"
 
 
 @dataclass(slots=True)
