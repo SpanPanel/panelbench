@@ -1,0 +1,37 @@
+name: Spec Provenance
+
+# The vendored capability catalogs are byte copies of the eBus specification at the
+# commit `.ebus-spec.json` pins. This job is what makes "base copies are read-only" an
+# enforced property rather than a convention: edit one and the build fails, so a SPAN
+# divergence has to go in the profiles/span/ overlay where it reads as a divergence.
+#
+# It also prints upstream's drift report. Falling behind the spec is a legitimate
+# state and does not fail the build — not knowing about it is the problem.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".ebus-spec.json"
+      - "src/span_panel_simulator/ebus_emitter/wire/catalogs/**"
+      - "scripts/check-spec-provenance.py"
+      - ".github/workflows/spec-provenance.yaml"
+  schedule:
+    # Weekly, so drift surfaces on its own rather than only when someone happens to
+    # touch a catalog. The spec repo changes on its own cadence, not ours.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Verify vendored catalogs and report spec drift
+        run: python3 scripts/check-spec-provenance.py
