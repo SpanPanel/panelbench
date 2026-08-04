@@ -20,7 +20,9 @@ Options:
   --restart            Stop then start the simulator and Mosquitto
   --status             Show running processes
   --ha-url URL         Home Assistant URL (e.g. http://192.168.1.10:8123)
-  --ha-token TOKEN     Long-lived access token for Home Assistant
+  --ha-token TOKEN     Long-lived access token for Home Assistant.
+                       Prefer HA_TOKEN in .env: a token passed here lands in this
+                       script's argv, readable by any process listing.
   -h, --help           Show this help message
 
 Environment variables:
@@ -35,7 +37,8 @@ Environment variables:
   DASHBOARD_PORT    Dashboard UI port (default: 18080)
   BROKER_PORT       MQTTS port (default: 18883)
   HA_URL            Home Assistant URL (alternative to --ha-url)
-  HA_TOKEN          Long-lived access token (alternative to --ha-token)
+  HA_TOKEN          Long-lived access token. Set it in .env; it is exported to the
+                    simulator rather than passed as a flag.
 EOF
     exit 0
 }
@@ -46,6 +49,16 @@ PID_DIR="${REPO_DIR}/.local/pids"
 VENV_DIR="${REPO_DIR}/.venv"
 BROKER_USERNAME="${BROKER_USERNAME:-span}"
 BROKER_PASSWORD="${BROKER_PASSWORD:-sim-password}"
+# Local developer settings, including HA_URL / HA_TOKEN. Sourced before the
+# defaults below so an exported value from the shell still wins. Same file direnv
+# reads via `dotenv_if_exists`, so there is one copy rather than three.
+if [[ -f "${REPO_DIR}/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${REPO_DIR}/.env"
+    set +a
+fi
+
 HTTP_PORT="${HTTP_PORT:-8081}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-18080}"
 BROKER_PORT="${BROKER_PORT:-18883}"
@@ -179,6 +192,12 @@ run_simulator() {
         echo "    HA API:     ${HA_URL}"
     fi
 
+    # HA_URL / HA_TOKEN are EXPORTED rather than passed as --ha-url / --ha-token.
+    # `__main__` already defaults both from the environment, so the flags bought
+    # nothing except putting a long-lived access token into argv, where any process
+    # listing on the machine can read it.
+    export HA_URL HA_TOKEN
+
     "${VENV_DIR}/bin/python3" -m span_panel_simulator \
         --config-dir "${config_dir}" \
         --base-http-port "${HTTP_PORT}" \
@@ -191,8 +210,7 @@ run_simulator() {
         --log-level "${LOG_LEVEL:-INFO}" \
         ${advertise_addr:+--advertise-address "${advertise_addr}"} \
         ${CONFIG_NAME:+--config "${CONFIG_NAME}"} \
-        ${HA_URL:+--ha-url "${HA_URL}"} \
-        ${HA_TOKEN:+--ha-token "${HA_TOKEN}"} &
+        &
 
     local sim_pid=$!
     echo "${sim_pid}" > "${PID_DIR}/simulator.pid"
