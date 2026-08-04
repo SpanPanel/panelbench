@@ -2,56 +2,158 @@
   "$version": 1,
   "type": "energy.ebus.device.distribution-enclosure",
   "capabilities": {
-    "core": {
-      "type": "energy.ebus.device.distribution-enclosure.core",
+    "info": {
+      "type": "energy.ebus.capability.info",
       "properties": {
-        "vendor-name": {"name": "Vendor name", "datatype": "string"},
-        "model": {"name": "Model", "datatype": "enum", "format": "MAIN_16,MLO_24,MAIN_32,MAIN_40,MLO_48"},
-        "serial-number": {"name": "Serial number", "datatype": "string"},
-        "hardware-version": {"name": "Hardware version", "datatype": "string"},
-        "software-version": {"name": "Software version", "datatype": "string"},
-        "door": {"name": "Door state", "datatype": "enum", "format": "UNKNOWN,OPEN,CLOSED"},
-        "grid-islandable": {"name": "Capable of operating with power while disconnected from the grid", "datatype": "boolean"},
-        "dominant-power-source": {"name": "Current dominant power source, load-shedding trigger", "datatype": "enum", "format": "GRID,BATTERY,PV,GENERATOR,NONE,UNKNOWN", "settable": true},
-        "relay": {"name": "Main relay", "datatype": "enum", "format": "UNKNOWN,OPEN,CLOSED"},
-        "l1-voltage": {"name": "L1 voltage", "datatype": "float", "unit": "V"},
-        "l2-voltage": {"name": "L2 voltage", "datatype": "float", "unit": "V"},
-        "breaker-rating": {"name": "Main breaker rating", "datatype": "integer", "unit": "A"},
-        "ethernet": {"name": "Is Ethernet network interface operational?", "datatype": "boolean"},
-        "wifi": {"name": "Is Wi-Fi network interface operational?", "datatype": "boolean"},
-        "wifi-ssid": {"name": "SSID to which Wi-Fi network interface is connected", "datatype": "string"},
-        "vendor-cloud": {"name": "Device connected to vendor cloud?", "datatype": "enum", "format": "UNKNOWN,UNCONNECTED,CONNECTED"},
-        "postal-code": {"name": "Postal (Zip) code", "datatype": "string"},
-        "time-zone": {"name": "Time zone", "datatype": "string"}
+        "vendor-name": {
+          "name": "Vendor name"
+        },
+        "model": {
+          "name": "Model",
+          "datatype": "enum",
+          "format": "MAIN_16,MLO_24,MAIN_32,MAIN_40,MLO_48"
+        },
+        "serial-number": {
+          "name": "Serial number"
+        },
+        "hardware-version": {
+          "name": "Hardware version"
+        },
+        "firmware-version": {
+          "name": "Firmware version"
+        },
+        "data-model-version": {
+          "name": "eBus data-model version (parent/child schema discriminator)"
+        }
+      }
+    },
+    "door": {
+      "type": "energy.ebus.capability.door",
+      "properties": {
+        "state": {
+          "name": "Door state",
+          "format": "UNKNOWN,OPEN,CLOSED"
+        }
+      }
+    },
+    "meter": {
+      "type": "energy.ebus.capability.meter",
+      "properties": {
+        "voltage-a": {
+          "name": "L1 voltage"
+        },
+        "voltage-b": {
+          "name": "L2 voltage"
+        }
+      }
+    },
+    "breaker": {
+      "type": "energy.ebus.capability.breaker",
+      "properties": {
+        "rating": {
+          "name": "Main breaker rating"
+        }
       }
     },
     "pcs": {
-      "type": "energy.ebus.device.pcs",
+      "type": "energy.ebus.capability.pcs",
       "properties": {
-        "enabled": {"name": "PCS system enabled", "datatype": "boolean"},
-        "active": {"name": "PCS system actively controlling one (or more) loads", "datatype": "boolean"},
-        "import-limit": {"name": "The power import limit currently being managed to", "datatype": "float", "unit": "A"},
-        "feed-import-limit": {"name": "Limit of maximum power feeding the distribution enclosure", "datatype": "float", "unit": "A"},
-        "feed-import-limit-enablement": {"name": "Enablement status of the feed-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
-        "feed-import-limit-active": {"name": "Is feed-import-limit currently being enforced?", "datatype": "boolean"},
-        "grid-import-limit": {"name": "Grid limit maximum import power", "datatype": "float", "unit": "A"},
-        "grid-import-limit-enablement": {"name": "Enablement status of the grid-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
-        "grid-import-limit-active": {"name": "Is grid-import-limit currently being enforced?", "datatype": "boolean"},
-        "off-grid-import-limit": {"name": "Off-Grid limit maximum import power", "datatype": "float", "unit": "A"},
-        "off-grid-import-limit-enablement": {"name": "Enablement status of the off-grid-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
-        "off-grid-import-limit-active": {"name": "Is off-grid-import-limit currently being enforced?", "datatype": "boolean"},
-        "requested-import-limit": {"name": "Requested limit maximum import power", "datatype": "float", "unit": "A"},
-        "requested-import-limit-enablement": {"name": "Enablement status of the requested-import-limit", "datatype": "enum", "format": "UNSPECIFIED,UNCONFIGURED,DISABLED,ENABLED"},
-        "requested-import-limit-active": {"name": "Is requested-import-limit currently being enforced?", "datatype": "boolean"}
+        "enabled": {
+          "name": "PCS system enabled"
+        },
+        "active": {
+          "name": "PCS system actively controlling one (or more) loads"
+        },
+        "import-limit": {
+          "name": "The power import limit currently being managed to"
+        },
+        "binding-constraint": {
+          "name": "Which constraint class currently sets the import limit"
+        },
+        "feed-import-limit": {
+          "name": "Limit of maximum power feeding the distribution enclosure"
+        },
+        "feed-import-limit-enablement": {
+          "name": "Enablement status of the feed-import-limit"
+        },
+        "feed-import-limit-active": {
+          "name": "Is feed-import-limit currently being enforced?"
+        },
+        "operator-import-limit": {
+          "name": "Operator-imposed maximum import limit"
+        },
+        "operator-import-limit-enablement": {
+          "name": "Enablement status of the operator-import-limit"
+        },
+        "operator-import-limit-active": {
+          "name": "Is operator-import-limit currently being enforced?"
+        },
+        "off-grid-import-limit": {
+          "name": "Off-Grid limit maximum import power"
+        },
+        "off-grid-import-limit-enablement": {
+          "name": "Enablement status of the off-grid-import-limit"
+        },
+        "off-grid-import-limit-active": {
+          "name": "Is off-grid-import-limit currently being enforced?"
+        },
+        "requested-import-limit": {
+          "name": "Requested limit maximum import power"
+        },
+        "requested-import-limit-enablement": {
+          "name": "Enablement status of the requested-import-limit"
+        },
+        "requested-import-limit-active": {
+          "name": "Is requested-import-limit currently being enforced?"
+        }
+      }
+    },
+    "shed-forecast": {
+      "type": "energy.ebus.capability.shed-forecast",
+      "properties": {
+        "total-time-remaining": {
+          "name": "Estimated total time before all sheddable circuits are shed (off-grid runtime)"
+        },
+        "time-to-priority-shed": {
+          "name": "Estimated time before the next priority tier is shed"
+        },
+        "full-charge-total-time-remaining": {
+          "name": "Estimated total time assuming BESS starts at full charge"
+        },
+        "full-charge-time-to-priority-shed": {
+          "name": "Estimated time to next priority shed assuming BESS starts at full charge"
+        },
+        "confidence": {
+          "name": "Confidence of the shed-forecast estimate"
+        }
+      }
+    },
+    "shed": {
+      "type": "energy.ebus.capability.shed",
+      "properties": {
+        "asserted-islanding-state": {
+          "name": "Consumer-asserted islanding-state (grid-state override during MID/BESS comm-loss)"
+        },
+        "policy": {
+          "name": "Shed policy (algorithm and parameters)"
+        }
       }
     },
     "power-flows": {
-      "type": "energy.ebus.device.power-flows",
+      "type": "energy.ebus.capability.power-flows",
       "properties": {
-        "pv": {"name": "PV power flow", "datatype": "float", "unit": "W"},
-        "battery": {"name": "Battery/BESS power flow", "datatype": "float", "unit": "W"},
-        "grid": {"name": "Grid power flow", "datatype": "float", "unit": "W"},
-        "site": {"name": "Site power flow", "datatype": "float", "unit": "W"}
+        "pv": {
+          "name": "PV power flow"
+        },
+        "battery": {
+          "name": "Battery/BESS power flow"
+        },
+        "grid": {
+          "name": "Grid power flow"
+        },
+        "site": {
+          "name": "Site power flow"
+        }
       }
     }
   }

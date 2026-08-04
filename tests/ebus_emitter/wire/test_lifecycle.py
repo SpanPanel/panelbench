@@ -1,10 +1,10 @@
 import pytest
 
-from span_panel_simulator.flat_emitter.manifest import DeviceInstance, DeviceManifest
-from span_panel_simulator.flat_emitter.wire.graph_builder import build_graph
-from span_panel_simulator.flat_emitter.wire.lifecycle import LifecycleController, lwt_settings
-from span_panel_simulator.flat_emitter.wire.mapping_loader import load_mapping_table
-from span_panel_simulator.flat_emitter.wire.profile_loader import load_profiles
+from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
+from span_panel_simulator.ebus_emitter.wire.graph_builder import build_graph
+from span_panel_simulator.ebus_emitter.wire.lifecycle import LifecycleController, lwt_settings
+from span_panel_simulator.ebus_emitter.wire.mapping_loader import load_mapping_table
+from span_panel_simulator.ebus_emitter.wire.profile_loader import load_profiles
 
 
 class FakeMqttClient:
@@ -105,7 +105,11 @@ async def test_graceful_stop_can_clear_retained_topics() -> None:
     }
     assert "ebus/5/p1/$state" in tombstones
     assert "ebus/5/p1/$description" in tombstones
-    assert "ebus/5/p1/c1/active-power" in tombstones
+    # A circuit is its own device now, so its topics hang off the circuit id and a bare
+    # capability node — not off the panel with a circuit-namespaced node.
+    assert "ebus/5/c1/$state" in tombstones
+    assert "ebus/5/c1/$description" in tombstones
+    assert "ebus/5/c1/meter/active-power" in tombstones
 
 
 @pytest.mark.asyncio

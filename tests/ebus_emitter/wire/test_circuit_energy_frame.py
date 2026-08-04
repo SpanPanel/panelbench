@@ -19,16 +19,16 @@ producing energy.
 
 from __future__ import annotations
 
-from span_panel_simulator.flat_emitter.snapshot import (
+from span_panel_simulator.ebus_emitter.snapshot import (
     EbusCircuitSnapshot,
     EbusPanelInfo,
     EbusPanelSnapshot,
 )
-from span_panel_simulator.flat_emitter.wire.bag_builder import _RESOLVERS
+from span_panel_simulator.ebus_emitter.wire.bag_builder import _RESOLVERS
 
-_IMPORTED = _RESOLVERS[("circuit", "circuit/imported-energy")]
-_EXPORTED = _RESOLVERS[("circuit", "circuit/exported-energy")]
-_ACTIVE_POWER = _RESOLVERS[("circuit", "circuit/active-power")]
+_IMPORTED = _RESOLVERS[("circuit", "meter/imported-energy")]
+_EXPORTED = _RESOLVERS[("circuit", "meter/exported-energy")]
+_ACTIVE_POWER = _RESOLVERS[("circuit", "meter/active-power")]
 
 
 def _snapshot(circuit: EbusCircuitSnapshot) -> EbusPanelSnapshot:

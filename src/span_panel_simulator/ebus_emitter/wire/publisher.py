@@ -14,8 +14,8 @@ from typing import Protocol, runtime_checkable
 
 import ebus_sdk
 
-from span_panel_simulator.flat_emitter.wire.graph_builder import BuiltGraph
-from span_panel_simulator.flat_emitter.wire.property_bag import PropertyBag, PropertyDiffer
+from span_panel_simulator.ebus_emitter.wire.graph_builder import BuiltGraph
+from span_panel_simulator.ebus_emitter.wire.property_bag import PropertyBag, PropertyDiffer
 
 
 @runtime_checkable

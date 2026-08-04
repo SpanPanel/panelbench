@@ -16,27 +16,26 @@ dependencies = [
     "pyyaml>=6.0",
     "zeroconf>=0.131.0",
     "timezonefinder>=6.0",
-    # Runtime dependencies of the vendored flat emitter
-    # (`src/span_panel_simulator/flat_emitter`, see its module docstring for provenance).
+    # Runtime dependencies of the vendored eBus emitter
+    # (`src/span_panel_simulator/ebus_emitter`, see its module docstring for provenance).
     #
-    # ebus-sdk is upper-bounded at 0.2: the vendored `wire/graph_builder.py` targets the
-    # 0.1.x `Device` constructor. 0.2.0 introduced parent/child device trees, replaced the
-    # `children_ids`/`root_id`/`parent_id` kwargs with a `parent=` Device reference, removed
-    # `Device.add_child()`, and changed the `mqtt_cfg` default from `{}` to `None` — which
-    # makes the root Device we build as a passive topic/schema model raise in
-    # `connect_broker()`. Raising this bound requires porting graph_builder to the tree API
-    # and deciding who owns the broker connection (today the producer's client publishes
-    # everything). This simulator publishes the flat schema, so the port has no urgency.
+    # ebus-sdk carries the parent/child device tree the panel/child schema requires.
+    # `graph_builder` targets the tree API (`parent=<Device>`, no
+    # `children_ids`/`root_id`/`parent_id`, no `Device.add_child()`), and this simulator owns
+    # the broker connection outright — the SDK device tree is a naming and description model,
+    # and our own client publishes.
     #
-    # Pinned exactly, not ranged, so vendoring is behaviour-neutral: 0.1.5 is what the
-    # emitter's lockfile resolved and what this code was developed and tested against.
-    # Letting it float within <0.2 resolves 0.1.10, which drops the module-level
-    # `setLevel(INFO)` on the `homie` logger that `tests/test_main_logging.py` guards —
-    # the noise-filter premise documented in `__main__.py`. The add-on image installs from
-    # this file rather than the lockfile, so the declared bound is the operative control
-    # in production. Raising it is a deliberate follow-up with its own testing, not a
-    # side effect of moving code.
-    "ebus-sdk==0.1.5",
+    # The tree is built TRANSPORT-FREE: no `mqtt_cfg` is passed, so the SDK opens no socket
+    # and the whole tree still composes. That has been the documented behaviour since 0.14.0
+    # (our GH #9 / PR #10); the two-step client-neutralisation workaround this file used to
+    # describe is gone, not rewritten.
+    #
+    # Pinned exactly, not ranged, so upgrades stay deliberate: the add-on image installs
+    # from this file rather than the lockfile, so the declared pin is the operative control
+    # in production. On any bump, re-check the `homie` logger premise documented in
+    # `__main__.py` — 0.17.0 logs a missing client at `debug` when the tree is transport-free
+    # (our GH #11 / PR #20), which is exactly our case.
+    "ebus-sdk==0.17.0",
     "paho-mqtt>=2.0.0",
 ]
 
@@ -65,7 +64,7 @@ span-simulator = "span_panel_simulator.__main__:main"
 # so the older, tolerant version this was authored against is not coming back.
 #
 # The same applies to the vendored flat emitter's data files
-# (`flat_emitter/wire/profiles/*.json`, `flat_emitter/wire/mapping/*.yaml`): they live
+# (`ebus_emitter/wire/profiles/*.json`, `ebus_emitter/wire/mapping/*.yaml`): they live
 # under `src/span_panel_simulator`, so `packages` already ships them. Upstream declared
 # them via `force-include` because its package root was elsewhere; re-adding that here
 # would reintroduce the duplicate-path collision described above.
@@ -105,7 +104,7 @@ ignore_missing_imports = true
 
 # ebus-sdk ships without a py.typed marker. Previously these overrides lived in the emitter's
 # own pyproject; they move here with the vendored code. Both forms are needed — the wildcard
-# alone does not match the top-level `ebus_sdk` import in `flat_emitter/wire/_sdk_seam.py`.
+# alone does not match the top-level `ebus_sdk` import in `ebus_emitter/wire/_sdk_seam.py`.
 [[tool.mypy.overrides]]
 module = "ebus_sdk"
 ignore_missing_imports = true

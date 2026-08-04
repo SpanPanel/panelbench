@@ -20,7 +20,7 @@ import aiomqtt
 
 from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
 from span_panel_simulator.emitter_adapter.spec_generator import build_manifest
-from span_panel_simulator.flat_emitter import (
+from span_panel_simulator.ebus_emitter import (
     BESSConfig,
     ChargeMode,
     DeviceManifest,

@@ -2,18 +2,24 @@
   "$version": 1,
   "type": "energy.ebus.device.evse",
   "capabilities": {
-    "evse": {
-      "type": "energy.ebus.device.evse",
+    "info": {
+      "type": "energy.ebus.capability.info",
       "properties": {
-        "vendor-name": {"name": "Vendor name", "datatype": "string"},
-        "product-name": {"name": "Product name", "datatype": "string"},
-        "part-number": {"name": "Part number", "datatype": "string"},
-        "serial-number": {"name": "Serial number", "datatype": "string"},
-        "software-version": {"name": "Software version", "datatype": "string"},
-        "feed": {"name": "Circuit ID upon which the commissioned EVSE is landed", "datatype": "enum"},
-        "lock-state": {"name": "Lock state", "datatype": "enum", "format": "UNKNOWN,LOCKED,UNLOCKED"},
-        "status": {"name": "Status", "datatype": "enum", "format": "UNKNOWN,AVAILABLE,PREPARING,CHARGING,SUSPENDED_EV,SUSPENDED_EVSE,FINISHING,RESERVED,FAULTED,UNAVAILABLE"},
-        "advertised-current": {"name": "Current EVSE is advertising to the EV", "datatype": "float", "unit": "A"}
+        "vendor-name": {
+          "name": "Vendor name"
+        },
+        "model": {
+          "name": "Model"
+        },
+        "part-number": {
+          "name": "Part number"
+        },
+        "serial-number": {
+          "name": "Serial number"
+        },
+        "firmware-version": {
+          "name": "Firmware version"
+        }
       }
     }
   }

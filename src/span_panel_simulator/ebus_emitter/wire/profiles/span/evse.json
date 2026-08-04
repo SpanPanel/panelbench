@@ -1,0 +1,52 @@
+{
+  "$version": 1,
+  "type": "energy.ebus.device.evse",
+  "capabilities": {
+    "switch": {
+      "type": "energy.ebus.capability.switch",
+      "properties": {
+        "lock-state": {
+          "name": "Lock state",
+          "datatype": "enum",
+          "format": "UNLOCKED,LOCKED"
+        }
+      }
+    },
+    "status": {
+      "type": "energy.ebus.capability.status",
+      "properties": {
+        "status": {
+          "name": "Status",
+          "datatype": "enum",
+          "format": "AVAILABLE,PREPARING,CHARGING,UNAVAILABLE"
+        }
+      }
+    },
+    "meter": {
+      "type": "energy.ebus.capability.meter",
+      "properties": {
+        "advertised-current": {
+          "name": "Current EVSE is advertising to the EV",
+          "datatype": "float",
+          "unit": "A"
+        }
+      }
+    },
+    "config": {
+      "type": "energy.ebus.capability.config",
+      "properties": {
+        "user-max-charge-current": {
+          "name": "User-configured maximum EVSE charge current (ceiling)",
+          "datatype": "integer",
+          "unit": "A",
+          "settable": true
+        },
+        "max-charge-current": {
+          "name": "Commissioned maximum EVSE charge current (installer-configured)",
+          "datatype": "integer",
+          "unit": "A"
+        }
+      }
+    }
+  }
+}

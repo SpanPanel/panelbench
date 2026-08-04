@@ -22,10 +22,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from span_panel_simulator.flat_emitter.conventions.tab_legs import Leg
+from span_panel_simulator.ebus_emitter.conventions.tab_legs import Leg
 
 if TYPE_CHECKING:
-    from span_panel_simulator.flat_emitter.manifest_physics import CircuitPhysics, PanelPhysics
+    from span_panel_simulator.ebus_emitter.manifest_physics import CircuitPhysics, PanelPhysics
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-from span_panel_simulator.flat_emitter.tick_inputs import PanelEnvelopeTick, TickInputs
+from span_panel_simulator.ebus_emitter.tick_inputs import PanelEnvelopeTick, TickInputs
 
 
 def test_tick_inputs_defaults() -> None:

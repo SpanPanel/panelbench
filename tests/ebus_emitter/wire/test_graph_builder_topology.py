@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import pytest
 
-from span_panel_simulator.flat_emitter.exceptions import ProfileValidationError
-from span_panel_simulator.flat_emitter.manifest import DeviceInstance, DeviceManifest
-from span_panel_simulator.flat_emitter.wire.graph_builder import build_graph
-from span_panel_simulator.flat_emitter.wire.mapping_loader import (
+from span_panel_simulator.ebus_emitter.exceptions import ProfileValidationError
+from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
+from span_panel_simulator.ebus_emitter.wire.graph_builder import build_graph
+from span_panel_simulator.ebus_emitter.wire.mapping_loader import (
     DiscoveryConfig,
     DisplayConfig,
     MappingDescriptor,
@@ -18,7 +18,7 @@ from span_panel_simulator.flat_emitter.wire.mapping_loader import (
     Placement,
     WireConfig,
 )
-from span_panel_simulator.flat_emitter.wire.profile_loader import (
+from span_panel_simulator.ebus_emitter.wire.profile_loader import (
     Profile,
     ProfileCapability,
     ProfileProperty,

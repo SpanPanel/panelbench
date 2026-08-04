@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from span_panel_simulator.flat_emitter import (
+from span_panel_simulator.ebus_emitter import (
     BESSConfig,
     BessPhysics,
     CircuitPhysics,

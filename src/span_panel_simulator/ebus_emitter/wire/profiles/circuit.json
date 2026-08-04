@@ -2,25 +2,86 @@
   "$version": 1,
   "type": "energy.ebus.device.circuit",
   "capabilities": {
-    "circuit": {
-      "type": "energy.ebus.device.circuit",
+    "switch": {
+      "type": "energy.ebus.capability.switch",
       "properties": {
-        "name": {"name": "Circuit name", "datatype": "string"},
-        "relay": {"name": "Circuit relay state", "datatype": "enum", "format": "UNKNOWN,OPEN,CLOSED", "settable": true},
-        "relay-requester": {"name": "Actor requesting the relay state", "datatype": "enum", "format": "UNKNOWN,NONE,BACKUP,USER,PCS,PCS_FAIL_SAFE,ALWAYS_ON,NEVER_BACKUP,INVERTER,FAULT"},
-        "breaker-rating": {"name": "Circuit breaker rating", "datatype": "integer", "unit": "A"},
-        "current": {"name": "Measured current", "datatype": "float", "unit": "A"},
-        "active-power": {"name": "Measured active power", "datatype": "float", "unit": "W"},
-        "imported-energy": {"name": "Measured energy imported", "datatype": "float", "unit": "Wh"},
-        "exported-energy": {"name": "Measured energy exported", "datatype": "float", "unit": "Wh"},
-        "space": {"name": "Circuit breaker space number within load center", "datatype": "integer", "format": "1:40:1"},
-        "dipole": {"name": "Does circuit land on a two-pole breaker?", "datatype": "boolean"},
-        "shed-priority": {"name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)", "datatype": "enum", "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER", "settable": true},
-        "pcs-managed": {"name": "Is circuit managed by PCS?", "datatype": "boolean"},
-        "pcs-priority": {"name": "Circuit PCS priority ranking", "datatype": "integer"},
-        "sheddable": {"name": "Is circuit configured to be sheddable?", "datatype": "boolean"},
-        "never-backup": {"name": "Is circuit configured to be never-backup?", "datatype": "boolean"},
-        "always-on": {"name": "Is circuit configured to be always on?", "datatype": "boolean"}
+        "relay": {
+          "name": "Circuit relay state",
+          "format": "UNKNOWN,OPEN,CLOSED"
+        },
+        "relay-requester": {
+          "name": "Actor requesting the relay state",
+          "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT"
+        },
+        "relay-controllable": {
+          "name": "Can the circuit's relay be commanded by the user?"
+        }
+      }
+    },
+    "breaker": {
+      "type": "energy.ebus.capability.breaker",
+      "properties": {
+        "rating": {
+          "name": "Circuit breaker rating"
+        },
+        "poles": {
+          "name": "Number of breaker poles",
+          "format": "1:4:1"
+        }
+      }
+    },
+    "meter": {
+      "type": "energy.ebus.capability.meter",
+      "properties": {
+        "current": {
+          "name": "Measured current"
+        },
+        "active-power": {
+          "name": "Measured active power"
+        },
+        "imported-energy": {
+          "name": "Measured energy imported"
+        },
+        "exported-energy": {
+          "name": "Measured energy exported"
+        }
+      }
+    },
+    "load-shed": {
+      "type": "energy.ebus.capability.load-shed",
+      "properties": {
+        "priority": {
+          "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
+          "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER"
+        }
+      }
+    },
+    "pcs": {
+      "type": "energy.ebus.capability.pcs",
+      "properties": {
+        "managed": {
+          "name": "Is circuit managed by PCS?"
+        },
+        "priority": {
+          "name": "Circuit PCS priority ranking"
+        }
+      }
+    },
+    "connection": {
+      "type": "energy.ebus.capability.connection",
+      "properties": {
+        "feeds-device-id": {
+          "name": "Homie device-id of the downstream device fed by this circuit"
+        },
+        "feeds-device-type": {
+          "name": "Homie $type of the downstream device"
+        },
+        "feeds-device-status": {
+          "name": "Panel's view of comm health to the downstream device"
+        },
+        "count": {
+          "name": "Number of physical units aggregated downstream (e.g. microinverters, packs)"
+        }
       }
     }
   }

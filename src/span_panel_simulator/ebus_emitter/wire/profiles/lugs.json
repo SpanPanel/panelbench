@@ -2,16 +2,50 @@
   "$version": 1,
   "type": "energy.ebus.device.lugs",
   "capabilities": {
-    "lugs": {
-      "type": "energy.ebus.device.lugs",
+    "meter": {
+      "type": "energy.ebus.capability.meter",
       "properties": {
-        "direction": {"name": "Lugs feed direction: upstream or downstream", "datatype": "enum", "format": "UPSTREAM,DOWNSTREAM"},
-        "feed": {"name": "Device the lugs are connected to, if known", "datatype": "string"},
-        "l1-current": {"name": "L1 current", "datatype": "float", "unit": "A"},
-        "l2-current": {"name": "L2 current", "datatype": "float", "unit": "A"},
-        "active-power": {"name": "Active power", "datatype": "float", "unit": "W"},
-        "imported-energy": {"name": "Imported energy", "datatype": "float", "unit": "Wh"},
-        "exported-energy": {"name": "Exported energy", "datatype": "float", "unit": "Wh"}
+        "current-a": {
+          "name": "L1 current"
+        },
+        "current-b": {
+          "name": "L2 current"
+        },
+        "active-power": {
+          "name": "Active power"
+        },
+        "imported-energy": {
+          "name": "Imported energy"
+        },
+        "exported-energy": {
+          "name": "Exported energy"
+        }
+      }
+    },
+    "connection": {
+      "type": "energy.ebus.capability.connection",
+      "properties": {
+        "fed-by-device-id": {
+          "name": "Homie device-id of the upstream device feeding this lugs"
+        },
+        "fed-by-device-type": {
+          "name": "Homie $type of the upstream device"
+        },
+        "fed-by-device-status": {
+          "name": "Panel's view of comm health to the upstream device"
+        },
+        "feeds-device-id": {
+          "name": "Homie device-id of the downstream device fed by this lugs"
+        },
+        "feeds-device-type": {
+          "name": "Homie $type of the downstream device"
+        },
+        "feeds-device-status": {
+          "name": "Panel's view of comm health to the downstream device"
+        },
+        "count": {
+          "name": "Number of physical units aggregated up/downstream"
+        }
       }
     }
   }

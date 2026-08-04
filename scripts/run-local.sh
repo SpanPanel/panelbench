@@ -81,7 +81,7 @@ ensure_prerequisites() {
 ensure_venv() {
     echo "==> Syncing dependencies..."
     # Every dependency now resolves from PyPI — the flat emitter is vendored at
-    # src/span_panel_simulator/flat_emitter rather than installed from a local path —
+    # src/span_panel_simulator/ebus_emitter rather than installed from a local path —
     # so a plain sync is sufficient. dev-setup.sh remains the documented entry point.
     bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
     # shellcheck disable=SC1091

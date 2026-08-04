@@ -1,6 +1,6 @@
 """EnergySystem — top-level energy balance resolver for grid + PV + load.
 
-BESS dispatch lives in the emitter (`span_panel_simulator.flat_emitter.native_devices.bess`); this
+BESS dispatch lives in the emitter (`span_panel_simulator.ebus_emitter.native_devices.bess`); this
 module is battery-blind. The simulator computes pre-battery grid power; the
 emitter publishes battery state separately and consumers (HA, dashboards)
 correlate the two streams.

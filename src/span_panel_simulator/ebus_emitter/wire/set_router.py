@@ -6,7 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from span_panel_simulator.flat_emitter.exceptions import MissingSetterError
+from span_panel_simulator.ebus_emitter.exceptions import MissingSetterError
 
 _LOG = logging.getLogger(__name__)
 

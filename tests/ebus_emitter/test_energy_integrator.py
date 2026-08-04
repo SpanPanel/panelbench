@@ -1,6 +1,6 @@
 import pytest
 
-from span_panel_simulator.flat_emitter.energy_integrator import EnergyIntegrator
+from span_panel_simulator.ebus_emitter.energy_integrator import EnergyIntegrator
 
 
 def test_register_initializes_at_zero() -> None:

@@ -1,0 +1,16 @@
+{
+  "$version": 1,
+  "type": "energy.ebus.device.lugs",
+  "capabilities": {
+    "info": {
+      "type": "energy.ebus.capability.info",
+      "properties": {
+        "direction": {
+          "name": "Lugs feed direction: upstream or downstream",
+          "datatype": "enum",
+          "format": "UPSTREAM,DOWNSTREAM"
+        }
+      }
+    }
+  }
+}

@@ -25,12 +25,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from span_panel_simulator.flat_emitter.exceptions import EmitterStateError
-from span_panel_simulator.flat_emitter.snapshot import EbusPanelSnapshot
-from span_panel_simulator.flat_emitter.wire.graph_builder import BuiltGraph
-from span_panel_simulator.flat_emitter.wire.mapping_loader import MappingTable
-from span_panel_simulator.flat_emitter.wire.profile_loader import ProfileTable
-from span_panel_simulator.flat_emitter.wire.property_bag import PropertyBag
+from span_panel_simulator.ebus_emitter.exceptions import EmitterStateError
+from span_panel_simulator.ebus_emitter.snapshot import EbusPanelSnapshot
+from span_panel_simulator.ebus_emitter.wire.graph_builder import BuiltGraph
+from span_panel_simulator.ebus_emitter.wire.mapping_loader import MappingTable
+from span_panel_simulator.ebus_emitter.wire.profile_loader import ProfileTable
+from span_panel_simulator.ebus_emitter.wire.property_bag import PropertyBag
 
 # A ``Resolver`` is a function that pulls a single property's value from the
 # snapshot. It receives the snapshot and the per-instance id and returns the
@@ -50,6 +50,10 @@ def _panel_resolver(getter: Callable[[EbusPanelSnapshot], object]) -> Resolver:
 
 # ---------------------------------------------------------------------------
 # Static resolver table — one entry per profile-declared property.
+#
+# Keyed by (entity_class, "<capability>/<property-key>"), matching the canonical
+# eBus capability decomposition (info/meter/switch/breaker/load-shed/pcs/
+# connection/status/door/soc/shed/shed-forecast/grid/config/power-flows).
 #
 # Adding a new profile property: add it here AND add a snapshot field. The
 # constructor's coverage check raises if you only do one half.
@@ -106,11 +110,33 @@ def _lugs_field(field: str) -> Resolver:
     return _resolve
 
 
-def _circuit_space(snapshot: EbusPanelSnapshot, instance_id: str) -> object:
+def _mid_field(field: str) -> Resolver:
+    def _resolve(snapshot: EbusPanelSnapshot, instance_id: str) -> object:
+        mid = snapshot.mid.get(instance_id)
+        if mid is None:
+            return None
+        return getattr(mid, field)
+
+    return _resolve
+
+
+def _circuit_spaces(snapshot: EbusPanelSnapshot, instance_id: str) -> object:
+    """``info/spaces`` — the position(s) the breaker occupies, as a comma list.
+
+    A two-pole/tandem breaker lands on multiple tabs (e.g. ``"32,34"``); the
+    multi-valued string preserves every position a single scalar would lose."""
     circuit = snapshot.circuits.get(instance_id)
     if circuit is None or not circuit.tabs:
         return None
-    return circuit.tabs[0]
+    return ",".join(str(t) for t in circuit.tabs)
+
+
+def _circuit_poles(snapshot: EbusPanelSnapshot, instance_id: str) -> object:
+    """``breaker/poles`` — 2 for a 240 V (two-pole) circuit, else 1."""
+    circuit = snapshot.circuits.get(instance_id)
+    if circuit is None:
+        return None
+    return 2 if circuit.is_240v else 1
 
 
 def _circuit_breaker(snapshot: EbusPanelSnapshot, instance_id: str) -> object:
@@ -127,13 +153,6 @@ def _circuit_shed_priority(snapshot: EbusPanelSnapshot, instance_id: str) -> obj
     if circuit.priority in ("OFF_GRID", "SOC_THRESHOLD", "NEVER"):
         return circuit.priority
     return "UNKNOWN"
-
-
-def _circuit_relay_requester(snapshot: EbusPanelSnapshot, instance_id: str) -> object:
-    circuit = snapshot.circuits.get(instance_id)
-    if circuit is None:
-        return None
-    return "NONE" if circuit.relay_requester == "UNKNOWN" else circuit.relay_requester
 
 
 def _circuit_wire_active_power(snapshot: EbusPanelSnapshot, instance_id: str) -> object:
@@ -183,32 +202,21 @@ def _upper_lugs_direction(snapshot: EbusPanelSnapshot, instance_id: str) -> obje
 # Keyed by (entity_class, "<cap>/<prop>"). One entry per profile-declared
 # property; the constructor verifies coverage at startup.
 _RESOLVERS: dict[tuple[str, str], Resolver] = {
-    # ---- panel ----------------------------------------------------------
-    ("panel", "core/vendor-name"): _panel_resolver(lambda s: s.info.vendor_name),
-    ("panel", "core/model"): _panel_resolver(lambda s: s.info.panel_model),
-    ("panel", "core/serial-number"): _panel_resolver(lambda s: s.info.serial_number),
-    ("panel", "core/hardware-version"): _panel_resolver(lambda s: s.info.hardware_version),
-    ("panel", "core/software-version"): _panel_resolver(
-        lambda s: s.info.firmware_version,
-    ),
-    ("panel", "core/door"): _panel_resolver(lambda s: s.door.state),
-    ("panel", "core/grid-islandable"): _panel_resolver(lambda s: s.pcs.grid_islandable),
-    ("panel", "core/dominant-power-source"): _panel_resolver(
-        lambda s: s.pcs.dominant_power_source,
-    ),
-    ("panel", "core/relay"): _panel_resolver(lambda s: s.status.main_relay_state),
-    ("panel", "core/l1-voltage"): _panel_resolver(lambda s: s.meter.l1_voltage),
-    ("panel", "core/l2-voltage"): _panel_resolver(lambda s: s.meter.l2_voltage),
-    ("panel", "core/breaker-rating"): _panel_resolver(lambda s: s.pcs.main_breaker_rating_a),
-    ("panel", "core/ethernet"): _panel_resolver(lambda s: s.status.eth0_link),
-    ("panel", "core/wifi"): _panel_resolver(lambda s: s.status.wlan_link),
-    ("panel", "core/wifi-ssid"): _panel_resolver(lambda s: s.status.wifi_ssid),
-    ("panel", "core/vendor-cloud"): _panel_resolver(lambda s: s.status.cloud_connection),
-    ("panel", "core/postal-code"): _panel_resolver(lambda s: s.status.postal_code),
-    ("panel", "core/time-zone"): _panel_resolver(lambda s: s.status.time_zone),
+    # ---- panel (distribution-enclosure) ---------------------------------
+    ("panel", "info/vendor-name"): _panel_resolver(lambda s: s.info.vendor_name),
+    ("panel", "info/model"): _panel_resolver(lambda s: s.info.panel_model),
+    ("panel", "info/serial-number"): _panel_resolver(lambda s: s.info.serial_number),
+    ("panel", "info/hardware-version"): _panel_resolver(lambda s: s.info.hardware_version),
+    ("panel", "info/firmware-version"): _panel_resolver(lambda s: s.info.firmware_version),
+    ("panel", "info/data-model-version"): _panel_resolver(lambda s: s.info.data_model_version),
+    ("panel", "door/state"): _panel_resolver(lambda s: s.door.state),
+    ("panel", "meter/voltage-a"): _panel_resolver(lambda s: s.meter.l1_voltage),
+    ("panel", "meter/voltage-b"): _panel_resolver(lambda s: s.meter.l2_voltage),
+    ("panel", "breaker/rating"): _panel_resolver(lambda s: s.pcs.main_breaker_rating_a),
     ("panel", "pcs/enabled"): _panel_resolver(lambda s: s.pcs.enabled),
     ("panel", "pcs/active"): _panel_resolver(lambda s: s.pcs.active),
     ("panel", "pcs/import-limit"): _panel_resolver(lambda s: s.pcs.import_limit_a),
+    ("panel", "pcs/binding-constraint"): _panel_resolver(lambda s: s.pcs.binding_constraint),
     ("panel", "pcs/feed-import-limit"): _panel_resolver(lambda s: s.pcs.feed_import_limit_a),
     ("panel", "pcs/feed-import-limit-enablement"): _panel_resolver(
         lambda s: s.pcs.feed_import_limit_enablement,
@@ -216,12 +224,14 @@ _RESOLVERS: dict[tuple[str, str], Resolver] = {
     ("panel", "pcs/feed-import-limit-active"): _panel_resolver(
         lambda s: s.pcs.feed_import_limit_active,
     ),
-    ("panel", "pcs/grid-import-limit"): _panel_resolver(lambda s: s.pcs.grid_import_limit_a),
-    ("panel", "pcs/grid-import-limit-enablement"): _panel_resolver(
-        lambda s: s.pcs.grid_import_limit_enablement,
+    ("panel", "pcs/operator-import-limit"): _panel_resolver(
+        lambda s: s.pcs.operator_import_limit_a,
     ),
-    ("panel", "pcs/grid-import-limit-active"): _panel_resolver(
-        lambda s: s.pcs.grid_import_limit_active,
+    ("panel", "pcs/operator-import-limit-enablement"): _panel_resolver(
+        lambda s: s.pcs.operator_import_limit_enablement,
+    ),
+    ("panel", "pcs/operator-import-limit-active"): _panel_resolver(
+        lambda s: s.pcs.operator_import_limit_active,
     ),
     ("panel", "pcs/off-grid-import-limit"): _panel_resolver(
         lambda s: s.pcs.off_grid_import_limit_a,
@@ -241,69 +251,104 @@ _RESOLVERS: dict[tuple[str, str], Resolver] = {
     ("panel", "pcs/requested-import-limit-active"): _panel_resolver(
         lambda s: s.pcs.requested_import_limit_active,
     ),
+    ("panel", "status/relay"): _panel_resolver(lambda s: s.status.main_relay_state),
+    ("panel", "status/ethernet"): _panel_resolver(lambda s: s.status.eth0_link),
+    ("panel", "status/wifi"): _panel_resolver(lambda s: s.status.wlan_link),
+    ("panel", "status/wifi-ssid"): _panel_resolver(lambda s: s.status.wifi_ssid),
+    ("panel", "status/cloud-connection"): _panel_resolver(lambda s: s.status.cloud_connection),
+    ("panel", "status/postal-code"): _panel_resolver(lambda s: s.status.postal_code),
+    ("panel", "status/time-zone"): _panel_resolver(lambda s: s.status.time_zone),
+    ("panel", "shed-forecast/total-time-remaining"): _panel_resolver(
+        lambda s: s.shed_forecast.total_time_remaining,
+    ),
+    ("panel", "shed-forecast/time-to-priority-shed"): _panel_resolver(
+        lambda s: s.shed_forecast.time_to_priority_shed,
+    ),
+    ("panel", "shed-forecast/full-charge-total-time-remaining"): _panel_resolver(
+        lambda s: s.shed_forecast.full_charge_total_time_remaining,
+    ),
+    ("panel", "shed-forecast/full-charge-time-to-priority-shed"): _panel_resolver(
+        lambda s: s.shed_forecast.full_charge_time_to_priority_shed,
+    ),
+    ("panel", "shed-forecast/confidence"): _panel_resolver(lambda s: s.shed_forecast.confidence),
+    ("panel", "shed/asserted-islanding-state"): _panel_resolver(
+        lambda s: s.shed.asserted_islanding_state,
+    ),
+    ("panel", "shed/policy"): _panel_resolver(lambda s: s.shed.policy),
     ("panel", "power-flows/pv"): _panel_resolver(lambda s: s.power_flows.pv),
     ("panel", "power-flows/battery"): _panel_resolver(lambda s: s.power_flows.battery),
     ("panel", "power-flows/grid"): _panel_resolver(lambda s: s.power_flows.grid),
     ("panel", "power-flows/site"): _panel_resolver(lambda s: s.power_flows.site),
-    ("panel", "meter/active-power"): _panel_resolver(
-        lambda s: s.meter.instant_grid_power_w,
-    ),
     # ---- circuit --------------------------------------------------------
-    ("circuit", "circuit/name"): _circuit_field("name"),
-    ("circuit", "circuit/relay"): _circuit_field("relay_state"),
-    ("circuit", "circuit/relay-requester"): _circuit_relay_requester,
-    ("circuit", "circuit/breaker-rating"): _circuit_breaker,
-    ("circuit", "circuit/current"): _circuit_field("current_a"),
-    ("circuit", "circuit/active-power"): _circuit_wire_active_power,
-    ("circuit", "circuit/imported-energy"): _circuit_wire_imported_energy,
-    ("circuit", "circuit/exported-energy"): _circuit_wire_exported_energy,
-    ("circuit", "circuit/space"): _circuit_space,
-    ("circuit", "circuit/dipole"): _circuit_field("is_240v"),
-    ("circuit", "circuit/shed-priority"): _circuit_shed_priority,
-    ("circuit", "circuit/pcs-managed"): _circuit_field("pcs_managed"),
-    ("circuit", "circuit/pcs-priority"): _circuit_field("pcs_priority"),
-    ("circuit", "circuit/sheddable"): _circuit_field("is_sheddable"),
-    ("circuit", "circuit/never-backup"): _circuit_field("is_never_backup"),
-    ("circuit", "circuit/always-on"): _circuit_field("always_on"),
-    # ---- bess -----------------------------------------------------------
-    ("bess", "bess/vendor-name"): _bess_field("vendor_name"),
-    ("bess", "bess/product-name"): _bess_field("product_name"),
-    ("bess", "bess/model"): _bess_field("model"),
-    ("bess", "bess/serial-number"): _bess_field("serial_number"),
-    ("bess", "bess/software-version"): _bess_field("firmware_version"),
-    ("bess", "bess/nameplate-capacity"): _bess_field("nameplate_capacity_kwh"),
-    ("bess", "bess/relative-position"): _bess_field("relative_position"),
-    ("bess", "bess/feed"): _bess_field("feed_circuit_id"),
-    ("bess", "bess/soc"): _bess_field("soe_percentage"),
-    ("bess", "bess/soe"): _bess_field("soe_kwh"),
-    ("bess", "bess/connected"): _bess_field("connected"),
-    ("bess", "bess/grid-state"): _bess_field("grid_state"),
-    # ---- pv -------------------------------------------------------------
-    ("pv", "pv/vendor-name"): _pv_field("vendor_name"),
-    ("pv", "pv/product-name"): _pv_field("product_name"),
-    ("pv", "pv/serial-number"): _pv_field("serial_number"),
-    ("pv", "pv/software-version"): _pv_field("firmware_version"),
-    ("pv", "pv/nameplate-capacity"): _pv_field("nameplate_capacity_w"),
-    ("pv", "pv/relative-position"): _pv_field("relative_position"),
-    ("pv", "pv/feed"): _pv_field("feed_circuit_id"),
-    # ---- evse -----------------------------------------------------------
-    ("evse", "evse/vendor-name"): _evse_field("vendor_name"),
-    ("evse", "evse/product-name"): _evse_field("product_name"),
-    ("evse", "evse/part-number"): _evse_field("part_number"),
-    ("evse", "evse/serial-number"): _evse_field("serial_number"),
-    ("evse", "evse/software-version"): _evse_field("firmware_version"),
-    ("evse", "evse/feed"): _evse_field("feed_circuit_id"),
-    ("evse", "evse/lock-state"): _evse_field("lock_state"),
-    ("evse", "evse/status"): _evse_field("status"),
-    ("evse", "evse/advertised-current"): _evse_field("advertised_current_a"),
+    ("circuit", "info/name"): _circuit_field("name"),
+    ("circuit", "info/spaces"): _circuit_spaces,
+    ("circuit", "switch/relay"): _circuit_field("relay_state"),
+    ("circuit", "switch/relay-requester"): _circuit_field("relay_requester"),
+    ("circuit", "switch/relay-controllable"): _circuit_field("is_user_controllable"),
+    ("circuit", "breaker/rating"): _circuit_breaker,
+    ("circuit", "breaker/poles"): _circuit_poles,
+    ("circuit", "meter/current"): _circuit_field("current_a"),
+    ("circuit", "meter/active-power"): _circuit_wire_active_power,
+    ("circuit", "meter/imported-energy"): _circuit_wire_imported_energy,
+    ("circuit", "meter/exported-energy"): _circuit_wire_exported_energy,
+    ("circuit", "load-shed/priority"): _circuit_shed_priority,
+    ("circuit", "pcs/managed"): _circuit_field("pcs_managed"),
+    ("circuit", "pcs/priority"): _circuit_field("pcs_priority"),
+    ("circuit", "connection/feeds-device-id"): _circuit_field("feeds_device_id"),
+    ("circuit", "connection/feeds-device-type"): _circuit_field("feeds_device_type"),
+    ("circuit", "connection/feeds-device-status"): _circuit_field("feeds_device_status"),
+    ("circuit", "connection/count"): _circuit_field("feeds_count"),
     # ---- lugs -----------------------------------------------------------
-    ("lugs", "lugs/direction"): _upper_lugs_direction,
-    ("lugs", "lugs/feed"): _lugs_field("feed"),
-    ("lugs", "lugs/active-power"): _lugs_field("active_power_w"),
-    ("lugs", "lugs/l1-current"): _lugs_field("l1_current_a"),
-    ("lugs", "lugs/l2-current"): _lugs_field("l2_current_a"),
-    ("lugs", "lugs/imported-energy"): _lugs_field("imported_energy_wh"),
-    ("lugs", "lugs/exported-energy"): _lugs_field("exported_energy_wh"),
+    ("lugs", "info/direction"): _upper_lugs_direction,
+    ("lugs", "meter/current-a"): _lugs_field("l1_current_a"),
+    ("lugs", "meter/current-b"): _lugs_field("l2_current_a"),
+    ("lugs", "meter/active-power"): _lugs_field("active_power_w"),
+    ("lugs", "meter/imported-energy"): _lugs_field("imported_energy_wh"),
+    ("lugs", "meter/exported-energy"): _lugs_field("exported_energy_wh"),
+    ("lugs", "connection/fed-by-device-id"): _lugs_field("fed_by_device_id"),
+    ("lugs", "connection/fed-by-device-type"): _lugs_field("fed_by_device_type"),
+    ("lugs", "connection/fed-by-device-status"): _lugs_field("fed_by_device_status"),
+    ("lugs", "connection/feeds-device-id"): _lugs_field("feeds_device_id"),
+    ("lugs", "connection/feeds-device-type"): _lugs_field("feeds_device_type"),
+    ("lugs", "connection/feeds-device-status"): _lugs_field("feeds_device_status"),
+    ("lugs", "connection/count"): _lugs_field("connection_count"),
+    # ---- bess -----------------------------------------------------------
+    ("bess", "info/vendor-name"): _bess_field("vendor_name"),
+    ("bess", "info/part-number"): _bess_field("part_number"),
+    ("bess", "info/model"): _bess_field("model"),
+    ("bess", "info/serial-number"): _bess_field("serial_number"),
+    ("bess", "info/firmware-version"): _bess_field("firmware_version"),
+    ("bess", "info/nameplate-capacity"): _bess_field("nameplate_capacity_kwh"),
+    ("bess", "soc/soc"): _bess_field("soe_percentage"),
+    ("bess", "soc/soe"): _bess_field("soe_kwh"),
+    ("bess", "meter/active-power"): _bess_field("active_power_w"),
+    ("bess", "status/communication-state"): _bess_field("communication"),
+    # ---- pv -------------------------------------------------------------
+    ("pv", "info/vendor-name"): _pv_field("vendor_name"),
+    ("pv", "info/model"): _pv_field("model"),
+    ("pv", "info/serial-number"): _pv_field("serial_number"),
+    ("pv", "info/firmware-version"): _pv_field("firmware_version"),
+    ("pv", "info/nominal-power"): _pv_field("nominal_power_w"),
+    # ---- evse -----------------------------------------------------------
+    ("evse", "info/vendor-name"): _evse_field("vendor_name"),
+    ("evse", "info/model"): _evse_field("model"),
+    ("evse", "info/part-number"): _evse_field("part_number"),
+    ("evse", "info/serial-number"): _evse_field("serial_number"),
+    ("evse", "info/firmware-version"): _evse_field("firmware_version"),
+    ("evse", "switch/lock-state"): _evse_field("lock_state"),
+    ("evse", "status/status"): _evse_field("status"),
+    ("evse", "meter/advertised-current"): _evse_field("advertised_current_a"),
+    ("evse", "config/user-max-charge-current"): _evse_field("user_max_charge_current_a"),
+    ("evse", "config/max-charge-current"): _evse_field("max_charge_current_a"),
+    # ---- mid ------------------------------------------------------------
+    ("mid", "info/vendor-name"): _mid_field("vendor_name"),
+    ("mid", "info/serial-number"): _mid_field("serial_number"),
+    ("mid", "info/model"): _mid_field("model"),
+    ("mid", "info/firmware-version"): _mid_field("firmware_version"),
+    ("mid", "info/hardware-version"): _mid_field("hardware_version"),
+    ("mid", "grid/islanding-state"): _mid_field("islanding_state"),
+    ("mid", "grid/grid-state"): _mid_field("grid_state"),
+    ("mid", "grid/grid-forming-entity"): _mid_field("grid_forming_entity"),
 }
 
 

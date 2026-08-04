@@ -1,0 +1,19 @@
+{
+  "$version": 1,
+  "type": "energy.ebus.device.circuit",
+  "capabilities": {
+    "info": {
+      "type": "energy.ebus.capability.info",
+      "properties": {
+        "name": {
+          "name": "Circuit name",
+          "datatype": "string"
+        },
+        "spaces": {
+          "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)",
+          "datatype": "string"
+        }
+      }
+    }
+  }
+}

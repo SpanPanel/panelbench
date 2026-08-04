@@ -1,5 +1,5 @@
 """Core types for the component-based energy system. Battery (BESS) modeling lives
-in the emitter (`span_panel_simulator.flat_emitter.native_devices.bess`) — this
+in the emitter (`span_panel_simulator.ebus_emitter.native_devices.bess`) — this
 module only covers the grid + PV + load balance the simulator owns."""
 
 from __future__ import annotations

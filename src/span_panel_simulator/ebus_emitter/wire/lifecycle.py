@@ -9,13 +9,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from span_panel_simulator.flat_emitter.exceptions import EmitterStateError
-from span_panel_simulator.flat_emitter.manifest import DeviceManifest
-from span_panel_simulator.flat_emitter.wire.graph_builder import BuiltGraph
-from span_panel_simulator.flat_emitter.wire.mapping_loader import MappingTable
-from span_panel_simulator.flat_emitter.wire.profile_loader import ProfileTable
-from span_panel_simulator.flat_emitter.wire.set_router import SetSubscription
-from span_panel_simulator.flat_emitter.wire.wire_paths import (
+from span_panel_simulator.ebus_emitter.exceptions import EmitterStateError
+from span_panel_simulator.ebus_emitter.manifest import DeviceManifest
+from span_panel_simulator.ebus_emitter.wire.graph_builder import BuiltGraph
+from span_panel_simulator.ebus_emitter.wire.mapping_loader import MappingTable
+from span_panel_simulator.ebus_emitter.wire.profile_loader import ProfileTable
+from span_panel_simulator.ebus_emitter.wire.set_router import SetSubscription
+from span_panel_simulator.ebus_emitter.wire.wire_paths import (
     device_description_topic,
     device_state_topic,
     root_state_topic,
@@ -64,17 +64,22 @@ class LifecycleController:
         if not self.mqtt.is_connected():
             raise EmitterStateError("mqtt_client must be connected before start()")
 
-        await self.mqtt.publish(
-            root_state_topic(self.domain, self.bus_version, self._root_id),
-            b"init",
-            qos=1,
-            retain=True,
-        )
+        # Every device in the tree carries its own $state and $description now, not just
+        # the root. `graph.devices` is in build order, so the root leads.
+        for device_id in self.graph.devices:
+            await self.mqtt.publish(
+                device_state_topic(self.domain, self.bus_version, device_id),
+                b"init",
+                qos=1,
+                retain=True,
+            )
 
-        for device_id, payload in self.graph.description_payloads.items():
+        # The SDK composes each $description — correctly scoped per device, with
+        # children/parent/root filled in from the tree.
+        for device_id, device in self.graph.devices.items():
             await self.mqtt.publish(
                 device_description_topic(self.domain, self.bus_version, device_id),
-                json.dumps(payload).encode(),
+                json.dumps(device.description()).encode(),
                 qos=1,
                 retain=True,
             )
@@ -82,6 +87,17 @@ class LifecycleController:
         for sub in self.subscriptions:
             await self.mqtt.subscribe(sub.topic_pattern)
 
+        # Root goes ready last: a controller watching it should not see `ready` until
+        # every child it names in `children` is itself describable.
+        for device_id in self.graph.devices:
+            if device_id == self._root_id:
+                continue
+            await self.mqtt.publish(
+                device_state_topic(self.domain, self.bus_version, device_id),
+                b"ready",
+                qos=1,
+                retain=True,
+            )
         await self.mqtt.publish(
             root_state_topic(self.domain, self.bus_version, self._root_id),
             b"ready",
@@ -123,7 +139,7 @@ class LifecycleController:
             ),
             *(
                 device_description_topic(self.domain, self.bus_version, device_id)
-                for device_id in self.graph.description_payloads
+                for device_id in self.graph.devices
             ),
         ]
         topics.extend(

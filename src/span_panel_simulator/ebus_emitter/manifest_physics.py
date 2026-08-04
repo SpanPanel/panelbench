@@ -15,11 +15,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from span_panel_simulator.flat_emitter.conventions.tab_legs import Leg, legs_for_tabs
-from span_panel_simulator.flat_emitter.exceptions import ManifestValidationError
+from span_panel_simulator.ebus_emitter.conventions.tab_legs import Leg, legs_for_tabs
+from span_panel_simulator.ebus_emitter.exceptions import ManifestValidationError
 
 if TYPE_CHECKING:
-    from span_panel_simulator.flat_emitter.manifest import DeviceInstance, DeviceManifest
+    from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
 
 
 # ---------------------------------------------------------------------------

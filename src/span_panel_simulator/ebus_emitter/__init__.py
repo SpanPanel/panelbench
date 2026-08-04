@@ -44,9 +44,9 @@ Producer contract (v0.3.0): build a ``DeviceManifest`` once at startup, then cal
 ``Emitter.publish_tick(TickInputs)`` each tick with signed circuit/EVSE powers,
 ``current_time``, and ``grid_online``. The emitter does the rest."""
 
-from span_panel_simulator.flat_emitter.conventions.tab_legs import Leg, legs_for_tabs
-from span_panel_simulator.flat_emitter.emitter import Emitter
-from span_panel_simulator.flat_emitter.exceptions import (
+from span_panel_simulator.ebus_emitter.conventions.tab_legs import Leg, legs_for_tabs
+from span_panel_simulator.ebus_emitter.emitter import Emitter
+from span_panel_simulator.ebus_emitter.exceptions import (
     EmitterError,
     EmitterStateError,
     ManifestValidationError,
@@ -54,8 +54,8 @@ from span_panel_simulator.flat_emitter.exceptions import (
     ProfileValidationError,
     RuntimeSpecValidationError,
 )
-from span_panel_simulator.flat_emitter.manifest import DeviceInstance, DeviceManifest
-from span_panel_simulator.flat_emitter.manifest_physics import (
+from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
+from span_panel_simulator.ebus_emitter.manifest_physics import (
     BessPhysics,
     CircuitPhysics,
     EvsePhysics,
@@ -64,7 +64,7 @@ from span_panel_simulator.flat_emitter.manifest_physics import (
     PanelPhysics,
     PvPhysics,
 )
-from span_panel_simulator.flat_emitter.native_devices import (
+from span_panel_simulator.ebus_emitter.native_devices import (
     BESSConfig,
     BESSDevice,
     ChargeMode,
@@ -73,12 +73,12 @@ from span_panel_simulator.flat_emitter.native_devices import (
     NativeDevice,
     NativeTickContext,
 )
-from span_panel_simulator.flat_emitter.relay_resolver import (
+from span_panel_simulator.ebus_emitter.relay_resolver import (
     RelayRequester,
     RelayResolver,
     RelayState,
 )
-from span_panel_simulator.flat_emitter.snapshot import (
+from span_panel_simulator.ebus_emitter.snapshot import (
     EbusBatterySnapshot,
     EbusCircuitSnapshot,
     EbusEvseSnapshot,
@@ -92,8 +92,8 @@ from span_panel_simulator.flat_emitter.snapshot import (
     EbusPanelStatus,
     EbusPvSnapshot,
 )
-from span_panel_simulator.flat_emitter.tick_inputs import PanelEnvelopeTick, TickInputs
-from span_panel_simulator.flat_emitter.wire.set_router import SetterHandler, SetterRegistry
+from span_panel_simulator.ebus_emitter.tick_inputs import PanelEnvelopeTick, TickInputs
+from span_panel_simulator.ebus_emitter.wire.set_router import SetterHandler, SetterRegistry
 
 __all__ = [
     "BESSConfig",

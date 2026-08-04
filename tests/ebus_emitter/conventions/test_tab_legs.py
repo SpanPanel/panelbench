@@ -1,6 +1,6 @@
 import pytest
 
-from span_panel_simulator.flat_emitter.conventions.tab_legs import Leg, legs_for_tabs
+from span_panel_simulator.ebus_emitter.conventions.tab_legs import Leg, legs_for_tabs
 
 
 def test_odd_tab_lands_on_l1() -> None:

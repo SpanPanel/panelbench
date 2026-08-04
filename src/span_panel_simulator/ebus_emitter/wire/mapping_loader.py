@@ -8,8 +8,8 @@ from typing import Literal, cast
 
 import yaml
 
-from span_panel_simulator.flat_emitter.exceptions import ProfileValidationError
-from span_panel_simulator.flat_emitter.wire.profile_loader import ProfileTable
+from span_panel_simulator.ebus_emitter.exceptions import ProfileValidationError
+from span_panel_simulator.ebus_emitter.wire.profile_loader import ProfileTable
 
 _DEFAULT_DIR = Path(__file__).parent / "mapping"
 

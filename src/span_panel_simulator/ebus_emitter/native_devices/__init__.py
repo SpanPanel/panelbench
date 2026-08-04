@@ -10,16 +10,16 @@ schema lands. The list is intentionally small — circuits stay 100% producer-dr
 even when the producer's view of them is HVAC-shaped or recorder-replayed.
 """
 
-from span_panel_simulator.flat_emitter.native_devices.bess import (
+from span_panel_simulator.ebus_emitter.native_devices.bess import (
     BESSConfig,
     BESSDevice,
     ChargeMode,
 )
-from span_panel_simulator.flat_emitter.native_devices.load_shedding import (
+from span_panel_simulator.ebus_emitter.native_devices.load_shedding import (
     LoadSheddingConfig,
     LoadSheddingDevice,
 )
-from span_panel_simulator.flat_emitter.native_devices.protocol import (
+from span_panel_simulator.ebus_emitter.native_devices.protocol import (
     NativeDevice,
     NativeTickContext,
 )

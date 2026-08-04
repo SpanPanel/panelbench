@@ -4,29 +4,39 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
 
 import ebus_sdk
 
-from span_panel_simulator.flat_emitter.exceptions import (
+from span_panel_simulator.ebus_emitter.exceptions import (
     ManifestValidationError,
     ProfileValidationError,
 )
-from span_panel_simulator.flat_emitter.manifest import DeviceInstance, DeviceManifest
-from span_panel_simulator.flat_emitter.wire._sdk_seam import make_property
-from span_panel_simulator.flat_emitter.wire.mapping_loader import MappingDescriptor, MappingTable
-from span_panel_simulator.flat_emitter.wire.profile_loader import Profile, ProfileTable
+from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
+from span_panel_simulator.ebus_emitter.wire._sdk_seam import make_property
+from span_panel_simulator.ebus_emitter.wire.mapping_loader import MappingDescriptor, MappingTable
+from span_panel_simulator.ebus_emitter.wire.profile_loader import Profile, ProfileTable
 
 PropertyKey = tuple[str, str, str]
 
 
 @dataclass(slots=True)
 class BuiltGraph:
+    """Structural result of walking the manifest.
+
+    ``devices`` maps instance id -> the SDK ``Device`` (root and descendants);
+    ``properties`` maps ``(entity_class, instance_id, "cap/key")`` -> the SDK
+    ``Property``, the seam the publisher and setter-wiring use; ``root_id`` is the
+    single root device's instance id.
+
+    No ``description_payloads`` and no ``node_types``: the SDK composes each device's
+    Homie 5 ``$description`` itself — correctly scoped per device, with ``children`` /
+    ``parent`` / ``root`` filled in from the tree — so ``LifecycleController`` reads
+    ``device.description()`` rather than us assembling a parallel copy that could drift.
+    """
+
     devices: dict[str, ebus_sdk.Device] = field(default_factory=dict)
     properties: dict[PropertyKey, ebus_sdk.Property] = field(default_factory=dict)
-    description_payloads: dict[str, dict[str, Any]] = field(default_factory=dict)
-    children_of: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    node_types: dict[str, str] = field(default_factory=dict)
+    root_id: str = ""
 
 
 def build_graph(
@@ -50,12 +60,16 @@ def build_graph(
         )
     root_instance = root_instances[0]
 
+    # No ``mqtt_cfg``: the tree is transport-free by design. It composes ``$description``,
+    # resolves ids and topics, and holds property values, but never opens a socket — this
+    # emitter owns its transport and publishes through its own client.
     root_device = ebus_sdk.Device(
         root_instance.instance_id,
         name=root_instance.display_name,
         type=profiles[root_class].type,
     )
     graph.devices[root_instance.instance_id] = root_device
+    graph.root_id = root_instance.instance_id
 
     _attach_profile(
         root_device,
@@ -66,10 +80,6 @@ def build_graph(
         parent_for_path=None,
         node_id_template=None,
     )
-
-    # Children indexed by parent device id (instance_id) — populated as
-    # ``child-of-parent`` descriptors are processed below.
-    children_acc: dict[str, list[str]] = {}
 
     # Topologically order non-root descriptors so that any descriptor whose
     # ``child-of-parent`` placement names a parent_entity_class is processed
@@ -126,16 +136,17 @@ def build_graph(
                         f"(topology bug — should have been ordered before this descriptor)"
                     )
 
+                # The SDK parents at construction via ``parent=<Device>``: it appends the
+                # child to the parent's children and derives root/parent itself. A child
+                # never takes ``mqtt_cfg`` — it shares the root's, which here is absent by
+                # design, and a transport-free root accepts children.
                 child = ebus_sdk.Device(
                     inst.instance_id,
                     name=inst.display_name,
                     type=profiles[ec].type,
-                    parent_id=parent_instance.instance_id,
-                    root_id=root_instance.instance_id,
+                    parent=parent_device,
                 )
-                parent_device.add_child(inst.instance_id)
                 graph.devices[inst.instance_id] = child
-                children_acc.setdefault(parent_instance.instance_id, []).append(inst.instance_id)
                 _attach_profile(
                     child,
                     profiles[ec],
@@ -145,28 +156,6 @@ def build_graph(
                     parent_for_path=None,
                     node_id_template=descriptor.placement.node_id_template,
                 )
-
-    graph.children_of = {pid: tuple(kids) for pid, kids in children_acc.items()}
-
-    for device_id, device in graph.devices.items():
-        name = device.name() if callable(device.name) else device.name
-        if device_id == root_instance.instance_id:
-            graph.description_payloads[device_id] = {
-                "homie": "5.0",
-                "version": profiles[root_class].version,
-                "type": profiles[root_class].type,
-                "name": name,
-                "id": device_id,
-                "nodes": {
-                    node_id: {"type": node_type}
-                    for node_id, node_type in sorted(graph.node_types.items())
-                },
-            }
-        else:
-            graph.description_payloads[device_id] = {
-                "name": name,
-                "id": device_id,
-            }
 
     return graph
 
@@ -243,38 +232,44 @@ def _attach_profile(
 ) -> None:
     """Attach the profile's capabilities + properties to the given device.
 
-    For root entities (parent_for_path is None) capability nodes use plain capability
-    names. For node-on-parent entities, capability nodes are namespaced with the instance
-    ID so multiple circuits/lugs/etc. coexist on the parent without collision.
+    For a device carrying its own profile (parent_for_path is None — the root, and every
+    ``child-of-parent`` device) capability nodes use plain capability names, which is what
+    makes a child's topic read ``{child_id}/{capability}/{property}``. For node-on-parent
+    entities, capability nodes are namespaced with the instance ID so multiple
+    circuits/lugs/etc. coexist on the parent without collision.
+
+    All additions run inside one ``state_transition()`` so the SDK coalesces its
+    description bookkeeping into a single init->ready cycle rather than flapping per
+    property.
     """
     single_capability = len(profile.capabilities) == 1
-    for cap_name, cap in profile.capabilities.items():
-        if parent_for_path is None:
-            node_id = cap_name
-        else:
-            node_prefix = _render_node_id(node_id_template or "{instance_id}", instance)
-            node_id = node_prefix if single_capability else f"{node_prefix}-{cap_name}"
-        graph.node_types[node_id] = cap.type
-        node = device.add_node_from_dict(
-            {
-                "id": node_id,
-                "name": cap_name,
-                "type": cap.type,
-            }
-        )
-        for prop_key, prop in cap.properties.items():
-            sdk_prop = make_property(
-                node=node,
-                key=prop_key,
-                name=prop.name,
-                datatype=_to_sdk_datatype(prop.datatype),
-                unit=_to_sdk_unit(prop.unit),
-                format_str=prop.format,
-                settable=prop.settable,
+    with device.state_transition():
+        for cap_name, cap in profile.capabilities.items():
+            if parent_for_path is None:
+                node_id = cap_name
+            else:
+                node_prefix = _render_node_id(node_id_template or "{instance_id}", instance)
+                node_id = node_prefix if single_capability else f"{node_prefix}-{cap_name}"
+            node = device.add_node_from_dict(
+                {
+                    "id": node_id,
+                    "name": cap_name,
+                    "type": cap.type,
+                }
             )
-            graph.properties[(entity_class, instance.instance_id, f"{cap_name}/{prop_key}")] = (
-                sdk_prop
-            )
+            for prop_key, prop in cap.properties.items():
+                sdk_prop = make_property(
+                    node=node,
+                    key=prop_key,
+                    name=prop.name,
+                    datatype=_to_sdk_datatype(prop.datatype),
+                    unit=_to_sdk_unit(prop.unit),
+                    format_str=prop.format,
+                    settable=prop.settable,
+                )
+                graph.properties[
+                    (entity_class, instance.instance_id, f"{cap_name}/{prop_key}")
+                ] = sdk_prop
 
 
 def _render_node_id(template: str, instance: DeviceInstance) -> str:
@@ -292,22 +287,25 @@ def _to_sdk_datatype(dt: str) -> ebus_sdk.PropertyDatatype:
         "float": ebus_sdk.PropertyDatatype.FLOAT,
         "boolean": ebus_sdk.PropertyDatatype.BOOLEAN,
         "enum": ebus_sdk.PropertyDatatype.ENUM,
+        "json": getattr(ebus_sdk.PropertyDatatype, "JSON", ebus_sdk.PropertyDatatype.STRING),
     }
     return mapping.get(dt.lower(), ebus_sdk.PropertyDatatype.STRING)
 
 
 def _to_sdk_unit(unit: str | None) -> ebus_sdk.Unit | None:
+    """Map a Homie unit string to an ``ebus_sdk.Unit``.
+
+    ``Unit`` is a str-enum whose *value* is the Homie wire string (``Unit.VOLTS`` is
+    ``"V"``, ``Unit.MINUTES`` is ``"min"``), so resolve by value. Correct by
+    construction for every unit the SDK models, and it cannot silently drop one the way
+    the previous hand-maintained name table did — that table mapped ``"V"`` to a
+    non-existent ``VOLT`` member, so every voltage property published with no unit at
+    all, and it had no entry for ``"min"``. An unmodelled unit resolves to ``None``,
+    omitting it from the wire.
+    """
     if unit is None:
         return None
-    table = {
-        "W": "WATT",
-        "A": "AMPERE",
-        "V": "VOLT",
-        "kWh": "KILOWATT_HOUR",
-        "Wh": "WATT_HOUR",
-        "%": "PERCENT",
-        "kW": "KILOWATT",
-        "Hz": "HERTZ",
-    }
-    name = table.get(unit) or unit.upper().replace("-", "_")
-    return getattr(ebus_sdk.Unit, name, None)
+    try:
+        return ebus_sdk.Unit(unit)
+    except ValueError:
+        return None

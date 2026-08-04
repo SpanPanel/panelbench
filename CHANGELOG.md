@@ -15,7 +15,7 @@
 
 ### Changed
 
-- **The flat emitter is vendored at `src/span_panel_simulator/flat_emitter`**, copied from
+- **The flat emitter is vendored at `src/span_panel_simulator/ebus_emitter`**, copied from
   `ebus-emitter` 0.2.1 (commit `5b84de8`) — MIT, same copyright holders. The upstream repo
   has permanently diverged onto the parent/child (v1.0) Homie data model while this
   simulator continues to publish the flat schema, so the dependency delivered no upstream
@@ -27,7 +27,7 @@
   locally correct while jointly inverting circuit energy — which is exactly what happened.
   Both ends now sit in one repo under one test run.
 
-- **The emitter's test suite came with it** (`tests/flat_emitter/`, 154 tests), including
+- **The emitter's test suite came with it** (`tests/ebus_emitter/`, 154 tests), including
   the circuit energy reference-frame regression tests. Total suite is now 395 tests.
 
 - **`scripts/dev-setup.sh` is now a thin `uv sync` wrapper** and `.env.example` no longer

@@ -1,9 +1,9 @@
 import pytest
 
-from span_panel_simulator.flat_emitter.conventions.tab_legs import Leg
-from span_panel_simulator.flat_emitter.exceptions import ManifestValidationError
-from span_panel_simulator.flat_emitter.manifest import DeviceInstance, DeviceManifest
-from span_panel_simulator.flat_emitter.manifest_physics import ManifestPhysicsView
+from span_panel_simulator.ebus_emitter.conventions.tab_legs import Leg
+from span_panel_simulator.ebus_emitter.exceptions import ManifestValidationError
+from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
+from span_panel_simulator.ebus_emitter.manifest_physics import ManifestPhysicsView
 
 
 def _panel(**md: str) -> DeviceInstance:

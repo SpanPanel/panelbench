@@ -5,7 +5,7 @@ from __future__ import annotations
 import ebus_sdk
 import pytest
 
-from span_panel_simulator.flat_emitter.wire._sdk_seam import make_property, set_property_value
+from span_panel_simulator.ebus_emitter.wire._sdk_seam import make_property, set_property_value
 
 
 def test_make_property_attaches_to_node() -> None:

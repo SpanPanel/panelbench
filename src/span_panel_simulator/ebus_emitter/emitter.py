@@ -14,21 +14,21 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from span_panel_simulator.flat_emitter.energy_integrator import EnergyIntegrator
-from span_panel_simulator.flat_emitter.exceptions import EmitterStateError
-from span_panel_simulator.flat_emitter.manifest import DeviceManifest
-from span_panel_simulator.flat_emitter.manifest_physics import ManifestPhysicsView
-from span_panel_simulator.flat_emitter.native_devices import (
+from span_panel_simulator.ebus_emitter.energy_integrator import EnergyIntegrator
+from span_panel_simulator.ebus_emitter.exceptions import EmitterStateError
+from span_panel_simulator.ebus_emitter.manifest import DeviceManifest
+from span_panel_simulator.ebus_emitter.manifest_physics import ManifestPhysicsView
+from span_panel_simulator.ebus_emitter.native_devices import (
     BESSConfig,
     BESSDevice,
     LoadSheddingConfig,
     LoadSheddingDevice,
     NativeTickContext,
 )
-from span_panel_simulator.flat_emitter.panel_meter import circuit_current_a
-from span_panel_simulator.flat_emitter.panel_meter import resolve as resolve_panel
-from span_panel_simulator.flat_emitter.relay_resolver import RelayResolver, RelayState
-from span_panel_simulator.flat_emitter.snapshot import (
+from span_panel_simulator.ebus_emitter.panel_meter import circuit_current_a
+from span_panel_simulator.ebus_emitter.panel_meter import resolve as resolve_panel
+from span_panel_simulator.ebus_emitter.relay_resolver import RelayResolver, RelayState
+from span_panel_simulator.ebus_emitter.snapshot import (
     EbusBatterySnapshot,
     EbusCircuitSnapshot,
     EbusEvseSnapshot,
@@ -42,15 +42,15 @@ from span_panel_simulator.flat_emitter.snapshot import (
     EbusPanelStatus,
     EbusPvSnapshot,
 )
-from span_panel_simulator.flat_emitter.tick_inputs import TickInputs
-from span_panel_simulator.flat_emitter.wire.bag_builder import BagBuilder
-from span_panel_simulator.flat_emitter.wire.graph_builder import build_graph
-from span_panel_simulator.flat_emitter.wire.lifecycle import LifecycleController
-from span_panel_simulator.flat_emitter.wire.lifecycle import lwt_settings as _lwt
-from span_panel_simulator.flat_emitter.wire.mapping_loader import load_mapping_table
-from span_panel_simulator.flat_emitter.wire.profile_loader import load_profiles
-from span_panel_simulator.flat_emitter.wire.publisher import Publisher
-from span_panel_simulator.flat_emitter.wire.set_router import SetterRegistry, compute_subscriptions
+from span_panel_simulator.ebus_emitter.tick_inputs import TickInputs
+from span_panel_simulator.ebus_emitter.wire.bag_builder import BagBuilder
+from span_panel_simulator.ebus_emitter.wire.graph_builder import build_graph
+from span_panel_simulator.ebus_emitter.wire.lifecycle import LifecycleController
+from span_panel_simulator.ebus_emitter.wire.lifecycle import lwt_settings as _lwt
+from span_panel_simulator.ebus_emitter.wire.mapping_loader import load_mapping_table
+from span_panel_simulator.ebus_emitter.wire.profile_loader import load_profiles
+from span_panel_simulator.ebus_emitter.wire.publisher import Publisher
+from span_panel_simulator.ebus_emitter.wire.set_router import SetterRegistry, compute_subscriptions
 
 
 @runtime_checkable
@@ -355,14 +355,14 @@ class Emitter:
             del entity_class, instance_id, prop_path
             self._dominant_power_source_override = str(value).upper()
 
-        if registry.get("circuit", "circuit/relay") is None:
-            registry.register("circuit", "circuit/relay", on_circuit_relay)
-        if registry.get("circuit", "circuit/shed-priority") is None:
-            registry.register("circuit", "circuit/shed-priority", on_shed_priority)
-        if registry.get("circuit", "circuit/name") is None:
-            registry.register("circuit", "circuit/name", on_circuit_name)
-        if registry.get("panel", "core/dominant-power-source") is None:
-            registry.register("panel", "core/dominant-power-source", on_dom_power_source)
+        if registry.get("circuit", "switch/relay") is None:
+            registry.register("circuit", "switch/relay", on_circuit_relay)
+        if registry.get("circuit", "load-shed/priority") is None:
+            registry.register("circuit", "load-shed/priority", on_shed_priority)
+        if registry.get("circuit", "info/name") is None:
+            registry.register("circuit", "info/name", on_circuit_name)
+        if registry.get("panel", "shed/asserted-islanding-state") is None:
+            registry.register("panel", "shed/asserted-islanding-state", on_dom_power_source)
 
     async def _publish_diff(self, snapshot: EbusPanelSnapshot) -> None:
         bag = self._bag_builder.build(snapshot)
