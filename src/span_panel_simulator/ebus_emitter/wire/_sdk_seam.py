@@ -42,12 +42,12 @@ def make_property(
 async def set_property_value(prop: ebus_sdk.Property, value: object) -> None:
     """Set a property value. Async-only signature — forward-compat hedge against any
     future SDK change to make set_value async."""
-    # The current SDK exposes value via the Property's set/get; use coerced_value as
-    # the assignment target consistent with as_dict round-trip semantics.
-    if hasattr(prop, "set_value"):
-        prop.set_value(value)
-    else:
-        prop.coerced_value = value
+    # `set_value` unconditionally: the pin is exact, so the capability is known rather
+    # than probed. The old fallback assigned to `coerced_value`, which is a zero-arg
+    # getter — that would have replaced the method with a value rather than setting
+    # one. Dead in practice (the SDK has always had `set_value`) and wrong if reached,
+    # so it goes rather than being corrected.
+    prop.set_value(value)
 
 
 def settable_handler_signature(prop: ebus_sdk.Property) -> tuple[type, ...]:

@@ -130,10 +130,12 @@ def test_three_level_chain_parents_mid_under_bess() -> None:
     # All three devices were created.
     assert set(g.devices.keys()) == {"p1", "b1", "m1"}
 
-    # children_of records the parent->children topology.
-    assert g.children_of["p1"] == ("b1",)
-    assert g.children_of["b1"] == ("m1",)
-    assert "m1" not in g.children_of  # leaf
+    # Topology is read from the SDK devices themselves. `children_of` was a parallel
+    # copy of what the tree already knows, so it went the way of
+    # `description_payloads`: one source, no chance of drift.
+    assert list(g.devices["p1"].children_ids()) == ["b1"]
+    assert list(g.devices["b1"].children_ids()) == ["m1"]
+    assert list(g.devices["m1"].children_ids()) == []  # leaf
 
     # MID was parented under BESS, not under the root panel.
     mid_device = g.devices["m1"]
@@ -159,7 +161,7 @@ def test_descriptor_order_does_not_affect_result() -> None:
     reordered["panel"] = mapping["panel"]
 
     g = build_graph(manifest, reordered, profiles)
-    assert g.children_of["b1"] == ("m1",)
+    assert list(g.devices["b1"].children_ids()) == ["m1"]
     assert g.devices["m1"].parent_id() == "b1"
 
 

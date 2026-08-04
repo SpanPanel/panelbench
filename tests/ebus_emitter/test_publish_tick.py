@@ -154,31 +154,50 @@ async def test_publish_tick_emits_circuit_power(emitter_no_bess: Emitter) -> Non
 
 
 @pytest.mark.asyncio
-async def test_publish_tick_uses_live_panel_flat_topic_shape(emitter_no_bess: Emitter) -> None:
+async def test_publish_tick_uses_parent_child_topic_shape(emitter_no_bess: Emitter) -> None:
+    """Each device owns its own topic namespace and its own $description.
+
+    The flat layout hung every circuit off the panel as a namespaced node, so a
+    circuit property lived at `ebus/5/<panel>/<circuit>/<prop>`. Under parent/child a
+    circuit is a Device: `ebus/5/<circuit>/<capability>/<prop>`, with the panel naming
+    it in `children` rather than carrying its properties.
+    """
     await emitter_no_bess.start()
     fake = emitter_no_bess._publisher._mqtt
     assert isinstance(fake, FakeMqttClient)
 
-    description_payload = next(
-        payload
-        for topic, payload, _qos, _retain in fake.published
-        if topic == "ebus/5/abc-123/$description"
+    panel_description = json.loads(
+        next(
+            payload
+            for topic, payload, _qos, _retain in fake.published
+            if topic == "ebus/5/abc-123/$description"
+        )
     )
-    description = json.loads(description_payload)
-    assert description["nodes"]["core"]["type"] == (
-        "energy.ebus.device.distribution-enclosure.core"
+    assert "kitchen" in panel_description["children"]
+    # The circuit describes itself, and names the panel as its parent and root.
+    circuit_description = json.loads(
+        next(
+            payload
+            for topic, payload, _qos, _retain in fake.published
+            if topic == "ebus/5/kitchen/$description"
+        )
     )
-    assert description["nodes"]["kitchen"]["type"] == "energy.ebus.device.circuit"
+    assert circuit_description["type"] == "energy.ebus.device.circuit"
+    assert circuit_description["parent"] == "abc-123"
+    assert circuit_description["root"] == "abc-123"
 
     await emitter_no_bess.publish_tick(
         TickInputs(current_time=0.0, grid_online=True, circuits={"kitchen": 500.0}),
     )
     retained = {topic: payload.decode() for topic, payload, _qos, _retain in fake.published}
-    assert retained["ebus/5/abc-123/core/software-version"] == "sim/v0.1.0"
-    assert retained["ebus/5/abc-123/core/grid-islandable"] == "false"
-    assert retained["ebus/5/abc-123/kitchen/active-power"] == "-500.0"
-    assert retained["ebus/5/abc-123/kitchen/space"] == "1"
-    assert retained["ebus/5/abc-123/kitchen/relay-requester"] == "NONE"
+    assert retained["ebus/5/abc-123/info/firmware-version"] == "sim/v0.1.0"
+    assert retained["ebus/5/abc-123/info/data-model-version"] == "1.0"
+    assert retained["ebus/5/kitchen/meter/active-power"] == "-500.0"
+    # `space` (int) became `spaces` (comma-separated string).
+    assert retained["ebus/5/kitchen/info/spaces"] == "1"
+    # UNKNOWN, not NONE: the relay is default-CLOSED with no decision-maker yet.
+    # Both are in the catalog enum; the resolver documents UNKNOWN for this state.
+    assert retained["ebus/5/kitchen/switch/relay-requester"] == "UNKNOWN"
 
 
 @pytest.mark.asyncio
@@ -305,8 +324,11 @@ async def test_circuit_active_power_wire_sign_is_inverse_of_internal_model() -> 
     retained = {topic: payload.decode() for topic, payload, _qos, _retain in fake.published}
     assert snap.circuits["kitchen"].instant_power_w == 500.0
     assert snap.circuits["solar"].instant_power_w == -2000.0
-    assert retained["ebus/5/abc-123/kitchen/active-power"] == "-500.0"
-    assert retained["ebus/5/abc-123/solar/active-power"] == "2000.0"
+    # Topics moved to the parent/child form (each circuit is its own device), but
+    # the SIGNS are the invariant this test exists for: the wire uses the enclosure
+    # reference frame, so a load reads negative and generation reads positive.
+    assert retained["ebus/5/kitchen/meter/active-power"] == "-500.0"
+    assert retained["ebus/5/solar/meter/active-power"] == "2000.0"
 
 
 @pytest.mark.asyncio
@@ -708,9 +730,7 @@ async def test_asserted_islanding_state_drives_shed_treatment() -> None:
         instances=(_panel_inst(), _circuit_inst("patio", priority="OFF_GRID"), _bess_inst()),
     )
     setters = SetterRegistry()
-    em = Emitter(
-        manifest, setters, FakeMqttClient(), load_shedding_config=LoadSheddingConfig()
-    )
+    em = Emitter(manifest, setters, FakeMqttClient(), load_shedding_config=LoadSheddingConfig())
     await em.start()
 
     grid_up = TickInputs(current_time=0.0, grid_online=True, circuits={"patio": 500.0})

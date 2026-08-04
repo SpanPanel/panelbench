@@ -103,9 +103,23 @@ def test_configure_logging_at_debug_keeps_the_schema_dump(
     assert "nodeDescriptionNode" in capsys.readouterr().err
 
 
-def test_sdk_homie_logger_still_emits_at_info() -> None:
-    """Guard the premise: if ebus-sdk ever stops logging the schema dump at INFO,
-    the filter's threshold should be revisited rather than silently over-filtering."""
-    import ebus_sdk.homie  # noqa: F401  -- imported for its module-level setLevel
+def test_sdk_leaves_homie_log_configuration_to_the_application() -> None:
+    """The premise the noisy-dependency filter defends against is gone.
 
-    assert logging.getLogger("homie").level == logging.INFO
+    The SDK used to pin ``setLevel(INFO)`` on the ``homie`` logger at import, which
+    is what the filter exists to survive. It no longer does: the logger is left at
+    NOTSET with ``propagate=True``, so log configuration belongs to the application.
+
+    Two SDK changes retired the noise this guarded. Transport-free trees — which is
+    how this simulator builds its device graph — now report a missing client at
+    ``debug`` rather than ``warning`` (GH #11 / PR #20), and the level is no longer
+    forced at import.
+
+    This is the tripwire in reverse: if a future release re-pins the level, the
+    filter's threshold becomes load-bearing again and this test says so.
+    """
+    import ebus_sdk.homie  # noqa: F401  -- imported for the side effect under test
+
+    homie = logging.getLogger("homie")
+    assert homie.level == logging.NOTSET
+    assert homie.propagate is True

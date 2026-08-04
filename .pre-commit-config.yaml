@@ -21,6 +21,11 @@ repos:
       - id: mypy
         args: [--strict]
         additional_dependencies:
+          # Pinned to match the runtime pin in pyproject.toml. The hook runs in its
+          # own isolated environment, so without this mypy cannot resolve `ebus_sdk`
+          # and the SDK's py.typed types go unchecked. This replaced a pair of
+          # ignore_missing_imports overrides that silenced the import instead.
+          - ebus-sdk==0.17.0
           - aiomqtt>=2.0.0
           - aiohttp>=3.9.0
           - aiohttp-jinja2>=1.6

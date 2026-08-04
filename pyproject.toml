@@ -102,17 +102,6 @@ strict = true
 module = "timezonefinder"
 ignore_missing_imports = true
 
-# ebus-sdk ships without a py.typed marker. Previously these overrides lived in the emitter's
-# own pyproject; they move here with the vendored code. Both forms are needed — the wildcard
-# alone does not match the top-level `ebus_sdk` import in `ebus_emitter/wire/_sdk_seam.py`.
-[[tool.mypy.overrides]]
-module = "ebus_sdk"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "ebus_sdk.*"
-ignore_missing_imports = true
-
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a
 # TYPE_CHECKING import. mypy under --strict still complains about the forward ref when
 # runtime.py hasn't been written; relax for the emitter_adapter subpackage during the
