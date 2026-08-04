@@ -50,6 +50,14 @@ class EbusCircuitSnapshot:
     relay_requester: str = "UNKNOWN"
     energy_accum_update_time_s: int = 0
     instant_power_update_time_s: int = 0
+    # ``connection`` capability — the downstream topology edge. Every property is MAY
+    # in the catalog, so ``None`` means "asserts no edge" rather than missing data.
+    # ``feeds_count`` is the catalog's bare ``count``, qualified here because the
+    # unadorned word says nothing on a dataclass this wide.
+    feeds_device_id: str | None = None
+    feeds_device_type: str | None = None
+    feeds_device_status: str | None = None  # OK | LOST | DEGRADED
+    feeds_count: int | None = None
 
 
 @dataclass(slots=True)
@@ -60,7 +68,11 @@ class EbusPvSnapshot:
     feed_circuit_id: str | None = ""
     vendor_name: str | None = None
     product_name: str | None = None
+    model: str | None = None
     nameplate_capacity_w: float | None = None
+    # ``info/nominal-power`` — distinct from ``nameplate_capacity_w``: the catalog
+    # carries both, so they are not folded together here.
+    nominal_power_w: float | None = None
     firmware_version: str | None = None
     serial_number: str | None = None
     relative_position: str | None = None
@@ -78,9 +90,15 @@ class EbusEvseSnapshot:
 
     vendor_name: str | None = None
     product_name: str | None = None
+    model: str | None = None
     part_number: str | None = None
     serial_number: str | None = None
     firmware_version: str | None = None
+    # ``config`` capability — the legacy EVSE grab-bag the profile still publishes in
+    # place of the spec's ``charge-limit``, which is vendored but not yet composed in.
+    # When that swap happens these two move to charge-limit's vocabulary.
+    user_max_charge_current_a: float | None = None
+    max_charge_current_a: float | None = None
 
 
 @dataclass(slots=True)
@@ -95,6 +113,7 @@ class EbusBatterySnapshot:
     vendor_name: str | None = None
     product_name: str | None = None
     model: str | None = None
+    part_number: str | None = None
     serial_number: str | None = None
     firmware_version: str | None = None
     relative_position: str | None = None
@@ -117,6 +136,16 @@ class EbusLugsSnapshot:
     active_power_w: float = 0.0
     imported_energy_wh: float = 0.0
     exported_energy_wh: float = 0.0
+    # ``connection`` capability. Lugs sit at the service boundary, so unlike a circuit
+    # they assert edges in *both* directions — fed-by upstream, feeds downstream.
+    # All MAY in the catalog. ``connection_count`` is the catalog's bare ``count``.
+    fed_by_device_id: str | None = None
+    fed_by_device_type: str | None = None
+    fed_by_device_status: str | None = None  # OK | LOST | DEGRADED
+    feeds_device_id: str | None = None
+    feeds_device_type: str | None = None
+    feeds_device_status: str | None = None  # OK | LOST | DEGRADED
+    connection_count: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +170,58 @@ class EbusPanelInfo:
     # reads this off the bus rather than the REST schema endpoint, which carries no
     # version — so this is the only place the value appears on the wire.
     data_model_version: str = "1.0"
+
+
+@dataclass(slots=True)
+class EbusPanelShed:
+    """``shed`` capability node on the panel device.
+
+    Both properties are ``MAY`` in the catalog, so ``None`` is a legitimate value
+    meaning "this panel does not assert one" rather than missing data.
+    """
+
+    # Catalog enum: NONE, ON_GRID, OFF_GRID. Distinct vocabulary from the
+    # dominant-power-source token the shed logic compares against, so the two are
+    # not interchangeable without a translation.
+    asserted_islanding_state: str | None = None
+    # Catalog datatype is ``json``; carried as an encoded document.
+    policy: str | None = None
+
+
+@dataclass(slots=True)
+class EbusPanelShedForecast:
+    """``shed-forecast`` capability node — projected time before load shed.
+
+    The four durations are minutes (catalog unit ``min``). All properties are
+    ``SHOULD``, so a panel that cannot forecast publishes nothing rather than zero
+    — hence ``None`` rather than ``0`` as the default.
+    """
+
+    total_time_remaining: int | None = None
+    time_to_priority_shed: int | None = None
+    full_charge_total_time_remaining: int | None = None
+    full_charge_time_to_priority_shed: int | None = None
+    # Catalog enum: LOW, MEDIUM, HIGH.
+    confidence: str | None = None
+
+
+@dataclass(slots=True)
+class EbusMidSnapshot:
+    """MID (microgrid interconnect device) — ``info`` + ``grid`` capability subset.
+
+    A child device of the BESS in the parent/child tree, so it is keyed by
+    ``instance_id`` like the other children rather than living on the panel.
+    """
+
+    instance_id: str
+    vendor_name: str | None = None
+    serial_number: str | None = None
+    model: str | None = None
+    firmware_version: str | None = None
+    hardware_version: str | None = None
+    islanding_state: str | None = None
+    grid_state: str | None = None
+    grid_forming_entity: str | None = None
 
 
 @dataclass(slots=True)
@@ -203,9 +284,20 @@ class EbusPanelPcs:
     feed_import_limit_a: float = 0.0
     feed_import_limit_enablement: str = "UNCONFIGURED"
     feed_import_limit_active: bool = False
-    grid_import_limit_a: float = 0.0
-    grid_import_limit_enablement: str = "UNCONFIGURED"
-    grid_import_limit_active: bool = False
+    # Renamed from ``grid_import_limit_*``: the catalog calls this family
+    # ``operator-import-limit`` — an externally imposed cap set by a fleet or
+    # aggregator operator over a management API, distinct from the self-imposed
+    # ``requested-import-limit``. The old name had no catalog counterpart and
+    # nothing populated or read it, so this aligns the model rather than adding a
+    # concept. Not to be confused with ``off-grid-import-limit``, which is a
+    # separate family the catalog also defines.
+    operator_import_limit_a: float = 0.0
+    operator_import_limit_enablement: str = "UNCONFIGURED"
+    operator_import_limit_active: bool = False
+    # Which constraint class currently sets ``import-limit`` — the provenance of
+    # the enforced limit. Catalog enum: FSR, DOE, VOLTAGE, OFF_GRID, REQUESTED,
+    # OPERATOR, NONE, UNKNOWN.
+    binding_constraint: str = "NONE"
     off_grid_import_limit_a: float = 0.0
     off_grid_import_limit_enablement: str = "UNCONFIGURED"
     off_grid_import_limit_active: bool = False
@@ -238,8 +330,11 @@ class EbusPanelSnapshot:
     status: EbusPanelStatus = field(default_factory=EbusPanelStatus)
     pcs: EbusPanelPcs = field(default_factory=EbusPanelPcs)
     power_flows: EbusPanelPowerFlows = field(default_factory=EbusPanelPowerFlows)
+    shed: EbusPanelShed = field(default_factory=EbusPanelShed)
+    shed_forecast: EbusPanelShedForecast = field(default_factory=EbusPanelShedForecast)
     circuits: dict[str, EbusCircuitSnapshot] = field(default_factory=dict)
     battery: dict[str, EbusBatterySnapshot] = field(default_factory=dict)
     pv: dict[str, EbusPvSnapshot] = field(default_factory=dict)
     evse: dict[str, EbusEvseSnapshot] = field(default_factory=dict)
     lugs: dict[str, EbusLugsSnapshot] = field(default_factory=dict)
+    mid: dict[str, EbusMidSnapshot] = field(default_factory=dict)
