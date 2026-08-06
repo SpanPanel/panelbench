@@ -25,15 +25,21 @@ from span_panel_simulator.const import (
 class _NoisyDependencyFilter(logging.Filter):
     """Drop sub-threshold records from dependencies that log at the wrong level.
 
-    ebus-sdk's ``homie`` logger pins *itself* to INFO at import time
-    (``ebus_sdk/homie.py``) and dumps every node's full property table through
-    ``pformat()`` — thousands of lines per panel while the device graph is built,
-    emitted no matter what ``--log-level`` the operator asked for.
     ``aiohttp.access`` logs a line per HTTP request.
 
-    This filters on the root handler rather than calling ``setLevel()`` on those
-    loggers, so it holds regardless of when the offending module is imported or
-    whether it re-pins its own level afterwards.
+    ``homie`` is kept as a guard rather than a live need. Through ebus-sdk 0.17.0 that
+    logger pinned *itself* to INFO at import time and dumped every node's full property
+    table through ``pformat()`` — thousands of lines per panel while the device graph was
+    built, emitted no matter what ``--log-level`` the operator asked for. Verified fixed
+    upstream at 0.18.0: ``setLevel`` appears nowhere in the SDK, ``pformat`` is gone from
+    ``homie.py``, and the logger is NOTSET at import so it inherits the root level like
+    any other. The entry stays because the behaviour has regressed before and one
+    ``startswith`` on already-sub-threshold records costs nothing; re-check it on a bump
+    before assuming it is still dead weight.
+
+    This filters on the root handler rather than calling ``setLevel()`` on those loggers,
+    so it holds regardless of when a module is imported or whether it re-pins its own
+    level afterwards.
     """
 
     NOISY = ("homie", "aiohttp.access")

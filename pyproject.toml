@@ -33,9 +33,9 @@ dependencies = [
     # Pinned exactly, not ranged, so upgrades stay deliberate: the add-on image installs
     # from this file rather than the lockfile, so the declared pin is the operative control
     # in production. On any bump, re-check the `homie` logger premise documented in
-    # `__main__.py` — 0.17.0 logs a missing client at `debug` when the tree is transport-free
+    # `__main__.py` — 0.18.0 logs a missing client at `debug` when the tree is transport-free
     # (our GH #11 / PR #20), which is exactly our case.
-    "ebus-sdk==0.17.0",
+    "ebus-sdk==0.18.0",
     "paho-mqtt>=2.0.0",
 ]
 
