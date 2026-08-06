@@ -55,7 +55,10 @@ def _reshape_stdin() -> int:
             continue
         device_id = topic.split("/")[2]
         documents[device_id] = json.loads(payload)
+    # Trailing newline so a regenerated capture matches what the end-of-file-fixer
+    # pre-commit hook would write, and regeneration is therefore idempotent.
     json.dump(documents, sys.stdout, indent=2, sort_keys=True)
+    sys.stdout.write("\n")
     return 0
 
 

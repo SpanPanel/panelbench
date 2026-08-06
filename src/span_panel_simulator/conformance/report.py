@@ -59,13 +59,25 @@ def _as_dict(finding: Finding) -> dict[str, str | None]:
 
 
 def render_json(report: ConformanceReport) -> str:
-    """Machine-readable form. A consumer can assert against this directly."""
+    """Machine-readable form. A consumer can assert against this directly.
+
+    Omissions are emitted as bare sorted paths rather than full findings. There are
+    typically thousands of them and their message is identical boilerplate, so spelling
+    each one out inflates the document tenfold without adding information. The paths are
+    still enumerated rather than merely counted, because counts alone cannot see a swap:
+    dropping one property while adding another leaves every count unchanged.
+    """
     return json.dumps(
         {
             "conformant": report.conformant,
             "counts": report.counts,
             "violations": [_as_dict(f) for f in report.violations],
-            "observations": [_as_dict(f) for f in report.observations],
+            "observations": [
+                _as_dict(f) for f in report.observations if f.bucket is not Bucket.OMISSION
+            ],
+            "omissions": sorted(
+                _path(f) for f in report.observations if f.bucket is Bucket.OMISSION
+            ),
         },
         indent=2,
         sort_keys=True,

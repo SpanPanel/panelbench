@@ -57,6 +57,49 @@ Every commit is validated by:
 | **check-yaml**              | Valid YAML syntax                                           |
 | **check-added-large-files** | Prevents accidental large file commits                      |
 
+## Spec Conformance
+
+The simulator's value is being a *faithful* eBus reference producer. Consumers are developed
+against it, so a subtly non-conformant tree does not stay ours — it propagates into everything
+built against it. Two checks guard that, covering different halves of the chain:
+
+| Check                              | Proves                                      |
+| ---------------------------------- | ------------------------------------------- |
+| `scripts/check-spec-provenance.py` | specification bytes → our vendored catalogs  |
+| `scripts/check-conformance.py`     | vendored catalogs → what we actually publish |
+
+```bash
+# Verify the vendored catalogs against the specification at synced_commit,
+# and report drift against current spec (informational)
+uv run scripts/check-spec-provenance.py
+
+# Check a captured tree against the vendored catalogs
+uv run scripts/check-conformance.py --capture tests/conformance/fixtures/golden_tree.json
+
+# Recapture from a running simulator, then regenerate the expected report
+mosquitto_sub -h localhost -p 18883 --cafile .local/certs/ca.crt \
+  -u span -P sim-password -t 'ebus/5/+/$description' -v -W 5 \
+  | uv run scripts/check-conformance.py --from-stdin \
+  > tests/conformance/fixtures/golden_tree.json
+uv run scripts/check-conformance.py \
+  --capture tests/conformance/fixtures/golden_tree.json --json \
+  > tests/conformance/fixtures/golden_report.json
+```
+
+The report classifies every published property as **match**, **divergence**, **extension** or
+**omission**, and fails only on the four genuine violations. That classification is the contract
+a consumer codes against — and `test_golden_report_is_unchanged` fails on *any* change to it,
+including a legal one, so a change to our published surface is always a reviewed edit.
+
+Provenance alone is not enough, and the reason is worth understanding before changing anything
+in `ebus_emitter/wire/`: it proves we copied the right bytes, not that we interpreted them
+correctly. A catalog can be byte-perfect while the code reading it publishes something the
+specification forbids — which is exactly what the abstract unit token (`"unit": "energy"`) does
+to a naive publisher.
+
+**Design and rationale: [`docs/spec-conformance-design.md`](docs/spec-conformance-design.md).**
+Read it before adding a capability to a profile or changing how properties reach the wire.
+
 ## Running Locally
 
 There are three ways to run the simulator locally, depending on what you're testing:
