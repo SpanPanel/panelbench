@@ -27,28 +27,26 @@ def test_rejects_a_directory_with_no_catalogs(tmp_path: Path) -> None:
         load_catalogs(tmp_path)
 
 
-# Concrete catalog units that `ebus_sdk.Unit` cannot express.
+# Catalog units that `ebus_sdk.Unit` does not model.
 #
-# Homie's unit is explicitly free-form ("you are not limited to the recommended values"),
-# but the SDK models it as a closed enum, so a legitimate unit outside that enum cannot be
-# published through it. Our wire layer resolves an unmodelled unit to None and omits it
-# (ebus_emitter/wire/graph_builder.py), so composing one of these properties would publish
-# it with no $unit at all — silently.
+# NOT a defect and NOT a publishing risk: Homie's unit is free-form, the SDK accepts and
+# publishes a plain string verbatim, and `graph_builder._to_sdk_unit` passes an unmodelled
+# unit through as a string. `Unit` is a convenience vocabulary, not a constraint.
 #
-# Latent today: none of these properties is composed into a profile. The set is asserted
-# exactly rather than merely allowed, so a re-vendor that adds one, or an SDK release that
-# closes the gap, both show up as a failing test needing a deliberate edit.
+# Tracked anyway because the set is a useful signal in both directions: a new entry after a
+# re-vendor is worth a look (typo, or a genuinely new unit), and a shrinking one means an
+# SDK release added a member. Asserted exactly rather than merely allowed so either change
+# needs a deliberate edit rather than passing unnoticed.
 SDK_UNMODELLED_UNITS: frozenset[str] = frozenset({"kA"})
 
 
-def test_abstract_tokens_and_sdk_unit_gaps_are_both_known() -> None:
-    """Guard against a re-vendor introducing a unit we would silently drop.
+def test_abstract_tokens_and_sdk_unit_coverage_are_both_known() -> None:
+    """Pin what we know about catalog units, in both categories.
 
-    Two distinct risks share one shape. ABSTRACT_UNITS is spec knowledge that does not
-    travel with the vendored JSON and is ours to maintain. SDK_UNMODELLED_UNITS is an
-    upstream SDK limitation. Both end with a property published without its unit, so both
-    are checked here. ``ebus_sdk`` is imported in the test rather than in the package,
-    which stays SDK-free.
+    ABSTRACT_UNITS is spec knowledge that does not travel with the vendored JSON and is
+    ours to maintain; an unhandled token would be a real defect. SDK_UNMODELLED_UNITS is
+    informational only, per the note above. ``ebus_sdk`` is imported in the test rather
+    than in the package, which stays SDK-free.
     """
     import ebus_sdk
 
@@ -71,10 +69,14 @@ def test_abstract_tokens_and_sdk_unit_gaps_are_both_known() -> None:
 
 
 def test_no_composed_profile_property_uses_an_unpublishable_unit() -> None:
-    """The live version of the check above: what we actually publish must carry its unit.
+    """A composed property must not inherit an abstract unit token.
 
-    A unit the SDK cannot express is only a real defect once a profile composes the
-    property. This fails the moment one does.
+    Belt to profile_loader's braces: the loader raises on a token at hydration time, and
+    this states the same requirement over the profile JSON directly, so the invariant is
+    visible here rather than only as loader behaviour.
+
+    Only ABSTRACT_UNITS makes a unit unpublishable. A unit the SDK enum does not model is
+    published verbatim as a string, so SDK_UNMODELLED_UNITS is not checked here.
     """
     import json
 
@@ -96,7 +98,7 @@ def test_no_composed_profile_property_uses_an_unpublishable_unit() -> None:
                     # An explicit unit in the selection is the substitution we want.
                     if selection.get("unit") is not None:
                         continue
-                    if catalog_prop.unit in ABSTRACT_UNITS | SDK_UNMODELLED_UNITS:
+                    if catalog_prop.unit in ABSTRACT_UNITS:
                         composed.append(
                             f"{path.name}:{device_type}/{node_id}/{prop_id} "
                             f"inherits unpublishable unit {catalog_prop.unit!r}"

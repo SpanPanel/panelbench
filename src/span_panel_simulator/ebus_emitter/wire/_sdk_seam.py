@@ -20,7 +20,10 @@ def make_property(
     key: str,
     name: str,
     datatype: PropertyDatatype,
-    unit: Unit | None,
+    # A plain string is legal and reaches the wire verbatim: Homie's unit is free-form and
+    # the SDK accepts one. `Unit` covers the units it models; anything else stays a string
+    # rather than being dropped. See graph_builder._to_sdk_unit.
+    unit: Unit | str | None,
     format_str: str | None,
     settable: bool,
 ) -> ebus_sdk.Property:

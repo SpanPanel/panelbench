@@ -292,20 +292,31 @@ def _to_sdk_datatype(dt: str) -> ebus_sdk.PropertyDatatype:
     return mapping.get(dt.lower(), ebus_sdk.PropertyDatatype.STRING)
 
 
-def _to_sdk_unit(unit: str | None) -> ebus_sdk.Unit | None:
-    """Map a Homie unit string to an ``ebus_sdk.Unit``.
+def _to_sdk_unit(unit: str | None) -> ebus_sdk.Unit | str | None:
+    """Map a Homie unit string to an ``ebus_sdk.Unit``, or pass it through unchanged.
 
     ``Unit`` is a str-enum whose *value* is the Homie wire string (``Unit.VOLTS`` is
     ``"V"``, ``Unit.MINUTES`` is ``"min"``), so resolve by value. Correct by
     construction for every unit the SDK models, and it cannot silently drop one the way
     the previous hand-maintained name table did — that table mapped ``"V"`` to a
     non-existent ``VOLT`` member, so every voltage property published with no unit at
-    all, and it had no entry for ``"min"``. An unmodelled unit resolves to ``None``,
-    omitting it from the wire.
+    all, and it had no entry for ``"min"``.
+
+    A unit the enum does not model is returned **as the original string** rather than
+    dropped. Homie's unit is explicitly free-form ("you are not limited to the recommended
+    values"), and the SDK agrees — it accepts and publishes a plain string unit verbatim.
+    ``Unit`` is a convenience vocabulary, not a constraint, so treating a missing member as
+    "no unit" was our error, not a limit the SDK imposes. It was reachable: the spec's own
+    ``breaker`` catalog uses ``kA`` for ``interrupting-rating``, which the enum lacks, so
+    composing that property would have published it with no unit at all.
+
+    This is deliberately *not* an escape hatch for the abstract unit tokens. Those name a
+    dimension rather than a unit and must never reach the wire; ``profile_loader``
+    rejects one at load time, well before this function sees it.
     """
     if unit is None:
         return None
     try:
         return ebus_sdk.Unit(unit)
     except ValueError:
-        return None
+        return unit
