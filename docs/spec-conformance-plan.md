@@ -1,40 +1,50 @@
 # Spec Conformance Checker Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan
+> task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Produce a conformance profile of what the simulator publishes — classifying every property as match, divergence, extension or omission — and fail the build on the small set of genuine eBus and Homie violations.
+**Goal:** Produce a conformance profile of what the simulator publishes — classifying every property as match, divergence, extension or omission — and fail the
+build on the small set of genuine eBus and Homie violations.
 
-**Architecture:** A new `conformance` package parses Homie 5 `$description` documents into a typed tree, compares that tree against the vendored capability catalogs and device profiles, and emits findings. The package imports nothing from `span_panel_simulator` and nothing MQTT-related, so the same rules run against an in-process device tree in unit tests and against a captured retained-topic dump from a live broker.
+**Architecture:** A new `conformance` package parses Homie 5 `$description` documents into a typed tree, compares that tree against the vendored capability
+catalogs and device profiles, and emits findings. The package imports nothing from `span_panel_simulator` and nothing MQTT-related, so the same rules run
+against an in-process device tree in unit tests and against a captured retained-topic dump from a live broker.
 
 **Tech Stack:** Python 3.14, dataclasses, `json` from the standard library, pytest. No new runtime dependencies.
 
-**Design document:** [`docs/spec-conformance-design.md`](spec-conformance-design.md). Read it before Task 1 — particularly "The conformance floor", which explains why only four rules fail a build and why a stricter checker would be wrong.
+**Design document:** [`docs/spec-conformance-design.md`](spec-conformance-design.md). Read it before Task 1 — particularly "The conformance floor", which
+explains why only four rules fail a build and why a stricter checker would be wrong.
 
 ## Global Constraints
 
 - Python floor is `>=3.14` (`pyproject.toml:9`); mypy runs `python_version = "3.14"`, ruff targets `py313`.
-- `uv run mypy --strict src/span_panel_simulator/` must pass. **No `Any`, no `# type: ignore`.** `json.loads` returns `Any` — bind it to a variable annotated `object` and narrow with `isinstance`, as shown in Task 1.
-- `src/span_panel_simulator/conformance/` must import nothing from `span_panel_simulator` and nothing MQTT-related (`ebus_sdk`, `aiomqtt`, `paho`). Task 8 adds the test that enforces this.
+- `uv run mypy --strict src/span_panel_simulator/` must pass. **No `Any`, no `# type: ignore`.** `json.loads` returns `Any` — bind it to a variable annotated
+  `object` and narrow with `isinstance`, as shown in Task 1.
+- `src/span_panel_simulator/conformance/` must import nothing from `span_panel_simulator` and nothing MQTT-related (`ebus_sdk`, `aiomqtt`, `paho`). Task 8 adds
+  the test that enforces this.
 - Every module starts with `from __future__ import annotations`, matching the existing codebase.
 - `uv run ruff check --fix src/ tests/` and `uv run ruff format src/ tests/` must be clean; pre-commit runs both plus `mypy --strict`.
-- Never edit a file under `ebus_emitter/wire/catalogs/` — they are byte-compared against the specification by `scripts/check-spec-provenance.py` and an edit fails CI.
+- Never edit a file under `ebus_emitter/wire/catalogs/` — they are byte-compared against the specification by `scripts/check-spec-provenance.py` and an edit
+  fails CI.
 - Commit messages follow the existing conventional-commit style (`feat:`, `test:`, `fix:`, `docs:`). No attribution trailers of any kind.
 - Tests live in `tests/conformance/`, mirroring the package layout as the existing `tests/ebus_emitter/` does.
 
 ## File Structure
 
-| File | Responsibility |
-| --- | --- |
-| `src/span_panel_simulator/conformance/__init__.py` | Public API re-exports |
-| `src/span_panel_simulator/conformance/model.py` | Parse `$description` documents into a typed tree |
-| `src/span_panel_simulator/conformance/catalogs.py` | Load vendored capability catalogs; the abstract-unit set |
-| `src/span_panel_simulator/conformance/device_profiles.py` | Load vendored device profiles |
-| `src/span_panel_simulator/conformance/rules.py` | `Finding` type; violations V1–V4; observations O1–O9 |
-| `src/span_panel_simulator/conformance/report.py` | Aggregate findings into a report; render text and JSON |
-| `src/span_panel_simulator/conformance/feeds.py` | `from_devices`, `from_capture` |
-| `scripts/check-conformance.py` | CLI, mirroring `scripts/check-spec-provenance.py` |
+| File                                                      | Responsibility                                           |
+| --------------------------------------------------------- | -------------------------------------------------------- |
+| `src/span_panel_simulator/conformance/__init__.py`        | Public API re-exports                                    |
+| `src/span_panel_simulator/conformance/model.py`           | Parse `$description` documents into a typed tree         |
+| `src/span_panel_simulator/conformance/catalogs.py`        | Load vendored capability catalogs; the abstract-unit set |
+| `src/span_panel_simulator/conformance/device_profiles.py` | Load vendored device profiles                            |
+| `src/span_panel_simulator/conformance/rules.py`           | `Finding` type; violations V1–V4; observations O1–O9     |
+| `src/span_panel_simulator/conformance/report.py`          | Aggregate findings into a report; render text and JSON   |
+| `src/span_panel_simulator/conformance/feeds.py`           | `from_devices`, `from_capture`                           |
+| `scripts/check-conformance.py`                            | CLI, mirroring `scripts/check-spec-provenance.py`        |
 
-Two separate notions of "profile" exist in this codebase. The eBus **device profile** (`wire/profiles/*.json`) says which capabilities a device type composes; it is loaded by `device_profiles.py`. The **conformance report** is our output; it lives in `report.py`. The names are deliberately unalike to stop them being confused.
+Two separate notions of "profile" exist in this codebase. The eBus **device profile** (`wire/profiles/*.json`) says which capabilities a device type composes;
+it is loaded by `device_profiles.py`. The **conformance report** is our output; it lives in `report.py`. The names are deliberately unalike to stop them being
+confused.
 
 ## Reference shapes
 
@@ -74,20 +84,24 @@ Capability catalog JSON (`wire/catalogs/soc.json`):
  "properties": {"soc": {"datatype": "float", "unit": "%", "req": "MAY", "description": "..."}}}
 ```
 
-**`version` in a device description is `Device.now_ems()`, a timestamp.** It changes on every call, so description documents are not byte-stable. The model does not carry it; golden assertions are made against the report, never against raw documents.
+**`version` in a device description is `Device.now_ems()`, a timestamp.** It changes on every call, so description documents are not byte-stable. The model does
+not carry it; golden assertions are made against the report, never against raw documents.
 
 ---
 
 ### Task 1: Typed tree model
 
 **Files:**
+
 - Create: `src/span_panel_simulator/conformance/__init__.py`
 - Create: `src/span_panel_simulator/conformance/model.py`
 - Test: `tests/conformance/__init__.py`, `tests/conformance/test_model.py`
 
 **Interfaces:**
+
 - Consumes: nothing.
-- Produces: `HomieProperty`, `HomieNode`, `HomieDevice`, `HomieTree`, `DescriptionError`, `parse_device(device_id: str, raw: object) -> HomieDevice`, `build_tree(documents: dict[str, object]) -> HomieTree`.
+- Produces: `HomieProperty`, `HomieNode`, `HomieDevice`, `HomieTree`, `DescriptionError`, `parse_device(device_id: str, raw: object) -> HomieDevice`,
+  `build_tree(documents: dict[str, object]) -> HomieTree`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -133,8 +147,7 @@ def test_build_tree_indexes_by_device_id() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_model.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance'`
+Run: `uv run pytest tests/conformance/test_model.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -289,8 +302,8 @@ def build_tree(documents: dict[str, object]) -> HomieTree:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_model.py -v && uv run mypy --strict src/span_panel_simulator/conformance/`
-Expected: 3 passed, mypy reports no issues.
+Run: `uv run pytest tests/conformance/test_model.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 3 passed, mypy reports no
+issues.
 
 - [ ] **Step 5: Commit**
 
@@ -304,12 +317,15 @@ git commit -m "feat: typed model for Homie 5 description documents"
 ### Task 2: Catalog loading and the abstract-unit set
 
 **Files:**
+
 - Create: `src/span_panel_simulator/conformance/catalogs.py`
 - Test: `tests/conformance/test_catalogs.py`
 
 **Interfaces:**
-- Consumes: `DescriptionError` is *not* used here; catalogs raise `CatalogError`.
-- Produces: `CatalogProperty`, `Catalog`, `CatalogError`, `ABSTRACT_UNITS: frozenset[str]`, `load_catalogs(directory: Path) -> dict[str, Catalog]` keyed by capability type.
+
+- Consumes: `DescriptionError` is _not_ used here; catalogs raise `CatalogError`.
+- Produces: `CatalogProperty`, `Catalog`, `CatalogError`, `ABSTRACT_UNITS: frozenset[str]`, `load_catalogs(directory: Path) -> dict[str, Catalog]` keyed by
+  capability type.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -371,8 +387,8 @@ def test_every_vendored_unit_is_classified() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_catalogs.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.catalogs'`
+Run: `uv run pytest tests/conformance/test_catalogs.py -v` Expected: FAIL with
+`ModuleNotFoundError: No module named 'span_panel_simulator.conformance.catalogs'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -490,8 +506,8 @@ def load_catalogs(directory: Path) -> dict[str, Catalog]:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_catalogs.py -v && uv run mypy --strict src/span_panel_simulator/conformance/`
-Expected: 3 passed, mypy clean. `test_every_vendored_unit_is_classified` passing confirms `energy` is the only abstract token across all 15 catalogs.
+Run: `uv run pytest tests/conformance/test_catalogs.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 3 passed, mypy clean.
+`test_every_vendored_unit_is_classified` passing confirms `energy` is the only abstract token across all 15 catalogs.
 
 - [ ] **Step 5: Commit**
 
@@ -505,21 +521,23 @@ git commit -m "feat: load vendored capability catalogs for conformance checking"
 ### Task 3: Violations V1–V4
 
 **Files:**
+
 - Create: `src/span_panel_simulator/conformance/rules.py`
 - Test: `tests/conformance/test_violations.py`
 
 **Interfaces:**
+
 - Consumes: `HomieTree`, `HomieDevice`, `HomieNode`, `HomieProperty` from `model`; `Catalog`, `CatalogProperty`, `ABSTRACT_UNITS` from `catalogs`.
 - Produces: `Severity`, `Bucket`, `Finding`, `check_violations(tree: HomieTree, catalogs: dict[str, Catalog]) -> list[Finding]`.
 
 Rules, and the authority for each — a reviewer should be able to check these against the design's "conformance floor" section:
 
-| Rule | Check | Authority |
-| --- | --- | --- |
-| V1 | an `enum` or `color` property carries a `format` | Homie 5 marks `format` required for exactly these two datatypes |
-| V2 | a published `unit` is never an abstract token | `property-json.md`: "`energy` is never published on the wire" |
-| V3 | a property whose catalog entry carries an abstract token publishes a concrete `unit` | `property-json.md`: "A publisher MUST substitute a concrete unit" |
-| V4 | every device named as a child has a description document | the standing self-description condition |
+| Rule | Check                                                                                | Authority                                                         |
+| ---- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| V1   | an `enum` or `color` property carries a `format`                                     | Homie 5 marks `format` required for exactly these two datatypes   |
+| V2   | a published `unit` is never an abstract token                                        | `property-json.md`: "`energy` is never published on the wire"     |
+| V3   | a property whose catalog entry carries an abstract token publishes a concrete `unit` | `property-json.md`: "A publisher MUST substitute a concrete unit" |
+| V4   | every device named as a child has a description document                             | the standing self-description condition                           |
 
 - [ ] **Step 1: Write the failing test**
 
@@ -575,8 +593,7 @@ def test_v4_dangling_child_is_a_violation() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_violations.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.rules'`
+Run: `uv run pytest tests/conformance/test_violations.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.rules'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -687,8 +704,7 @@ def check_violations(tree: HomieTree, catalogs: dict[str, Catalog]) -> list[Find
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_violations.py -v && uv run mypy --strict src/span_panel_simulator/conformance/`
-Expected: 5 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_violations.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 5 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
@@ -702,25 +718,27 @@ git commit -m "feat: conformance violations for abstract units and required form
 ### Task 4: Observations O1–O7 and O9
 
 **Files:**
+
 - Modify: `src/span_panel_simulator/conformance/rules.py`
 - Test: `tests/conformance/test_observations.py`
 
 **Interfaces:**
+
 - Consumes: everything from Task 3.
 - Produces: `check_observations(tree: HomieTree, catalogs: dict[str, Catalog]) -> list[Finding]`.
 
 O8 needs device profiles and lands in Task 5. The numeric datatypes for O5 are the Homie set: `integer`, `float`.
 
-| Rule | Check | Bucket |
-| --- | --- | --- |
-| O1 | node type matches `energy.ebus.capability.*` but names no loaded catalog | Divergence |
-| O2 | published datatype differs from the catalog's | Divergence |
-| O3 | published unit differs from the catalog's concrete unit | Divergence |
-| O4 | published settability differs from the catalog's | Divergence |
-| O5 | unit present on a non-numeric datatype | Divergence |
-| O6 | published property absent from the catalog | Extension |
-| O7 | node type is not an `energy.ebus.capability.*` at all | Extension |
-| O9 | catalog property the device does not publish | Omission |
+| Rule | Check                                                                    | Bucket     |
+| ---- | ------------------------------------------------------------------------ | ---------- |
+| O1   | node type matches `energy.ebus.capability.*` but names no loaded catalog | Divergence |
+| O2   | published datatype differs from the catalog's                            | Divergence |
+| O3   | published unit differs from the catalog's concrete unit                  | Divergence |
+| O4   | published settability differs from the catalog's                         | Divergence |
+| O5   | unit present on a non-numeric datatype                                   | Divergence |
+| O6   | published property absent from the catalog                               | Extension  |
+| O7   | node type is not an `energy.ebus.capability.*` at all                    | Extension  |
+| O9   | catalog property the device does not publish                             | Omission   |
 
 - [ ] **Step 1: Write the failing test**
 
@@ -782,8 +800,7 @@ def test_o9_unpublished_catalog_property_is_an_omission() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_observations.py -v`
-Expected: FAIL with `ImportError: cannot import name 'check_observations'`
+Run: `uv run pytest tests/conformance/test_observations.py -v` Expected: FAIL with `ImportError: cannot import name 'check_observations'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -884,8 +901,7 @@ def check_observations(tree: HomieTree, catalogs: dict[str, Catalog]) -> list[Fi
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_observations.py -v && uv run mypy --strict src/span_panel_simulator/conformance/`
-Expected: 5 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_observations.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 5 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
@@ -899,15 +915,19 @@ git commit -m "feat: classify divergence, extension and omission as observations
 ### Task 5: Device profiles and O8
 
 **Files:**
+
 - Create: `src/span_panel_simulator/conformance/device_profiles.py`
 - Modify: `src/span_panel_simulator/conformance/rules.py`
 - Test: `tests/conformance/test_device_profiles.py`
 
 **Interfaces:**
-- Consumes: `Bucket`, `Finding`, `Severity`, `HomieTree` from earlier tasks.
-- Produces: `DeviceProfile`, `ProfileError`, `load_device_profiles(directory: Path) -> dict[str, DeviceProfile]` keyed by device type; `check_profile_coverage(tree, profiles) -> list[Finding]`.
 
-A device profile's `device_types` maps a device type to the capability nodes it composes. O8 reports a composed capability the device does not publish. It is an **omission**, never a violation: profile `req` is "capability-level conformance guidance", default MAY.
+- Consumes: `Bucket`, `Finding`, `Severity`, `HomieTree` from earlier tasks.
+- Produces: `DeviceProfile`, `ProfileError`, `load_device_profiles(directory: Path) -> dict[str, DeviceProfile]` keyed by device type;
+  `check_profile_coverage(tree, profiles) -> list[Finding]`.
+
+A device profile's `device_types` maps a device type to the capability nodes it composes. O8 reports a composed capability the device does not publish. It is an
+**omission**, never a violation: profile `req` is "capability-level conformance guidance", default MAY.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -959,8 +979,8 @@ def test_o8_silent_for_an_unprofiled_device_type(tmp_path: Path) -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_device_profiles.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.device_profiles'`
+Run: `uv run pytest tests/conformance/test_device_profiles.py -v` Expected: FAIL with
+`ModuleNotFoundError: No module named 'span_panel_simulator.conformance.device_profiles'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1079,8 +1099,7 @@ from .device_profiles import DeviceProfile
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/ -v && uv run mypy --strict src/span_panel_simulator/conformance/`
-Expected: all pass, mypy clean.
+Run: `uv run pytest tests/conformance/ -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: all pass, mypy clean.
 
 - [ ] **Step 5: Commit**
 
@@ -1094,14 +1113,18 @@ git commit -m "feat: report capabilities a device profile composes but omits"
 ### Task 6: The conformance report
 
 **Files:**
+
 - Create: `src/span_panel_simulator/conformance/report.py`
 - Test: `tests/conformance/test_report.py`
 
 **Interfaces:**
-- Consumes: `Finding`, `Bucket`, `Severity` from `rules`.
-- Produces: `ConformanceReport`, `build_report(findings: list[Finding], match_count: int) -> ConformanceReport`, `render_text(report) -> str`, `render_json(report) -> str`.
 
-The report is the deliverable, not the violations. Counts come first, then violations in full, then observations grouped by rule. Matches are counted rather than listed — they are the uninteresting majority.
+- Consumes: `Finding`, `Bucket`, `Severity` from `rules`.
+- Produces: `ConformanceReport`, `build_report(findings: list[Finding], match_count: int) -> ConformanceReport`, `render_text(report) -> str`,
+  `render_json(report) -> str`.
+
+The report is the deliverable, not the violations. Counts come first, then violations in full, then observations grouped by rule. Matches are counted rather
+than listed — they are the uninteresting majority.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1146,8 +1169,7 @@ def test_render_text_leads_with_the_verdict() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_report.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.report'`
+Run: `uv run pytest tests/conformance/test_report.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.report'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1247,8 +1269,7 @@ def render_text(report: ConformanceReport, verbose: bool = False) -> str:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_report.py -v && uv run mypy --strict src/span_panel_simulator/conformance/`
-Expected: 4 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_report.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 4 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
@@ -1262,16 +1283,21 @@ git commit -m "feat: render the conformance report as text and JSON"
 ### Task 7: Feeds
 
 **Files:**
+
 - Create: `src/span_panel_simulator/conformance/feeds.py`
 - Test: `tests/conformance/test_feeds.py`
 
 **Interfaces:**
+
 - Consumes: `build_tree` from `model`.
-- Produces: `Described` protocol, `from_devices(devices: Iterable[Described]) -> dict[str, object]`, `from_capture(path: Path) -> dict[str, object]`, `CaptureError`.
+- Produces: `Described` protocol, `from_devices(devices: Iterable[Described]) -> dict[str, object]`, `from_capture(path: Path) -> dict[str, object]`,
+  `CaptureError`.
 
-Both feeds return the same thing — a mapping of device id to raw `$description` document — so every rule runs unchanged over either. `from_devices` is duck-typed via a `Protocol` so the package stays free of `ebus_sdk`.
+Both feeds return the same thing — a mapping of device id to raw `$description` document — so every rule runs unchanged over either. `from_devices` is
+duck-typed via a `Protocol` so the package stays free of `ebus_sdk`.
 
-Capture file format: one JSON object mapping device id to its description document. A capture is produced by `mosquitto_sub` and reshaped by the CLI in Task 8; committing that shape here keeps the parser trivial and diffable.
+Capture file format: one JSON object mapping device id to its description document. A capture is produced by `mosquitto_sub` and reshaped by the CLI in Task 8;
+committing that shape here keeps the parser trivial and diffable.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1319,8 +1345,7 @@ def test_from_capture_rejects_a_non_object(tmp_path: Path) -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_feeds.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.feeds'`
+Run: `uv run pytest tests/conformance/test_feeds.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.feeds'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1383,8 +1408,7 @@ def from_capture(path: Path) -> dict[str, object]:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_feeds.py -v && uv run mypy --strict src/span_panel_simulator/conformance/`
-Expected: 3 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_feeds.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 3 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
@@ -1398,15 +1422,18 @@ git commit -m "feat: in-process and capture-file feeds for conformance checking"
 ### Task 8: Public API, import boundary, and the CLI
 
 **Files:**
+
 - Modify: `src/span_panel_simulator/conformance/__init__.py`
 - Create: `scripts/check-conformance.py`
 - Test: `tests/conformance/test_boundary.py`
 
 **Interfaces:**
+
 - Consumes: everything from Tasks 1–7.
 - Produces: `check(tree, catalogs, profiles) -> ConformanceReport` exported from the package.
 
-The boundary test is the load-bearing one. It is what keeps the core reusable — and what would let it be offered upstream, where no publisher-side checker exists.
+The boundary test is the load-bearing one. It is what keeps the core reusable — and what would let it be offered upstream, where no publisher-side checker
+exists.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1453,8 +1480,8 @@ def test_package_imports_nothing_forbidden() -> None:
 
 - [ ] **Step 2: Run test to verify it fails or passes**
 
-Run: `uv run pytest tests/conformance/test_boundary.py -v`
-Expected: PASS. This test guards a property the earlier tasks already established; if it fails, an earlier task introduced a forbidden import and that is the bug.
+Run: `uv run pytest tests/conformance/test_boundary.py -v` Expected: PASS. This test guards a property the earlier tasks already established; if it fails, an
+earlier task introduced a forbidden import and that is the bug.
 
 - [ ] **Step 3: Write the public API and the CLI**
 
@@ -1632,18 +1659,22 @@ git commit -m "feat: conformance CLI and package API with an enforced import bou
 ### Task 9: Golden fixture, golden report, and documentation
 
 **Files:**
+
 - Create: `tests/conformance/fixtures/golden_tree.json`
 - Create: `tests/conformance/fixtures/golden_report.json`
 - Create: `tests/conformance/test_golden.py`
 - Modify: `DEVELOPER.md` (the Spec Conformance section added earlier)
 
 **Interfaces:**
+
 - Consumes: `check`, `build_tree`, `from_capture`, `render_json` from the package.
 - Produces: no new API. This task makes the tool load-bearing.
 
-The golden **report** is the stronger of the two assertions: it fails when our published surface changes in any way, including legally. A legal change should be a reviewed edit to the expected report, not something that slips through because no rule covered it.
+The golden **report** is the stronger of the two assertions: it fails when our published surface changes in any way, including legally. A legal change should be
+a reviewed edit to the expected report, not something that slips through because no rule covered it.
 
-`Device.description()` includes `version`, a timestamp, so the captured fixture is not byte-stable across runs. The model discards `version`, so the report is stable — which is exactly why the report, not the capture, is what gets asserted.
+`Device.description()` includes `version`, a timestamp, so the captured fixture is not byte-stable across runs. The model discards `version`, so the report is
+stable — which is exactly why the report, not the capture, is what gets asserted.
 
 - [ ] **Step 1: Capture a real tree**
 
@@ -1722,8 +1753,8 @@ def test_golden_report_is_unchanged() -> None:
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_golden.py -v`
-Expected: `test_golden_report_is_unchanged` FAILS with `FileNotFoundError: golden_report.json`. `test_golden_tree_has_no_violations` should PASS — if it does not, the listed violations are real defects in the emitter and must be fixed before continuing.
+Run: `uv run pytest tests/conformance/test_golden.py -v` Expected: `test_golden_report_is_unchanged` FAILS with `FileNotFoundError: golden_report.json`.
+`test_golden_tree_has_no_violations` should PASS — if it does not, the listed violations are real defects in the emitter and must be fixed before continuing.
 
 - [ ] **Step 4: Generate the expected report and re-run**
 
@@ -1738,7 +1769,8 @@ Expected: all tests pass.
 
 - [ ] **Step 5: Wire the command into DEVELOPER.md**
 
-In the **Spec Conformance** section, replace the status `designed` with `in CI` in the table row for `scripts/check-conformance.py`, and add to the existing code block:
+In the **Spec Conformance** section, replace the status `designed` with `in CI` in the table row for `scripts/check-conformance.py`, and add to the existing
+code block:
 
 ````markdown
 ```bash
@@ -1765,7 +1797,9 @@ git commit -m "test: assert the published tree's conformance report against a go
 
 Recorded so a later reader knows these were decided rather than missed:
 
-- **`from_devices` is built but not yet wired into the emitter's test suite.** The feed and its test exist; adding a test that builds a real panel tree and checks it in-process belongs with the emitter's own tests, not here, and needs the emitter's fixtures.
+- **`from_devices` is built but not yet wired into the emitter's test suite.** The feed and its test exist; adding a test that builds a real panel tree and
+  checks it in-process belongs with the emitter's own tests, not here, and needs the emitter's fixtures.
 - **Property values.** Range and enum-membership conformance needs the value topics, not just `$description`.
 - **Temporal rules.** Monotonicity of cumulative registers needs a capture window rather than a snapshot.
-- **Release-to-release diffing.** Two reports diffed give a complete change enumeration between releases; see the design document's "Future work" section. The JSON report shape in Task 6 is what makes it possible, which is why it is JSON rather than text-only.
+- **Release-to-release diffing.** Two reports diffed give a complete change enumeration between releases; see the design document's "Future work" section. The
+  JSON report shape in Task 6 is what makes it possible, which is why it is JSON rather than text-only.

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.14+ (`pyproject.toml` sets `requires-python = ">=3.14"`)
 - [uv](https://docs.astral.sh/uv/) (`brew install uv` on macOS)
 
 ## Setup
@@ -61,94 +61,110 @@ Every commit is validated by:
 
 ### What this simulator is, and why conformance is the whole point
 
-This simulator pretends to be a SPAN panel on an MQTT broker. It publishes a device tree in the
-Homie 5 format, following the eBus specification — an open, vendor-neutral vocabulary for
-electrical devices maintained at
-[`electrification-bus/specification`](https://github.com/electrification-bus/specification).
+This simulator pretends to be a SPAN panel on an MQTT broker. It publishes a device tree in the Homie 5 format, following the eBus specification — an open,
+vendor-neutral vocabulary for electrical devices maintained at [`electrification-bus/specification`](https://github.com/electrification-bus/specification).
 
-People build software against this simulator instead of against real hardware. If we publish
-something subtly wrong, that error does not stay ours: a consumer is written to cope with our
-mistake, and then breaks against a real panel that does it correctly. **A simulator that is wrong
-in a way nobody notices is worse than no simulator.** So being provably faithful is not a nicety
-here — it is the product.
+People build software against this simulator instead of against real hardware. If we publish something subtly wrong, that error does not stay ours: a consumer
+is written to cope with our mistake, and then breaks against a real panel that does it correctly. **A simulator that is wrong in a way nobody notices is worse
+than no simulator.** So being provably faithful is not a nicety here — it is the product.
 
-### Where the vocabulary comes from
+### Where the vocabulary comes from — and what we vendor
 
-The specification defines **capabilities** (`meter`, `soc`, `breaker`, …), each with a
-**catalog**: a JSON file listing the properties that capability may publish and, for each, its
-datatype, unit and format. The spec expects downstream projects to *copy* those catalogs and
-record which version they copied — the same idea as a dependency lockfile.
+The specification defines **capabilities** (`meter`, `soc`, `breaker`, …), each with a **catalog**: a JSON file listing the properties that capability may
+publish and, for each, its datatype, unit and format.
 
-We do exactly that:
+**We vendor that vocabulary — we do not depend on a package for it.** There is no published package to depend on: the specification is a git repository of
+versioned documents and JSON, and it is not on PyPI. Copying is not a workaround here, it is the model upstream designed for. `conventions/spec-provenance.md`
+calls the lockfile below "the eBus analogue of a dependency lockfile (`package-lock.json`, `Cargo.lock`)" and expects downstreams to copy specific artifacts at
+specific versions rather than depend on "the spec" as a whole.
 
-- The copies live in `src/span_panel_simulator/ebus_emitter/wire/catalogs/` (15 files).
-- `.ebus-spec.json` at the repo root records the specification commit they came from.
-- Our profiles (`wire/profiles/*.json`) select which of those properties each device publishes.
+What is vendored, and from where:
 
-**Never hand-edit a file under `catalogs/`.** They are byte-compared against the specification in
-CI, and an edit fails the build. Any SPAN-specific difference belongs in the
-`wire/profiles/span/` overlay, where it is visible as a deliberate divergence.
+| In the repo                                   | Vendored from                       | Pinned?                            | Provenance recorded in     |
+| --------------------------------------------- | ----------------------------------- | ---------------------------------- | -------------------------- |
+| `wire/catalogs/*.json` (15 files)             | the specification repo              | yes, byte-compared in CI           | `.ebus-spec.json`          |
+| `wire/profiles/*.json`, `wire/mapping/*.yaml` | panel-sim, not the spec directly    | no, they are not spec artifacts    | `.ebus-spec.json` notes    |
+| `ebus_emitter/` itself                        | the upstream `ebus-emitter` package | at a commit, but no longer tracked | `ebus_emitter/__init__.py` |
+
+Each of those carries its own provenance note; read it before changing anything under that directory, because the rules differ (the catalogs are byte-compared
+and must not be edited, while the emitter is a permanent fork where you fix bugs in place rather than porting from upstream).
+
+The one thing we do **not** vendor is `ebus-sdk`, which is a normal pinned PyPI dependency (`pyproject.toml`). It supplies the Homie mechanics — `Device`,
+`Node`, `Property` — while the vendored catalogs supply the vocabulary. Code from PyPI, data vendored.
+
+`.ebus-spec.json` at the repo root is the lockfile: it records the specification commit the catalogs were copied from and the version of each artifact we
+implement. `scripts/check-spec-provenance.py` verifies the copies are byte-identical at that commit and separately reports how far behind current the pins have
+fallen.
+
+**Never hand-edit a file under `catalogs/`.** They are byte-compared against the specification in CI, and an edit fails the build. That check is what makes the
+copies trustworthy, so keeping them pristine matters more than the convenience of a local tweak. Any SPAN-specific difference belongs in the
+`wire/profiles/span/` overlay, where it is visible as a deliberate divergence rather than hidden inside a mirror.
+
+#### The part of the vocabulary that does not travel
+
+Vendoring copies files, and some of what a publisher must know is not _in_ the files. One rule matters enough to name here, because it is the reason the
+conformance checker exists.
+
+The specification requires a publisher to substitute a real unit wherever a catalog carries an abstract token like `"unit": "energy"`. That requirement lives in
+the specification's prose and in a constant inside the specification repo's own tooling — neither of which a downstream copies. The catalogs we vendor contain
+the token but carry no machine-readable marker saying it is special: `"unit": "energy"` and `"unit": "V"` are the same shape.
+
+So we hand-carry it, in exactly one place: `ABSTRACT_UNITS` in `src/span_panel_simulator/conformance/catalogs.py`. It is a single constant with a comment citing
+the upstream source, both mechanisms that enforce the rule read from it, and a test fails on a re-vendor that introduces a unit it does not account for. If
+upstream ever ships this as data, that constant should be deleted in favour of it.
+
+Worth knowing when reading the code: this is deliberate, minimal duplication of upstream knowledge, not an oversight. It is the cost of vendoring, and it is
+bounded to one line and one test rather than spread through the emitter.
 
 ### The two checks, and why one is not enough
 
 | Check                              | Proves                                       |
 | ---------------------------------- | -------------------------------------------- |
-| `scripts/check-spec-provenance.py` | specification bytes → our vendored catalogs   |
-| `scripts/check-conformance.py`     | vendored catalogs → what we actually publish  |
+| `scripts/check-spec-provenance.py` | specification bytes → our vendored catalogs  |
+| `scripts/check-conformance.py`     | vendored catalogs → what we actually publish |
 
-Provenance proves we copied the right bytes. It cannot prove we *understood* them, and that gap
-is real rather than theoretical.
+Provenance proves we copied the right bytes. It cannot prove we _understood_ them, and that gap is real rather than theoretical.
 
-A worked example, which is why this tooling exists at all. Four catalog properties carry
-`"unit": "energy"`. That is not a unit — it is a placeholder naming a *dimension*, because a
-battery reports energy in kWh while a water heater reports it in Wh, and the catalog cannot pick
-one. The specification requires each publisher to substitute a real unit. Our catalog copies of
-those four properties were byte-perfect and our lockfile was truthful, yet the code reading them
-would have published the property **with no unit at all** — because the SDK's unit type cannot
-represent the placeholder, and our conversion quietly drops anything it cannot represent. No
-exception, no warning, just an energy reading a consumer cannot interpret.
+A worked example, which is why this tooling exists at all. Four catalog properties carry `"unit": "energy"`. That is not a unit — it is a placeholder naming a
+_dimension_, because a battery reports energy in kWh while a water heater reports it in Wh, and the catalog cannot pick one. The specification requires each
+publisher to substitute a real unit. Our catalog copies of those four properties were byte-perfect and our lockfile was truthful, yet the code reading them
+would have published the property **with no unit at all** — because the SDK's unit type cannot represent the placeholder, and our conversion quietly drops
+anything it cannot represent. No exception, no warning, just an energy reading a consumer cannot interpret.
 
 No amount of copy-checking finds that. Only looking at what actually went out on the wire does.
 
 ### How the conformance checker works
 
-Every device publishes one retained MQTT message called `$description` — a JSON document listing
-its nodes and properties with their datatype, unit, format and settability. That document is the
-device's own statement of what it publishes, so it is all the checker needs.
+Every device publishes one retained MQTT message called `$description` — a JSON document listing its nodes and properties with their datatype, unit, format and
+settability. That document is the device's own statement of what it publishes, so it is all the checker needs.
 
-```
+```text
 $description documents  →  parse into a typed tree  →  compare against catalogs  →  report
 ```
 
-The comparison is deliberately **not** a strict match, because the specification is deliberately
-permissive. A publisher may omit any property it does not support, publish properties the spec
-has never heard of, and widen a datatype. The specification states one standing obligation:
-*be self-describing* — declare accurately what you publish. A checker that failed on every
-difference from the catalog would fail correct publishers and quickly stop being run.
+The comparison is deliberately **not** a strict match, because the specification is deliberately permissive. A publisher may omit any property it does not
+support, publish properties the spec has never heard of, and widen a datatype. The specification states one standing obligation: _be self-describing_ — declare
+accurately what you publish. A checker that failed on every difference from the catalog would fail correct publishers and quickly stop being run.
 
 So every published property is sorted into one of five buckets:
 
-| Bucket         | Meaning                                                     | Fails the build? |
-| -------------- | ----------------------------------------------------------- | ---------------- |
-| **match**      | in the catalog, and shaped the way the catalog describes     | no               |
-| **divergence** | in the catalog, but we publish it differently — legal        | no               |
-| **extension**  | not in any catalog; ours alone — legal                       | no               |
-| **omission**   | in the catalog, we do not publish it — legal, publishing is opt-in | no         |
-| **violation**  | breaks Homie 5, or one of eBus's few hard requirements       | **yes**          |
+| Bucket         | Meaning                                                            | Fails the build? |
+| -------------- | ------------------------------------------------------------------ | ---------------- |
+| **match**      | in the catalog, and shaped the way the catalog describes           | no               |
+| **divergence** | in the catalog, but we publish it differently — legal              | no               |
+| **extension**  | not in any catalog; ours alone — legal                             | no               |
+| **omission**   | in the catalog, we do not publish it — legal, publishing is opt-in | no               |
+| **violation**  | breaks Homie 5, or one of eBus's few hard requirements             | **yes**          |
 
-Only four things count as violations: an `enum` or `color` property with no format (Homie
-requires it), a unit placeholder reaching the wire, a placeholder-unit property published with no
-unit, and a device named as a child that never published a description.
+Only four things count as violations: an `enum` or `color` property with no format (Homie requires it), a unit placeholder reaching the wire, a placeholder-unit
+property published with no unit, and a device named as a child that never published a description.
 
-The other four buckets are the actually useful output. Together they are a **conformance
-profile** — a precise statement of what this simulator emits, which parts are shared eBus
-vocabulary and which are SPAN's own. That is the contract someone writing a consumer codes
-against, and because it is derived from the wire it cannot drift the way hand-written integration
-notes always do.
+The other four buckets are the actually useful output. Together they are a **conformance profile** — a precise statement of what this simulator emits, which
+parts are shared eBus vocabulary and which are SPAN's own. That is the contract someone writing a consumer codes against, and because it is derived from the
+wire it cannot drift the way hand-written integration notes always do.
 
-Current profile: 557 match, 4 divergence, 82 extension, 1486 omission, 0 violations. All four
-divergences are deliberate SPAN choices, such as `shed/policy` being read-only because a real
-SPAN panel does not accept policy writes.
+Current profile: 557 match, 4 divergence, 82 extension, 1486 omission, 0 violations. All four divergences are deliberate SPAN choices, such as `shed/policy`
+being read-only because a real SPAN panel does not accept policy writes.
 
 ### Running it
 
@@ -163,9 +179,8 @@ uv run scripts/check-conformance.py --capture tests/conformance/fixtures/golden_
 # Add --verbose to list omissions, or --json for the machine-readable profile
 ```
 
-`tests/conformance/` runs both a captured tree and hand-built cases on every `pytest` run, so you
-do not need a broker to get the check. Recapture only when the published surface changes on
-purpose:
+`tests/conformance/` runs both a captured tree and hand-built cases on every `pytest` run, so you do not need a broker to get the check. Recapture only when the
+published surface changes on purpose:
 
 ```bash
 # Start the simulator first, then:
@@ -178,23 +193,18 @@ uv run scripts/check-conformance.py \
   > tests/conformance/fixtures/golden_report.json
 ```
 
-`test_golden_report_is_unchanged` compares the full profile, so it fails on *any* change to what
-we publish — including a perfectly legal one. That is intended: a change to our published surface
-should always be a reviewed edit to the expected profile, never something that slips through
-because no rule happened to cover it.
+`test_golden_report_is_unchanged` compares the full profile, so it fails on _any_ change to what we publish — including a perfectly legal one. That is intended:
+a change to our published surface should always be a reviewed edit to the expected profile, never something that slips through because no rule happened to cover
+it.
 
 ### If you are changing the emitter
 
-Read [`docs/spec-conformance-design.md`](docs/spec-conformance-design.md) before adding a
-capability to a profile or changing how properties reach the wire. Two things will stop you
-early if you get the unit wrong: `profile_loader` refuses to load a profile that inherits a unit
-placeholder without substituting a real unit, and the conformance checker rejects one that
-reaches the wire.
+Read [`docs/spec-conformance-design.md`](docs/spec-conformance-design.md) before adding a capability to a profile or changing how properties reach the wire. Two
+things will stop you early if you get the unit wrong: `profile_loader` refuses to load a profile that inherits a unit placeholder without substituting a real
+unit, and the conformance checker rejects one that reaches the wire.
 
-The `conformance` package deliberately imports nothing from the rest of this simulator and
-nothing MQTT-related — a test enforces it. That keeps it a general eBus publisher checker rather
-than a SPAN-specific one, and it is why the rules describe *any* publisher's output rather than
-just ours.
+The `conformance` package deliberately imports nothing from the rest of this simulator and nothing MQTT-related — a test enforces it. That keeps it a general
+eBus publisher checker rather than a SPAN-specific one, and it is why the rules describe _any_ publisher's output rather than just ours.
 
 ## Running Locally
 
