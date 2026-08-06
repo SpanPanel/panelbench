@@ -1,13 +1,30 @@
-"""Flat-schema Homie wire publisher with native-device runtime.
+"""Parent/child Homie wire publisher with native-device runtime.
 
-Vendored from ``ebus-emitter`` (https://github.com/electrification-bus/simulator) at
-commit ``5b84de8``, version 0.2.1 — the release that corrected the circuit energy
-reference frame. MIT licensed, same copyright holders as this repository.
+Publishes the eBus **parent/child (v1.0)** device tree: every circuit, BESS, PV, EVSE, lugs
+and MID is its own Homie device with its own ``$description`` and ``$state``, rather than a
+namespaced node hanging off the panel. Topics are
+``ebus/5/<device>/<capability>/<property>``.
 
-**This copy no longer tracks upstream, by design.** The two diverged permanently when
-upstream moved to the parent/child (v1.0) Homie data model while this simulator continues
-to publish the flat schema that SPAN firmware r202603-r202627 speaks. Upstream changes are
-not ported; fix bugs here.
+Provenance, in two steps:
+
+- Originally vendored from ``ebus-emitter``
+  (https://github.com/electrification-bus/simulator) at commit ``5b84de8``, version 0.2.1 —
+  the release that corrected the circuit energy reference frame. MIT licensed, same
+  copyright holders as this repository. That copy published the **flat** schema.
+- Re-vendored onto the parent/child schema (2026-08-03). The schema data came from the eBus
+  specification and from panel-sim: 15 capability catalogs, 7 base profiles plus the SPAN
+  overlay, 7 placement descriptors, and the MID device class. ``profile_loader`` and
+  ``bag_builder`` are adopted from panel-sim with import paths rewritten; ``graph_builder``
+  was ported to the SDK tree API.
+
+**This copy does not track upstream, by design.** Upstream changes are not ported; fix bugs
+here. Note the reason is *not* a schema disagreement — an earlier version of this docstring
+said the two diverged because upstream moved to parent/child while we stayed flat, which was
+true then and is not now. We followed them onto parent/child. What remains is an ordinary
+permanent fork: the code carries SPAN-specific behaviour and its own test suite.
+
+The flat schema still ships from the ``main`` branch of this repository, for SPAN firmware
+that speaks it.
 
 Why vendored rather than depended on:
 
@@ -26,10 +43,17 @@ what this code publishes. While they lived in separate repos each side could loo
 correct while jointly inverting circuit energy — which is exactly what happened, and what
 no single test suite could see. Both ends now sit in one repo under one test run.
 
-Architecture (v0.3.0):
+The vendored catalogs under ``wire/catalogs/`` are byte-compared against the specification
+by ``scripts/check-spec-provenance.py`` and must never be hand-edited; SPAN divergences go
+in the ``wire/profiles/span/`` overlay. What this package actually publishes is checked
+against those catalogs by ``scripts/check-conformance.py``. See ``DEVELOPER.md`` §Spec
+Conformance.
 
-- **Wire layer** (``wire/``): vendored Homie 5 device profiles + mapping descriptors,
-  graph builder, lifecycle controller, /set router, property bag diff cache, SDK seam.
+Architecture:
+
+- **Wire layer** (``wire/``): vendored capability catalogs, Homie 5 device profiles and
+  mapping descriptors, graph builder, lifecycle controller, /set router, property bag diff
+  cache, SDK seam.
 - **Native devices** (``native_devices/``): emitter-resident, configured-and-self-driving
   device runtimes (BESS dispatch, load shedding).
 - **Manifest physics** (``manifest_physics.py``): typed accessor over
@@ -40,9 +64,13 @@ Architecture (v0.3.0):
   resolve circuit relay state, integrate energy, derive per-leg currents, and
   aggregate panel-level fields.
 
-Producer contract (v0.3.0): build a ``DeviceManifest`` once at startup, then call
+Producer contract: build a ``DeviceManifest`` once at startup, then call
 ``Emitter.publish_tick(TickInputs)`` each tick with signed circuit/EVSE powers,
-``current_time``, and ``grid_online``. The emitter does the rest."""
+``current_time``, and ``grid_online``. The emitter does the rest.
+
+The tree is built **transport-free**: no ``mqtt_cfg`` is passed, so the SDK opens no socket
+and still composes the whole tree. This simulator owns its transport and publishes through
+its own client, so the SDK device tree is a naming and description model only."""
 
 from span_panel_simulator.ebus_emitter.conventions.tab_legs import Leg, legs_for_tabs
 from span_panel_simulator.ebus_emitter.emitter import Emitter
