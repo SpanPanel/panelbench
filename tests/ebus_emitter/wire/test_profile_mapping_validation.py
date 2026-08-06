@@ -91,3 +91,48 @@ def test_settable_properties_match_the_v1_0_set_exactly() -> None:
         "evse": [("config", "user-max-charge-current")],
         "panel": [("shed", "asserted-islanding-state")],
     }
+
+
+def test_abstract_unit_token_is_rejected_at_load(tmp_path: Path) -> None:
+    """Composing an abstract-token property without a unit must fail loudly.
+
+    The failure this prevents is silent in both directions: the SDK's Unit enum cannot
+    represent the token, and graph_builder maps an unrepresentable unit to None, so the
+    property would publish with no unit at all rather than with a wrong one.
+    """
+    import json
+    import shutil
+
+    from span_panel_simulator.ebus_emitter.wire import profile_loader
+
+    profiles = tmp_path / "profiles"
+    shutil.copytree(profile_loader._DEFAULT_DIR, profiles)
+    bess = json.loads((profiles / "bess.json").read_text())
+    # total-energy-storage carries `"unit": "energy"` in soc.json and is not composed
+    # today; selecting it without a unit is exactly the mistake the guard exists for.
+    bess["capabilities"]["soc"]["properties"]["total-energy-storage"] = {
+        "name": "Total energy storage"
+    }
+    (profiles / "bess.json").write_text(json.dumps(bess))
+
+    with pytest.raises(ProfileValidationError, match="abstract unit token"):
+        load_profiles(profiles)
+
+
+def test_abstract_unit_token_passes_with_an_explicit_unit(tmp_path: Path) -> None:
+    import json
+    import shutil
+
+    from span_panel_simulator.ebus_emitter.wire import profile_loader
+
+    profiles = tmp_path / "profiles"
+    shutil.copytree(profile_loader._DEFAULT_DIR, profiles)
+    bess = json.loads((profiles / "bess.json").read_text())
+    bess["capabilities"]["soc"]["properties"]["total-energy-storage"] = {
+        "name": "Total energy storage",
+        "unit": "kWh",
+    }
+    (profiles / "bess.json").write_text(json.dumps(bess))
+
+    table = load_profiles(profiles)
+    assert table["bess"].capabilities["soc"].properties["total-energy-storage"].unit == "kWh"

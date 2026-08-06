@@ -21,11 +21,41 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from span_panel_simulator.conformance.catalogs import ABSTRACT_UNITS
 from span_panel_simulator.ebus_emitter.exceptions import ProfileValidationError
 
 _DEFAULT_DIR = Path(__file__).parent / "profiles"
 _CATALOG_DIR = Path(__file__).parent / "catalogs"
 _OVERLAY_SUBDIR = "span"
+
+
+def _checked_unit(unit: str | None, path: Path, cap_name: str, key: str) -> str | None:
+    """Reject an abstract unit token reaching a hydrated profile.
+
+    A few catalog properties carry a token naming a *dimension* rather than a unit
+    (``soc``'s ``soe``, ``total-energy-storage``, ``loadup-headroom``; ``info``'s
+    ``nameplate-capacity``). The specification requires a publisher to substitute a
+    concrete unit; the token is never valid on the wire.
+
+    Without this, a light selection inherits the token from the catalog and the failure is
+    silent in both directions: ``ebus_sdk.Unit`` cannot represent it, and
+    ``graph_builder._to_sdk_unit`` maps an unrepresentable unit to ``None``, so the
+    property publishes with **no unit at all**. Nothing raises, nothing logs, and a
+    consumer simply finds an energy figure it cannot interpret.
+
+    Raising here makes the omission a load-time error naming the property, and points at
+    the fix: give the selection an explicit concrete unit, as ``bess.json`` already does
+    for ``soe`` and ``nameplate-capacity``.
+    """
+    if unit is not None and unit in ABSTRACT_UNITS:
+        raise ProfileValidationError(
+            f"{path}: {cap_name}/{key} resolves to the abstract unit token {unit!r}, "
+            "which names a dimension rather than a unit and is never valid on the wire. "
+            "Add an explicit concrete unit to the selection (a BESS reports energy in "
+            "kWh, a thermal store in Wh)."
+        )
+    return unit
+
 
 Variant = Literal["span", "reference"]
 
@@ -197,7 +227,7 @@ def _hydrate_property(
         return ProfileProperty(
             name=sel["name"],
             datatype=sel["datatype"],
-            unit=sel.get("unit"),
+            unit=_checked_unit(sel.get("unit"), path, cap_name, key),
             format=_resolve_format(sel, None),
             settable=bool(sel.get("settable", False)),
         )
@@ -209,7 +239,7 @@ def _hydrate_property(
     return ProfileProperty(
         name=sel.get("name") or catalog_def.get("name") or key,
         datatype=catalog_def["datatype"],
-        unit=sel.get("unit", catalog_def.get("unit")),
+        unit=_checked_unit(sel.get("unit", catalog_def.get("unit")), path, cap_name, key),
         format=_resolve_format(sel, catalog_def),
         settable=bool(sel.get("settable", catalog_def.get("settable", False))),
     )
