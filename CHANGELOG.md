@@ -1,8 +1,19 @@
 # Changelog
 
-## Unreleased — parent/child eBus schema
+## 2.0.0 — parent/child eBus schema, in its own repository
+
+Not yet published: no image is built for this repository, because no SPAN firmware publishes the v1.0 tree. The version is `2.0.0` because the wire format this
+produces is incompatible with everything the `1.x` line published, not because a release is imminent.
 
 ### Changed
+
+- **Split from `SpanPanel/simulator` into `SpanPanel/panelbench`.** The two publish incompatible schemas and a publisher cannot hot-load a wire format the way
+  `span-panel-api` hot-loads a parser, so the parent/child work could never merge back — a branch that can never merge is a fork wearing a branch's clothes. The
+  flat simulator keeps its name, its repository URL and its add-on slug, so no installed add-on is disturbed. History was carried across intact rather than
+  squashed.
+- **Renamed throughout to `panelbench`**: the Python package, the CLI entry point, the add-on directory and slug, the container image path, and the TLS and
+  discovery hostname. The add-on directory has to match the slug, and the Supervisor derives a container's Docker DNS name from it, so those move together or
+  not at all.
 
 - **The emitter publishes the parent/child (v1.0) Homie data model** instead of the flat
   schema. Every circuit, BESS, PV, EVSE, lugs and MID is now its own Homie device with its
