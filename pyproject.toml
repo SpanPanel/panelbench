@@ -34,8 +34,10 @@ dependencies = [
     # from this file rather than the lockfile, so the declared pin is the operative control
     # in production. On any bump, re-check the `homie` logger premise documented in
     # `__main__.py` — 0.18.0 logs a missing client at `debug` when the tree is transport-free
-    # (our GH #11 / PR #20), which is exactly our case.
-    "ebus-sdk==0.18.0",
+    # (our GH #11 / PR #20), which is exactly our case. Re-checked at 0.19.0: `setLevel` and
+    # `pformat` are both still absent from `homie.py` and the logger is still NOTSET at
+    # import, so the filter remains a guard rather than a live need.
+    "ebus-sdk==0.19.0",
     "paho-mqtt>=2.0.0",
 ]
 
