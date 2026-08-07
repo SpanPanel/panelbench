@@ -27,6 +27,7 @@ import yaml
 from panelbench.behavior_mutable_state import BehaviorEngineMutableState
 from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
+from panelbench.config_defaults import normalize_circuit_templates
 from panelbench.exceptions import SimulationConfigurationError
 
 if TYPE_CHECKING:
@@ -194,7 +195,7 @@ class RealisticBehaviorEngine:
             if recorded is not None:
                 if modeling_deterministic:
                     return float(recorded)
-                noise = self._config["simulation_params"].get("noise_factor", 0.02)
+                noise = self._config.get("simulation_params", {}).get("noise_factor", 0.02)
                 return recorded * (1.0 + random.uniform(-noise, noise))  # nosec B311
         return None
 
@@ -244,7 +245,7 @@ class RealisticBehaviorEngine:
         # profile already captures the macro pattern; this jitter is just
         # tick-to-tick measurement noise.
         variation = energy_profile.get("power_variation", 0.1)
-        noise_factor = self._config["simulation_params"].get("noise_factor", 0.02)
+        noise_factor = self._config.get("simulation_params", {}).get("noise_factor", 0.02)
         total_variation = min(variation + noise_factor, 0.15)
 
         if stochastic_noise:
@@ -698,9 +699,13 @@ class DynamicSimulationEngine:
             return config_data  # type: ignore[no-any-return]
 
     def _validate_yaml_config(self, config_data: dict[str, Any] | SimulationConfig) -> None:
-        """Validate YAML configuration structure and required fields."""
+        """Normalise, then validate, YAML configuration structure and fields."""
         if not isinstance(config_data, dict):
             raise ValueError("YAML configuration must be a dictionary")
+        # Before validation, not after: normalisation is what makes an omitted
+        # energy_profile legal, so validating first would reject configs this is
+        # meant to accept.
+        normalize_circuit_templates(config_data)
         validate_yaml_config(config_data)
 
     def _build_circuits(self) -> None:

@@ -1,0 +1,50 @@
+{
+  "extra_devices": {},
+  "extra_properties": {},
+  "missing_devices": {
+    "energy.ebus.device.mid::Microgrid Interconnect Device": 6
+  },
+  "missing_properties": {
+    "energy.ebus.device.bess::Battery": [
+      "info/model"
+    ],
+    "energy.ebus.device.circuit::SPAN Drive - Driveway": [
+      "connection/feeds-device-id",
+      "connection/feeds-device-status",
+      "connection/feeds-device-type"
+    ],
+    "energy.ebus.device.circuit::SPAN Drive - Garage": [
+      "connection/feeds-device-id",
+      "connection/feeds-device-status",
+      "connection/feeds-device-type"
+    ],
+    "energy.ebus.device.circuit::Solar Inverter": [
+      "connection/feeds-device-id",
+      "connection/feeds-device-status",
+      "connection/feeds-device-type"
+    ],
+    "energy.ebus.device.distribution-enclosure::Example 40-tab Panel": [
+      "shed-forecast/confidence",
+      "shed-forecast/full-charge-time-to-priority-shed",
+      "shed-forecast/full-charge-total-time-remaining",
+      "shed-forecast/time-to-priority-shed",
+      "shed-forecast/total-time-remaining",
+      "shed/policy"
+    ],
+    "energy.ebus.device.evse::SPAN Drive - Driveway": [
+      "info/model"
+    ],
+    "energy.ebus.device.evse::SPAN Drive - Garage": [
+      "info/model"
+    ],
+    "energy.ebus.device.lugs::Upstream lugs": [
+      "connection/fed-by-device-id",
+      "connection/fed-by-device-status",
+      "connection/fed-by-device-type"
+    ],
+    "energy.ebus.device.pv::Solar": [
+      "info/model",
+      "info/nominal-power"
+    ]
+  }
+}

@@ -51,6 +51,7 @@ dev = [
     "pre-commit>=4.0",
     "types-pyyaml>=6.0",
     "amqtt>=0.11.3",
+    "ebus-panel-sim",
 ]
 
 [project.scripts]
@@ -78,6 +79,11 @@ packages = ["src/panelbench"]
 # Bump back to py314 once the upstream bug is fixed.
 target-version = "py313"
 line-length = 99
+# Byte-vendored from the eBus emitter as the fidelity reference (see
+# tests/fidelity/fixtures/upstream/PROVENANCE.md). Reformatting it to our rules
+# would destroy the property that makes it useful -- that it is upstream's file,
+# unmodified -- and would make every re-sync a merge conflict.
+extend-exclude = ["tests/fidelity/fixtures/upstream"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
@@ -99,10 +105,17 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
+# Same reason as ruff's exclusion: the vendored reference is upstream's code held
+# byte-identical, not ours to annotate. It is exercised by the parity test, which
+# is a stronger check than type-checking it would be.
+exclude = ["tests/fidelity/fixtures/upstream/"]
 
 [[tool.mypy.overrides]]
 module = "timezonefinder"
 ignore_missing_imports = true
+
+[tool.uv.sources]
+ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "feat/byo-transport-passthrough" }
 
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a
 # TYPE_CHECKING import. mypy under --strict still complains about the forward ref when
