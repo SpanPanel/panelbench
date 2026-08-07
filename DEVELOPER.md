@@ -197,6 +197,30 @@ uv run scripts/check-conformance.py \
 a change to our published surface should always be a reviewed edit to the expected profile, never something that slips through because no rule happened to cover
 it.
 
+### The wire capture, and why it is a second fixture
+
+`golden_tree.json` holds `$description` documents, because conformance is a question about what a device *declares*. That is not enough to exercise a **consumer**:
+a parser fed only descriptions can be asked whether it understands the shape of a panel, never whether it builds the right snapshot from one — which is the part
+that reaches a user. `golden_wire.json` holds the whole retained surface instead: descriptions, `$state`, and every property value, keyed the way a consumer
+receives them.
+
+```bash
+# Recapture. No broker needed — the emitter is assembled with the MQTT client substituted.
+uv run scripts/capture-wire.py
+```
+
+It goes through `start_clone`, the same assembly a real panel uses, with `publisher=` supplying a recorder in place of the aiomqtt client. Reassembling the
+emitter inside the script would make it a second copy of that wiring, free to drift, and a capture taken through different wiring than a panel uses proves less
+than it appears to.
+
+**Its values are not reproducible and nothing asserts them.** The config carries `noise_factor` and the clock advances, so power and current differ every run.
+`test_wire_capture.py` compares *shape* — which devices, which topics — so a property added, removed or renamed fails it while a different wattage does not. That
+is the opposite policy to `golden_report.json`, deliberately: a conformance profile must not drift silently, and a fixture full of noisy floats cannot be held to
+byte equality without producing failures nobody can act on.
+
+`span-panel-api-schema-1` vendors this capture and drives its parser end to end from it, which is the point of publishing it as an artifact rather than keeping it
+internal.
+
 ### If you are changing the emitter
 
 Read [`docs/spec-conformance-design.md`](docs/spec-conformance-design.md) before adding a capability to a profile or changing how properties reach the wire. Two
