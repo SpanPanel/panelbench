@@ -16,8 +16,14 @@ Two checks with deliberately different severities:
    never fails the build.
 
 Usage:
-    scripts/check-spec-provenance.py                     # clones the spec to a temp dir
-    scripts/check-spec-provenance.py --spec ~/spec-repo  # reuse a local checkout
+    scripts/check-spec-provenance.py                     # $EBUS_SPEC_DIR, else clone to a temp dir
+    scripts/check-spec-provenance.py --spec ~/spec-repo  # reuse a particular checkout
+
+`EBUS_SPEC_DIR` belongs in `.env` (see `.env.example`); the flag overrides it.
+Cloning works and needs no setup, so the variable is an optimisation — it saves a
+network round trip per run — not a requirement. A path that no longer exists falls
+back to cloning rather than failing, since that is the same situation as not
+having set it.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from __future__ import annotations
 import argparse
 import filecmp
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -75,8 +82,19 @@ def _catalog_at_commit(spec: pathlib.Path, commit: str, name: str, out: pathlib.
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spec", help="path to an existing specification checkout")
+    parser.add_argument(
+        "--spec",
+        default=os.environ.get("EBUS_SPEC_DIR"),
+        help="existing specification checkout (default: $EBUS_SPEC_DIR, else clone)",
+    )
     args = parser.parse_args()
+
+    # A stale path is the same situation as no path — the checkout is not there —
+    # and cloning is the documented fallback, so fall back rather than failing on
+    # a variable someone set months ago and a directory that has since moved.
+    if args.spec and not pathlib.Path(args.spec).is_dir():
+        print(f"EBUS_SPEC_DIR={args.spec} does not exist; cloning instead", file=sys.stderr)
+        args.spec = None
 
     if not LOCKFILE.exists():
         print(f"no provenance lockfile at {LOCKFILE}", file=sys.stderr)
