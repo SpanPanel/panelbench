@@ -32,7 +32,7 @@ import tempfile
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOCKFILE = REPO_ROOT / ".ebus-spec.json"
-VENDORED_CATALOGS = REPO_ROOT / "src/span_panel_simulator/ebus_emitter/wire/catalogs"
+VENDORED_CATALOGS = REPO_ROOT / "src/panelbench/ebus_emitter/wire/catalogs"
 
 
 def _run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:

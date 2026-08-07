@@ -11,7 +11,7 @@ import yaml
 if TYPE_CHECKING:
     from pathlib import Path
 
-from span_panel_simulator.history_generator import SyntheticHistoryGenerator
+from panelbench.history_generator import SyntheticHistoryGenerator
 
 _MINIMAL_CONFIG: dict[str, object] = {
     "panel_config": {

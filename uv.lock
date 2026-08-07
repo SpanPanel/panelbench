@@ -663,6 +663,61 @@ wheels = [
 ]
 
 [[package]]
+name = "panelbench"
+version = "2.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "aiohttp-jinja2" },
+    { name = "aiomqtt" },
+    { name = "cryptography" },
+    { name = "ebus-sdk" },
+    { name = "jinja2" },
+    { name = "paho-mqtt" },
+    { name = "pyyaml" },
+    { name = "timezonefinder" },
+    { name = "zeroconf" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "amqtt" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "types-pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9.0" },
+    { name = "aiohttp-jinja2", specifier = ">=1.6" },
+    { name = "aiomqtt", specifier = ">=2.0.0" },
+    { name = "cryptography", specifier = ">=42.0.0" },
+    { name = "ebus-sdk", specifier = "==0.18.0" },
+    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "paho-mqtt", specifier = ">=2.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "timezonefinder", specifier = ">=6.0" },
+    { name = "zeroconf", specifier = ">=0.131.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "amqtt", specifier = ">=0.11.3" },
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pre-commit", specifier = ">=4.0" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.15.0" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
 name = "passlib"
 version = "1.7.4"
 source = { registry = "https://pypi.org/simple" }
@@ -908,61 +963,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
-]
-
-[[package]]
-name = "span-panel-simulator"
-version = "1.0.14"
-source = { editable = "." }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "aiohttp-jinja2" },
-    { name = "aiomqtt" },
-    { name = "cryptography" },
-    { name = "ebus-sdk" },
-    { name = "jinja2" },
-    { name = "paho-mqtt" },
-    { name = "pyyaml" },
-    { name = "timezonefinder" },
-    { name = "zeroconf" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "amqtt" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "types-pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp", specifier = ">=3.9.0" },
-    { name = "aiohttp-jinja2", specifier = ">=1.6" },
-    { name = "aiomqtt", specifier = ">=2.0.0" },
-    { name = "cryptography", specifier = ">=42.0.0" },
-    { name = "ebus-sdk", specifier = "==0.18.0" },
-    { name = "jinja2", specifier = ">=3.1.0" },
-    { name = "paho-mqtt", specifier = ">=2.0.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "timezonefinder", specifier = ">=6.0" },
-    { name = "zeroconf", specifier = ">=0.131.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "amqtt", specifier = ">=0.11.3" },
-    { name = "mypy", specifier = ">=1.10" },
-    { name = "pre-commit", specifier = ">=4.0" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
-    { name = "pytest-cov", specifier = ">=5.0" },
-    { name = "ruff", specifier = ">=0.15.0" },
-    { name = "types-pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

@@ -5,7 +5,7 @@ from __future__ import annotations
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
-from span_panel_simulator.dashboard.config_store import ConfigStore
+from panelbench.dashboard.config_store import ConfigStore
 
 if TYPE_CHECKING:
     from pathlib import Path

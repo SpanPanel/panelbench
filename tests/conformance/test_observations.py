@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from span_panel_simulator.conformance.catalogs import load_catalogs
-from span_panel_simulator.conformance.model import HomieTree, build_tree
-from span_panel_simulator.conformance.rules import Bucket, Finding, check_observations
+from panelbench.conformance.catalogs import load_catalogs
+from panelbench.conformance.model import HomieTree, build_tree
+from panelbench.conformance.rules import Bucket, Finding, check_observations
 
-CATALOGS = load_catalogs(Path("src/span_panel_simulator/ebus_emitter/wire/catalogs"))
+CATALOGS = load_catalogs(Path("src/panelbench/ebus_emitter/wire/catalogs"))
 
 
 def _tree(node_type: str, properties: dict[str, object]) -> HomieTree:

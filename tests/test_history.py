@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from span_panel_simulator.history import (
+from panelbench.history import (
     EBusHistoryProvider,
     HistoryProvider,
     NullHistoryProvider,
 )
-from span_panel_simulator.sqlite_history import SqliteHistoryProvider
+from panelbench.sqlite_history import SqliteHistoryProvider
 
 
 class TestNullHistoryProvider:

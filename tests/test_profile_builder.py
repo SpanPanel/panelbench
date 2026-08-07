@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from span_panel_simulator.ha_api.manifest import CircuitManifestEntry
-from span_panel_simulator.ha_api.profile_builder import build_profiles
+from panelbench.ha_api.manifest import CircuitManifestEntry
+from panelbench.ha_api.profile_builder import build_profiles
 
 
 def _make_entry(entity_id: str, template: str) -> CircuitManifestEntry:

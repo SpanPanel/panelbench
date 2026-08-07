@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from span_panel_simulator.conformance.feeds import CaptureError, from_capture, from_devices
+from panelbench.conformance.feeds import CaptureError, from_capture, from_devices
 
 
 class _FakeDevice:

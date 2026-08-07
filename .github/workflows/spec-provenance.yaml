@@ -13,7 +13,7 @@ on:
     branches: [main]
     paths:
       - ".ebus-spec.json"
-      - "src/span_panel_simulator/ebus_emitter/wire/catalogs/**"
+      - "src/panelbench/ebus_emitter/wire/catalogs/**"
       - "scripts/check-spec-provenance.py"
       - ".github/workflows/spec-provenance.yaml"
   schedule:

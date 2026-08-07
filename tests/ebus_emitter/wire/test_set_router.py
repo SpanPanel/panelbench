@@ -1,7 +1,7 @@
 import pytest
 
-from span_panel_simulator.ebus_emitter.exceptions import MissingSetterError
-from span_panel_simulator.ebus_emitter.wire.set_router import (
+from panelbench.ebus_emitter.exceptions import MissingSetterError
+from panelbench.ebus_emitter.wire.set_router import (
     SetSubscription,
     SetterRegistry,
     compute_subscriptions,

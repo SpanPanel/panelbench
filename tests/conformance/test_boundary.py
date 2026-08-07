@@ -9,8 +9,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-PACKAGE = Path("src/span_panel_simulator/conformance")
-FORBIDDEN_ROOTS = {"span_panel_simulator", "ebus_sdk", "aiomqtt", "paho"}
+PACKAGE = Path("src/panelbench/conformance")
+FORBIDDEN_ROOTS = {"panelbench", "ebus_sdk", "aiomqtt", "paho"}
 
 
 def _imported_roots(path: Path) -> set[str]:

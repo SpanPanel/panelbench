@@ -27,7 +27,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
-from span_panel_simulator.conformance import (
+from panelbench.conformance import (
     build_tree,
     check,
     from_capture,
@@ -38,8 +38,8 @@ from span_panel_simulator.conformance import (
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-CATALOGS = REPO_ROOT / "src/span_panel_simulator/ebus_emitter/wire/catalogs"
-PROFILES = REPO_ROOT / "src/span_panel_simulator/ebus_emitter/wire/profiles"
+CATALOGS = REPO_ROOT / "src/panelbench/ebus_emitter/wire/catalogs"
+PROFILES = REPO_ROOT / "src/panelbench/ebus_emitter/wire/profiles"
 
 
 def _reshape_stdin() -> int:

@@ -7,7 +7,7 @@
 build on the small set of genuine eBus and Homie violations.
 
 **Architecture:** A new `conformance` package parses Homie 5 `$description` documents into a typed tree, compares that tree against the vendored capability
-catalogs and device profiles, and emits findings. The package imports nothing from `span_panel_simulator` and nothing MQTT-related, so the same rules run
+catalogs and device profiles, and emits findings. The package imports nothing from `panelbench` and nothing MQTT-related, so the same rules run
 against an in-process device tree in unit tests and against a captured retained-topic dump from a live broker.
 
 **Tech Stack:** Python 3.14, dataclasses, `json` from the standard library, pytest. No new runtime dependencies.
@@ -18,9 +18,9 @@ explains why only four rules fail a build and why a stricter checker would be wr
 ## Global Constraints
 
 - Python floor is `>=3.14` (`pyproject.toml:9`); mypy runs `python_version = "3.14"`, ruff targets `py313`.
-- `uv run mypy --strict src/span_panel_simulator/` must pass. **No `Any`, no `# type: ignore`.** `json.loads` returns `Any` — bind it to a variable annotated
+- `uv run mypy --strict src/panelbench/` must pass. **No `Any`, no `# type: ignore`.** `json.loads` returns `Any` — bind it to a variable annotated
   `object` and narrow with `isinstance`, as shown in Task 1.
-- `src/span_panel_simulator/conformance/` must import nothing from `span_panel_simulator` and nothing MQTT-related (`ebus_sdk`, `aiomqtt`, `paho`). Task 8 adds
+- `src/panelbench/conformance/` must import nothing from `panelbench` and nothing MQTT-related (`ebus_sdk`, `aiomqtt`, `paho`). Task 8 adds
   the test that enforces this.
 - Every module starts with `from __future__ import annotations`, matching the existing codebase.
 - `uv run ruff check --fix src/ tests/` and `uv run ruff format src/ tests/` must be clean; pre-commit runs both plus `mypy --strict`.
@@ -33,13 +33,13 @@ explains why only four rules fail a build and why a stricter checker would be wr
 
 | File                                                      | Responsibility                                           |
 | --------------------------------------------------------- | -------------------------------------------------------- |
-| `src/span_panel_simulator/conformance/__init__.py`        | Public API re-exports                                    |
-| `src/span_panel_simulator/conformance/model.py`           | Parse `$description` documents into a typed tree         |
-| `src/span_panel_simulator/conformance/catalogs.py`        | Load vendored capability catalogs; the abstract-unit set |
-| `src/span_panel_simulator/conformance/device_profiles.py` | Load vendored device profiles                            |
-| `src/span_panel_simulator/conformance/rules.py`           | `Finding` type; violations V1–V4; observations O1–O9     |
-| `src/span_panel_simulator/conformance/report.py`          | Aggregate findings into a report; render text and JSON   |
-| `src/span_panel_simulator/conformance/feeds.py`           | `from_devices`, `from_capture`                           |
+| `src/panelbench/conformance/__init__.py`        | Public API re-exports                                    |
+| `src/panelbench/conformance/model.py`           | Parse `$description` documents into a typed tree         |
+| `src/panelbench/conformance/catalogs.py`        | Load vendored capability catalogs; the abstract-unit set |
+| `src/panelbench/conformance/device_profiles.py` | Load vendored device profiles                            |
+| `src/panelbench/conformance/rules.py`           | `Finding` type; violations V1–V4; observations O1–O9     |
+| `src/panelbench/conformance/report.py`          | Aggregate findings into a report; render text and JSON   |
+| `src/panelbench/conformance/feeds.py`           | `from_devices`, `from_capture`                           |
 | `scripts/check-conformance.py`                            | CLI, mirroring `scripts/check-spec-provenance.py`        |
 
 Two separate notions of "profile" exist in this codebase. The eBus **device profile** (`wire/profiles/*.json`) says which capabilities a device type composes;
@@ -93,8 +93,8 @@ not carry it; golden assertions are made against the report, never against raw d
 
 **Files:**
 
-- Create: `src/span_panel_simulator/conformance/__init__.py`
-- Create: `src/span_panel_simulator/conformance/model.py`
+- Create: `src/panelbench/conformance/__init__.py`
+- Create: `src/panelbench/conformance/model.py`
 - Test: `tests/conformance/__init__.py`, `tests/conformance/test_model.py`
 
 **Interfaces:**
@@ -111,7 +111,7 @@ from __future__ import annotations
 
 import pytest
 
-from span_panel_simulator.conformance.model import DescriptionError, build_tree, parse_device
+from panelbench.conformance.model import DescriptionError, build_tree, parse_device
 
 
 def test_parse_device_reads_nodes_and_properties() -> None:
@@ -147,14 +147,14 @@ def test_build_tree_indexes_by_device_id() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_model.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance'`
+Run: `uv run pytest tests/conformance/test_model.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'panelbench.conformance'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `src/span_panel_simulator/conformance/__init__.py` as an empty file for now (Task 8 fills in the re-exports), then:
+Create `src/panelbench/conformance/__init__.py` as an empty file for now (Task 8 fills in the re-exports), then:
 
 ```python
-# src/span_panel_simulator/conformance/model.py
+# src/panelbench/conformance/model.py
 """Homie 5 $description documents parsed into a typed tree.
 
 Knows the Homie document shape and nothing else: no eBus vocabulary, no catalogs,
@@ -302,13 +302,13 @@ def build_tree(documents: dict[str, object]) -> HomieTree:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_model.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 3 passed, mypy reports no
+Run: `uv run pytest tests/conformance/test_model.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 3 passed, mypy reports no
 issues.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/ tests/conformance/
+git add src/panelbench/conformance/ tests/conformance/
 git commit -m "feat: typed model for Homie 5 description documents"
 ```
 
@@ -318,7 +318,7 @@ git commit -m "feat: typed model for Homie 5 description documents"
 
 **Files:**
 
-- Create: `src/span_panel_simulator/conformance/catalogs.py`
+- Create: `src/panelbench/conformance/catalogs.py`
 - Test: `tests/conformance/test_catalogs.py`
 
 **Interfaces:**
@@ -337,13 +337,13 @@ from pathlib import Path
 
 import pytest
 
-from span_panel_simulator.conformance.catalogs import (
+from panelbench.conformance.catalogs import (
     ABSTRACT_UNITS,
     CatalogError,
     load_catalogs,
 )
 
-VENDORED = Path("src/span_panel_simulator/ebus_emitter/wire/catalogs")
+VENDORED = Path("src/panelbench/ebus_emitter/wire/catalogs")
 
 
 def test_loads_vendored_catalogs_keyed_by_capability_type() -> None:
@@ -388,12 +388,12 @@ def test_every_vendored_unit_is_classified() -> None:
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/conformance/test_catalogs.py -v` Expected: FAIL with
-`ModuleNotFoundError: No module named 'span_panel_simulator.conformance.catalogs'`
+`ModuleNotFoundError: No module named 'panelbench.conformance.catalogs'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/span_panel_simulator/conformance/catalogs.py
+# src/panelbench/conformance/catalogs.py
 """Vendored eBus capability catalogs, loaded as data.
 
 Reads the JSON copies under ``ebus_emitter/wire/catalogs`` without importing anything
@@ -506,13 +506,13 @@ def load_catalogs(directory: Path) -> dict[str, Catalog]:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_catalogs.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 3 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_catalogs.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 3 passed, mypy clean.
 `test_every_vendored_unit_is_classified` passing confirms `energy` is the only abstract token across all 15 catalogs.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/catalogs.py tests/conformance/test_catalogs.py
+git add src/panelbench/conformance/catalogs.py tests/conformance/test_catalogs.py
 git commit -m "feat: load vendored capability catalogs for conformance checking"
 ```
 
@@ -522,7 +522,7 @@ git commit -m "feat: load vendored capability catalogs for conformance checking"
 
 **Files:**
 
-- Create: `src/span_panel_simulator/conformance/rules.py`
+- Create: `src/panelbench/conformance/rules.py`
 - Test: `tests/conformance/test_violations.py`
 
 **Interfaces:**
@@ -547,11 +547,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from span_panel_simulator.conformance.catalogs import load_catalogs
-from span_panel_simulator.conformance.model import HomieTree, build_tree
-from span_panel_simulator.conformance.rules import check_violations
+from panelbench.conformance.catalogs import load_catalogs
+from panelbench.conformance.model import HomieTree, build_tree
+from panelbench.conformance.rules import check_violations
 
-CATALOGS = load_catalogs(Path("src/span_panel_simulator/ebus_emitter/wire/catalogs"))
+CATALOGS = load_catalogs(Path("src/panelbench/ebus_emitter/wire/catalogs"))
 
 
 def _tree(prop: dict[str, object], prop_id: str = "soe") -> HomieTree:
@@ -593,12 +593,12 @@ def test_v4_dangling_child_is_a_violation() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_violations.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.rules'`
+Run: `uv run pytest tests/conformance/test_violations.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'panelbench.conformance.rules'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/span_panel_simulator/conformance/rules.py
+# src/panelbench/conformance/rules.py
 """Conformance rules over a parsed Homie tree.
 
 Two kinds of output, and the split is the whole design:
@@ -704,12 +704,12 @@ def check_violations(tree: HomieTree, catalogs: dict[str, Catalog]) -> list[Find
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_violations.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 5 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_violations.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 5 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/rules.py tests/conformance/test_violations.py
+git add src/panelbench/conformance/rules.py tests/conformance/test_violations.py
 git commit -m "feat: conformance violations for abstract units and required formats"
 ```
 
@@ -719,7 +719,7 @@ git commit -m "feat: conformance violations for abstract units and required form
 
 **Files:**
 
-- Modify: `src/span_panel_simulator/conformance/rules.py`
+- Modify: `src/panelbench/conformance/rules.py`
 - Test: `tests/conformance/test_observations.py`
 
 **Interfaces:**
@@ -748,11 +748,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from span_panel_simulator.conformance.catalogs import load_catalogs
-from span_panel_simulator.conformance.model import HomieTree, build_tree
-from span_panel_simulator.conformance.rules import Bucket, Finding, check_observations
+from panelbench.conformance.catalogs import load_catalogs
+from panelbench.conformance.model import HomieTree, build_tree
+from panelbench.conformance.rules import Bucket, Finding, check_observations
 
-CATALOGS = load_catalogs(Path("src/span_panel_simulator/ebus_emitter/wire/catalogs"))
+CATALOGS = load_catalogs(Path("src/panelbench/ebus_emitter/wire/catalogs"))
 
 
 def _tree(node_type: str, properties: dict[str, object]) -> HomieTree:
@@ -901,12 +901,12 @@ def check_observations(tree: HomieTree, catalogs: dict[str, Catalog]) -> list[Fi
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_observations.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 5 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_observations.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 5 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/rules.py tests/conformance/test_observations.py
+git add src/panelbench/conformance/rules.py tests/conformance/test_observations.py
 git commit -m "feat: classify divergence, extension and omission as observations"
 ```
 
@@ -916,8 +916,8 @@ git commit -m "feat: classify divergence, extension and omission as observations
 
 **Files:**
 
-- Create: `src/span_panel_simulator/conformance/device_profiles.py`
-- Modify: `src/span_panel_simulator/conformance/rules.py`
+- Create: `src/panelbench/conformance/device_profiles.py`
+- Modify: `src/panelbench/conformance/rules.py`
 - Test: `tests/conformance/test_device_profiles.py`
 
 **Interfaces:**
@@ -938,9 +938,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from span_panel_simulator.conformance.device_profiles import load_device_profiles
-from span_panel_simulator.conformance.model import build_tree
-from span_panel_simulator.conformance.rules import Bucket, check_profile_coverage
+from panelbench.conformance.device_profiles import load_device_profiles
+from panelbench.conformance.model import build_tree
+from panelbench.conformance.rules import Bucket, check_profile_coverage
 
 
 def _profile_dir(tmp_path: Path) -> Path:
@@ -980,12 +980,12 @@ def test_o8_silent_for_an_unprofiled_device_type(tmp_path: Path) -> None:
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/conformance/test_device_profiles.py -v` Expected: FAIL with
-`ModuleNotFoundError: No module named 'span_panel_simulator.conformance.device_profiles'`
+`ModuleNotFoundError: No module named 'panelbench.conformance.device_profiles'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/span_panel_simulator/conformance/device_profiles.py
+# src/panelbench/conformance/device_profiles.py
 """Vendored eBus device profiles: which capabilities a device type composes.
 
 Distinct from the *conformance report* this package produces. A device profile is
@@ -1099,12 +1099,12 @@ from .device_profiles import DeviceProfile
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/ -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: all pass, mypy clean.
+Run: `uv run pytest tests/conformance/ -v && uv run mypy --strict src/panelbench/conformance/` Expected: all pass, mypy clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/ tests/conformance/test_device_profiles.py
+git add src/panelbench/conformance/ tests/conformance/test_device_profiles.py
 git commit -m "feat: report capabilities a device profile composes but omits"
 ```
 
@@ -1114,7 +1114,7 @@ git commit -m "feat: report capabilities a device profile composes but omits"
 
 **Files:**
 
-- Create: `src/span_panel_simulator/conformance/report.py`
+- Create: `src/panelbench/conformance/report.py`
 - Test: `tests/conformance/test_report.py`
 
 **Interfaces:**
@@ -1134,8 +1134,8 @@ from __future__ import annotations
 
 import json
 
-from span_panel_simulator.conformance.report import build_report, render_json, render_text
-from span_panel_simulator.conformance.rules import Bucket, Finding, Severity
+from panelbench.conformance.report import build_report, render_json, render_text
+from panelbench.conformance.rules import Bucket, Finding, Severity
 
 VIOLATION = Finding(rule="V3", severity=Severity.VIOLATION, bucket=Bucket.VIOLATION,
                     message="no unit published", device="bess-1", node="soc", property="soe")
@@ -1169,12 +1169,12 @@ def test_render_text_leads_with_the_verdict() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_report.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.report'`
+Run: `uv run pytest tests/conformance/test_report.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'panelbench.conformance.report'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/span_panel_simulator/conformance/report.py
+# src/panelbench/conformance/report.py
 """The conformance report: what this publisher emits, relative to the specification.
 
 The report is the deliverable. Violations fail a build, but the classification —
@@ -1269,12 +1269,12 @@ def render_text(report: ConformanceReport, verbose: bool = False) -> str:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_report.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 4 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_report.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 4 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/report.py tests/conformance/test_report.py
+git add src/panelbench/conformance/report.py tests/conformance/test_report.py
 git commit -m "feat: render the conformance report as text and JSON"
 ```
 
@@ -1284,7 +1284,7 @@ git commit -m "feat: render the conformance report as text and JSON"
 
 **Files:**
 
-- Create: `src/span_panel_simulator/conformance/feeds.py`
+- Create: `src/panelbench/conformance/feeds.py`
 - Test: `tests/conformance/test_feeds.py`
 
 **Interfaces:**
@@ -1310,7 +1310,7 @@ from pathlib import Path
 
 import pytest
 
-from span_panel_simulator.conformance.feeds import CaptureError, from_capture, from_devices
+from panelbench.conformance.feeds import CaptureError, from_capture, from_devices
 
 
 class _FakeDevice:
@@ -1345,12 +1345,12 @@ def test_from_capture_rejects_a_non_object(tmp_path: Path) -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_feeds.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'span_panel_simulator.conformance.feeds'`
+Run: `uv run pytest tests/conformance/test_feeds.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'panelbench.conformance.feeds'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/span_panel_simulator/conformance/feeds.py
+# src/panelbench/conformance/feeds.py
 """Ways of obtaining $description documents.
 
 Both feeds return the same shape — device id to raw description document — so the rules
@@ -1408,12 +1408,12 @@ def from_capture(path: Path) -> dict[str, object]:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_feeds.py -v && uv run mypy --strict src/span_panel_simulator/conformance/` Expected: 3 passed, mypy clean.
+Run: `uv run pytest tests/conformance/test_feeds.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 3 passed, mypy clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/feeds.py tests/conformance/test_feeds.py
+git add src/panelbench/conformance/feeds.py tests/conformance/test_feeds.py
 git commit -m "feat: in-process and capture-file feeds for conformance checking"
 ```
 
@@ -1423,7 +1423,7 @@ git commit -m "feat: in-process and capture-file feeds for conformance checking"
 
 **Files:**
 
-- Modify: `src/span_panel_simulator/conformance/__init__.py`
+- Modify: `src/panelbench/conformance/__init__.py`
 - Create: `scripts/check-conformance.py`
 - Test: `tests/conformance/test_boundary.py`
 
@@ -1450,8 +1450,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-PACKAGE = Path("src/span_panel_simulator/conformance")
-FORBIDDEN_ROOTS = {"span_panel_simulator", "ebus_sdk", "aiomqtt", "paho"}
+PACKAGE = Path("src/panelbench/conformance")
+FORBIDDEN_ROOTS = {"panelbench", "ebus_sdk", "aiomqtt", "paho"}
 
 
 def _imported_roots(path: Path) -> set[str]:
@@ -1486,7 +1486,7 @@ earlier task introduced a forbidden import and that is the bug.
 - [ ] **Step 3: Write the public API and the CLI**
 
 ```python
-# src/span_panel_simulator/conformance/__init__.py
+# src/panelbench/conformance/__init__.py
 """Conformance checking of a published Homie 5 tree against the vendored eBus catalogs.
 
 Independent of this simulator by design: see tests/conformance/test_boundary.py.
@@ -1576,7 +1576,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
-from span_panel_simulator.conformance import (  # noqa: E402
+from panelbench.conformance import (  # noqa: E402
     build_tree,
     check,
     from_capture,
@@ -1587,8 +1587,8 @@ from span_panel_simulator.conformance import (  # noqa: E402
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-CATALOGS = REPO_ROOT / "src/span_panel_simulator/ebus_emitter/wire/catalogs"
-PROFILES = REPO_ROOT / "src/span_panel_simulator/ebus_emitter/wire/profiles"
+CATALOGS = REPO_ROOT / "src/panelbench/ebus_emitter/wire/catalogs"
+PROFILES = REPO_ROOT / "src/panelbench/ebus_emitter/wire/profiles"
 
 
 def _reshape_stdin() -> int:
@@ -1642,7 +1642,7 @@ if __name__ == "__main__":
 ```bash
 chmod +x scripts/check-conformance.py
 uv run pytest tests/conformance/ -v
-uv run mypy --strict src/span_panel_simulator/conformance/
+uv run mypy --strict src/panelbench/conformance/
 ```
 
 Expected: all tests pass, mypy clean.
@@ -1650,7 +1650,7 @@ Expected: all tests pass, mypy clean.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/span_panel_simulator/conformance/__init__.py scripts/check-conformance.py tests/conformance/test_boundary.py
+git add src/panelbench/conformance/__init__.py scripts/check-conformance.py tests/conformance/test_boundary.py
 git commit -m "feat: conformance CLI and package API with an enforced import boundary"
 ```
 
@@ -1715,7 +1715,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from span_panel_simulator.conformance import (
+from panelbench.conformance import (
     ConformanceReport,
     build_tree,
     check,
@@ -1726,8 +1726,8 @@ from span_panel_simulator.conformance import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-CATALOGS = Path("src/span_panel_simulator/ebus_emitter/wire/catalogs")
-PROFILES = Path("src/span_panel_simulator/ebus_emitter/wire/profiles")
+CATALOGS = Path("src/panelbench/ebus_emitter/wire/catalogs")
+PROFILES = Path("src/panelbench/ebus_emitter/wire/profiles")
 
 
 def _report() -> ConformanceReport:

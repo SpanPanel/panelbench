@@ -10,7 +10,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from span_panel_simulator.sqlite_history import SCHEMA_SQL, SqliteHistoryProvider
+from panelbench.sqlite_history import SCHEMA_SQL, SqliteHistoryProvider
 
 
 def _create_test_db(path: Path, entity_id: str, rows: list[tuple[float, float]]) -> None:

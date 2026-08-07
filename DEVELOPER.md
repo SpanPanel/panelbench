@@ -9,7 +9,7 @@
 
 ```bash
 # Clone and enter the repo
-git clone https://github.com/SpanPanel/simulator.git
+git clone https://github.com/SpanPanel/panelbench.git
 cd simulator
 
 # Create venv and install all dependencies (runtime + dev)
@@ -26,7 +26,7 @@ That's it. The `.venv/` directory is created in the project root and `uv.lock` p
 
 ```bash
 # Run the simulator
-uv run span-simulator
+uv run panelbench
 
 # Run tests
 uv run pytest
@@ -36,7 +36,7 @@ uv run ruff check --fix src/ tests/
 uv run ruff format src/ tests/
 
 # Type check
-uv run mypy --strict src/span_panel_simulator/
+uv run mypy --strict src/panelbench/
 
 # Add a new dependency
 uv add <package>          # runtime
@@ -109,7 +109,7 @@ The specification requires a publisher to substitute a real unit wherever a cata
 the specification's prose and in a constant inside the specification repo's own tooling — neither of which a downstream copies. The catalogs we vendor contain
 the token but carry no machine-readable marker saying it is special: `"unit": "energy"` and `"unit": "V"` are the same shape.
 
-So we hand-carry it, in exactly one place: `ABSTRACT_UNITS` in `src/span_panel_simulator/conformance/catalogs.py`. It is a single constant with a comment citing
+So we hand-carry it, in exactly one place: `ABSTRACT_UNITS` in `src/panelbench/conformance/catalogs.py`. It is a single constant with a comment citing
 the upstream source, both mechanisms that enforce the rule read from it, and a test fails on a re-vendor that introduces a unit it does not account for. If
 upstream ever ships this as data, that constant should be deleted in favour of it.
 
@@ -243,9 +243,9 @@ networking), but the integration can connect by manual configuration. On Linux, 
 
 ```bash
 # Build (use aarch64 base on Apple Silicon, amd64 on Intel/Linux)
-docker build -f span_panel_simulator/Dockerfile \
+docker build -f panelbench/Dockerfile \
   --build-arg BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.14-alpine3.23 \
-  -t span-panel-simulator:local .
+  -t panelbench:local .
 
 # Run
 mkdir -p .local/addon-test
@@ -263,7 +263,7 @@ docker run --rm \
   -p 18883:18883 -p 8081:8081 -p 18080:18080 \
   -v $(pwd)/configs:/config/span_simulator \
   -v $(pwd)/.local/addon-test:/data \
-  span-panel-simulator:local
+  panelbench:local
 ```
 
 ### 3. HA add-on
@@ -577,7 +577,7 @@ Only changed property values are republished each tick. Unchanged values are not
 
 ### Directory naming matters
 
-The `span_panel_simulator/` directory **must** match the `slug` field in `config.yaml`. The HA Supervisor uses the directory name to identify the add-on —
+The `panelbench/` directory **must** match the `slug` field in `config.yaml`. The HA Supervisor uses the directory name to identify the add-on —
 renaming it will break discovery. If you need to change the slug, update both the directory name and the `slug` field together.
 
 ### Build pipeline
@@ -592,13 +592,13 @@ The workflow:
 
 - Triggers on pushes to `main` that touch source, config, or workflow files
 - Builds per-architecture images (amd64, aarch64) using the appropriate HA base image
-- Pushes to `ghcr.io/SpanPanel/simulator/{arch}:{version}`
+- Pushes to `ghcr.io/SpanPanel/panelbench/{arch}:{version}`
 
 ## TLS Certificates
 
 Certificates are generated automatically on first run and cached in the cert directory. The server certificate SAN includes:
 
-- `span-simulator` (hostname)
+- `panelbench` (hostname)
 - `localhost`
 - `127.0.0.1`
 - The `ADVERTISE_ADDRESS` IP (if set)
@@ -612,7 +612,7 @@ simulator/
   repository.yaml            # HA app repository metadata (current YAML format)
   repository.json            # Legacy HA add-on repository metadata (JSON compatibility file)
   configs/                   # Panel YAML configurations
-  span_panel_simulator/      # HA add-on (dir name must match slug)
+  panelbench/      # HA add-on (dir name must match slug)
     config.yaml              # Add-on metadata, image ref, options schema
     build.yaml               # Per-architecture base images
     Dockerfile               # Used by CI (build context is repo root)
@@ -625,7 +625,7 @@ simulator/
   scripts/
     run-local.sh            # macOS native (recommended)
     entrypoint.sh           # Docker entrypoint (Linux)
-  src/span_panel_simulator/
+  src/panelbench/
     __main__.py             # CLI and entry point
     app.py                  # Multi-panel orchestrator
     panel.py                # Single panel lifecycle

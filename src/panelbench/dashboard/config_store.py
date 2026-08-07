@@ -1,0 +1,949 @@
+"""In-memory configuration state manager.
+
+Holds the full simulator config as a mutable dict tree (matching the
+YAML schema).  Changes only persist when the user explicitly saves.
+"""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, cast
+
+import yaml
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from panelbench.config_types import BESSConfigYAML
+
+from panelbench.dashboard.defaults import make_defaults
+from panelbench.dashboard.presets import (
+    evse_schedule_factors,
+    get_battery_preset,
+    get_evse_preset,
+    get_evse_tuples,
+    get_preset,
+)
+from panelbench.solar import compute_solar_curve
+from panelbench.validation import validate_yaml_config
+from panelbench.weather import get_cached_weather
+
+
+@dataclass
+class EntityView:
+    """Read-only projection of a circuit + its template for templates."""
+
+    id: str
+    name: str
+    entity_type: str  # "circuit" | "pv" | "evse"
+    template_name: str
+    tabs: list[int]
+    energy_profile: dict[str, Any]
+    relay_behavior: str
+    priority: str
+    cycling_pattern: dict[str, Any] | None = None
+    time_of_day_profile: dict[str, Any] | None = None
+    smart_behavior: dict[str, Any] | None = None
+    hvac_type: str | None = None
+    breaker_rating: int | None = None
+    overrides: dict[str, Any] = field(default_factory=dict)
+    recorder_entity: str | None = None
+    user_modified: bool = False
+
+
+def _detect_entity_type(template: dict[str, Any]) -> str:
+    """Infer entity type from template fields."""
+    device_type = template.get("device_type", "")
+    if device_type == "pv":
+        return "pv"
+    if device_type == "evse":
+        return "evse"
+    return "circuit"
+
+
+class ConfigStore:
+    """In-memory config state: load, mutate, validate, export."""
+
+    def __init__(self) -> None:
+        self._dirty: bool = False
+        self._state: dict[str, Any] = {
+            "panel_config": {
+                "serial_number": "SPAN-SIM-001",
+                "total_tabs": 32,
+                "main_size": 200,
+                "latitude": 37.7,
+                "longitude": -122.4,
+            },
+            "circuit_templates": {},
+            "circuits": [],
+            "simulation_params": {
+                "update_interval": 5,
+                "time_acceleration": 1.0,
+                "noise_factor": 0.02,
+                "enable_realistic_behaviors": True,
+            },
+        }
+
+    @property
+    def dirty(self) -> bool:
+        """Whether in-memory state has unsaved changes."""
+        return self._dirty
+
+    def load_from_yaml(self, content: str) -> None:
+        """Parse, validate, and replace state from YAML string."""
+        data = yaml.safe_load(content)
+        if not isinstance(data, dict):
+            raise ValueError("YAML content must be a mapping")
+        validate_yaml_config(data)
+        self._state = data
+        self._dirty = False
+
+    def load_from_file(self, path: Path) -> None:
+        """Read a file and load its content."""
+        self.load_from_yaml(path.read_text(encoding="utf-8"))
+
+    def export_yaml(self) -> str:
+        """Serialize current state to YAML."""
+        return yaml.dump(
+            self._state,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+
+    def save_to_file(self, path: Path) -> None:
+        """Serialize current state to YAML and write to disk."""
+        path.write_text(self.export_yaml(), encoding="utf-8")
+        self._dirty = False
+
+    # -- Panel config --
+
+    def get_panel_config(self) -> dict[str, Any]:
+        return dict(self._state.get("panel_config", {}))
+
+    def update_panel_config(self, data: dict[str, Any]) -> None:
+        cfg = self._state.setdefault("panel_config", {})
+        for key in ("serial_number", "total_tabs", "main_size"):
+            if key in data:
+                value = data[key]
+                if key in ("total_tabs", "main_size"):
+                    value = int(value)
+                if key == "total_tabs" and value % 2 != 0:
+                    raise ValueError("Total tabs must be an even number")
+                cfg[key] = value
+        for key in ("latitude", "longitude", "soc_shed_threshold"):
+            if key in data:
+                cfg[key] = float(data[key])
+        self._dirty = True
+
+    def get_panel_source(self) -> dict[str, Any] | None:
+        """Return the panel_source block, or None if absent."""
+        ps = self._state.get("panel_source")
+        return dict(ps) if isinstance(ps, dict) else None
+
+    def get_origin_serial(self) -> str | None:
+        """Return origin_serial from panel_source, if present."""
+        ps = self._state.get("panel_source")
+        if isinstance(ps, dict):
+            origin: object = ps.get("origin_serial")
+            return str(origin) if isinstance(origin, str) else None
+        return None
+
+    # -- BESS config --
+
+    def get_bess_config(self) -> BESSConfigYAML:
+        """Return the top-level BESS configuration, or empty dict if absent."""
+        bess = self._state.get("bess")
+        if isinstance(bess, dict):
+            # ``_state`` holds the raw YAML mapping; the runtime invariant is
+            # that ``_state["bess"]`` matches the BESSConfigYAML schema, so we
+            # cast through ``cast`` rather than re-validating each access.
+            return cast("BESSConfigYAML", dict(bess))
+        return {}
+
+    def has_bess(self) -> bool:
+        """Whether a BESS is configured and enabled."""
+        bess = self._state.get("bess")
+        return isinstance(bess, dict) and bool(bess.get("enabled"))
+
+    def update_bess_config(self, data: dict[str, Any]) -> None:
+        """Update top-level BESS settings from form data.
+
+        Translates form field names to YAML field names:
+        ``max_charge_power`` -> ``max_charge_w``,
+        ``max_discharge_power`` -> ``max_discharge_w``.
+        """
+        bess = self._state.setdefault("bess", {"enabled": True})
+        field_map = {
+            "nameplate_capacity_kwh": "nameplate_capacity_kwh",
+            "backup_reserve_pct": "backup_reserve_pct",
+            "max_charge_power": "max_charge_w",
+            "max_discharge_power": "max_discharge_w",
+        }
+        for form_key, yaml_key in field_map.items():
+            if form_key in data:
+                bess[yaml_key] = float(data[form_key])
+        self._dirty = True
+
+    def add_bess(self) -> None:
+        """Add a default BESS configuration."""
+        self._state["bess"] = {
+            "enabled": True,
+            "nameplate_capacity_kwh": 13.5,
+            "max_charge_w": 3500.0,
+            "max_discharge_w": 3500.0,
+            "charge_efficiency": 0.95,
+            "discharge_efficiency": 0.95,
+            "backup_reserve_pct": 20.0,
+            "charge_mode": "self-consumption",
+            "charge_hours": [],
+            "discharge_hours": [],
+        }
+        self._dirty = True
+
+    def remove_bess(self) -> None:
+        """Remove the BESS configuration."""
+        self._state.pop("bess", None)
+        self._dirty = True
+
+    # -- Simulation params --
+
+    def get_simulation_params(self) -> dict[str, Any]:
+        return dict(self._state.get("simulation_params", {}))
+
+    def update_simulation_params(self, data: dict[str, Any]) -> None:
+        params = self._state.setdefault("simulation_params", {})
+        for key in ("update_interval", "time_acceleration", "noise_factor"):
+            if key in data:
+                params[key] = float(data[key])
+        if "enable_realistic_behaviors" in data:
+            val = data["enable_realistic_behaviors"]
+            params["enable_realistic_behaviors"] = val in (True, "true", "on", "1")
+        self._dirty = True
+
+    # -- Entities --
+
+    def _templates(self) -> dict[str, Any]:
+        result: dict[str, Any] = self._state.setdefault("circuit_templates", {})
+        return result
+
+    def _circuits(self) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = self._state.setdefault("circuits", [])
+        return result
+
+    def _find_circuit(self, entity_id: str) -> dict[str, Any] | None:
+        for circ in self._circuits():
+            if circ.get("id") == entity_id:
+                return circ
+        return None
+
+    def _mark_user_modified(self, template_name: str) -> None:
+        """Flag a template as user-modified so recorder replay is bypassed."""
+        template = self._templates().get(template_name)
+        if template is not None and template.get("recorder_entity"):
+            template["user_modified"] = True
+
+    def get_recorder_map(self) -> dict[str, str]:
+        """Return the backup template_name → recorder_entity mapping."""
+        ps = self._state.get("panel_source")
+        if isinstance(ps, dict):
+            rm = ps.get("recorder_map")
+            if isinstance(rm, dict):
+                return dict(rm)
+        return {}
+
+    def restore_recorder(self, entity_id: str) -> bool:
+        """Restore a template to its original recorder state.
+
+        Reverts the full template from the snapshot taken at clone/sync
+        time.  Falls back to just restoring the recorder_entity link if
+        no snapshot exists.  Returns False for entities that never had
+        recorder data.
+        """
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            return False
+        template_name = circuit["template"]
+        templates = self._templates()
+        if template_name not in templates:
+            return False
+
+        recorder_map = self.get_recorder_map()
+        rec_entity = recorder_map.get(template_name)
+        # Fall back to the template's own recorder_entity — covers
+        # template-cloned configs that have no panel_source/recorder_map.
+        if not rec_entity:
+            rec_entity = templates[template_name].get("recorder_entity")
+        if not rec_entity:
+            return False
+
+        # Restore full template from snapshot if available
+        ps = self._state.get("panel_source")
+        snapshots = ps.get("recorder_snapshots", {}) if isinstance(ps, dict) else {}
+        snapshot = snapshots.get(template_name)
+        if isinstance(snapshot, dict):
+            import copy
+
+            templates[template_name] = copy.deepcopy(snapshot)
+        else:
+            template = templates[template_name]
+            template["recorder_entity"] = rec_entity
+            template.pop("user_modified", None)
+
+        self._dirty = True
+        return True
+
+    def toggle_user_modified(self, entity_id: str) -> bool:
+        """Toggle the user_modified flag on a template. Returns the new value.
+
+        Only meaningful for templates with ``recorder_entity`` — toggles
+        between recorder replay and synthetic simulation.  Returns
+        ``False`` (no-op) if the template has no ``recorder_entity``.
+        """
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+        template_name = circuit["template"]
+        template = self._templates().get(template_name)
+        if template is None:
+            raise KeyError(f"Template not found: {template_name}")
+        if not template.get("recorder_entity"):
+            return False
+        current = bool(template.get("user_modified"))
+        template["user_modified"] = not current
+        self._dirty = True
+        return not current
+
+    def _merge_entity(self, circuit: dict[str, Any]) -> EntityView:
+        """Build an EntityView by merging template + circuit overrides."""
+        template_name = circuit["template"]
+        template = deepcopy(self._templates().get(template_name, {}))
+
+        overrides = circuit.get("overrides", {})
+        energy_profile = dict(template.get("energy_profile", {}))
+        for k, v in overrides.items():
+            if k == "power_range":
+                energy_profile["power_range"] = v
+            elif k in energy_profile:
+                energy_profile[k] = v
+
+        return EntityView(
+            id=circuit["id"],
+            name=circuit["name"],
+            entity_type=_detect_entity_type(template),
+            template_name=template_name,
+            tabs=list(circuit.get("tabs", [])),
+            energy_profile=energy_profile,
+            relay_behavior=template.get("relay_behavior", "controllable"),
+            priority=template.get("priority", "NEVER"),
+            cycling_pattern=template.get("cycling_pattern"),
+            time_of_day_profile=template.get("time_of_day_profile"),
+            smart_behavior=template.get("smart_behavior"),
+            hvac_type=template.get("hvac_type"),
+            breaker_rating=circuit.get("breaker_rating") or template.get("breaker_rating"),
+            overrides=dict(overrides),
+            recorder_entity=template.get("recorder_entity"),
+            user_modified=bool(template.get("user_modified")),
+        )
+
+    def list_entities(self) -> list[EntityView]:
+        """Return entities with infrastructure (pv, evse) first, then circuits."""
+        _type_order = {"pv": 0, "evse": 1, "circuit": 2}
+        entities = [self._merge_entity(c) for c in self._circuits()]
+        entities.sort(key=lambda e: (_type_order.get(e.entity_type, 9), e.name.lower()))
+        return entities
+
+    def get_entity(self, entity_id: str) -> EntityView:
+        """Return a single entity by id."""
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+        return self._merge_entity(circuit)
+
+    def update_entity(self, entity_id: str, data: dict[str, Any]) -> None:
+        """Update circuit and template fields from form data.
+
+        The ``_dirty`` key (set by a hidden form field) controls whether
+        the template is flagged as user-modified.  When the user opens
+        the editor and clicks Save without touching anything, ``_dirty``
+        is absent and ``_mark_user_modified`` is skipped.
+        """
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+
+        template_name = circuit["template"]
+        template = self._templates().get(template_name, {})
+
+        if "name" in data:
+            circuit["name"] = data["name"]
+
+        if "tabs" in data:
+            tabs_raw = data["tabs"]
+            if isinstance(tabs_raw, str):
+                tabs_raw = [int(t.strip()) for t in tabs_raw.split(",") if t.strip()]
+            circuit["tabs"] = tabs_raw
+
+        if "inverter_type" in data:
+            template["priority"] = "MUST_HAVE" if data["inverter_type"] == "hybrid" else "OFF_GRID"
+        elif "priority" in data:
+            template["priority"] = data["priority"]
+        if "relay_behavior" in data:
+            template["relay_behavior"] = data["relay_behavior"]
+
+        overrides: dict[str, Any] = circuit.get("overrides", {})
+        ep = template.get("energy_profile", {})
+
+        if "efficiency" in data:
+            ep["efficiency"] = float(data["efficiency"])
+
+        # PV nameplate: update the template directly and derive power_range
+        if "nameplate_capacity_w" in data:
+            nameplate = abs(float(data["nameplate_capacity_w"]))
+            ep["nameplate_capacity_w"] = nameplate
+            ep["power_range"] = [-nameplate, 0.0]
+            ep["typical_power"] = -nameplate * 0.6
+            overrides.pop("typical_power", None)
+            overrides.pop("power_range", None)
+            # Nameplate always implies leaving HA replay — same as other edits
+            if template.get("recorder_entity"):
+                self._mark_user_modified(template_name)
+        else:
+            if "typical_power" in data:
+                val = float(data["typical_power"])
+                if val != ep.get("typical_power"):
+                    overrides["typical_power"] = val
+                else:
+                    overrides.pop("typical_power", None)
+
+            if "power_range_min" in data and "power_range_max" in data:
+                pr = [float(data["power_range_min"]), float(data["power_range_max"])]
+                if pr != ep.get("power_range"):
+                    overrides["power_range"] = pr
+                else:
+                    overrides.pop("power_range", None)
+
+        if "breaker_rating" in data:
+            br_val = str(data["breaker_rating"]).strip()
+            if br_val:
+                circuit["breaker_rating"] = int(br_val)
+            else:
+                circuit.pop("breaker_rating", None)
+
+        if "hvac_type" in data:
+            hvac_val = str(data["hvac_type"])
+            if hvac_val and hvac_val != "none":
+                template["hvac_type"] = hvac_val
+            else:
+                template.pop("hvac_type", None)
+
+        if overrides:
+            circuit["overrides"] = overrides
+        else:
+            circuit.pop("overrides", None)
+
+        if data.get("_dirty"):
+            self._mark_user_modified(template_name)
+        self._dirty = True
+
+    def add_entity(self, entity_type: str) -> EntityView:
+        """Create a new entity with type-appropriate defaults."""
+        entity_id, template_name, template_dict, circuit_dict = make_defaults(entity_type)
+
+        existing_ids = {c["id"] for c in self._circuits()}
+        base_id = entity_id
+        counter = 2
+        while entity_id in existing_ids:
+            entity_id = f"{base_id}_{counter}"
+            circuit_dict["id"] = entity_id
+            counter += 1
+
+        self._templates()[template_name] = template_dict
+        self._circuits().append(circuit_dict)
+        self._dirty = True
+        return self._merge_entity(circuit_dict)
+
+    def get_unmapped_tabs(self) -> list[int]:
+        """Return tab numbers not assigned to any circuit, sorted ascending."""
+        total_tabs = self._state.get("panel_config", {}).get("total_tabs", 32)
+        used: set[int] = set()
+        for circ in self._circuits():
+            used.update(circ.get("tabs", []))
+        return sorted(t for t in range(1, total_tabs + 1) if t not in used)
+
+    def add_entity_from_tabs(self, tabs: list[int]) -> EntityView:
+        """Create a new circuit entity assigned to the given tabs.
+
+        For double-pole (2 tabs), validates same parity and exactly 2 apart.
+        """
+        if not tabs or len(tabs) > 2:
+            raise ValueError("Select 1 or 2 tabs")
+
+        if len(tabs) == 2:
+            a, b = sorted(tabs)
+            if a % 2 != b % 2:
+                raise ValueError(
+                    f"Double-pole tabs {tabs} must have the same parity (both odd or both even)"
+                )
+            if b - a != 2:
+                raise ValueError(f"Double-pole tabs {tabs} must be exactly 2 apart")
+
+        unmapped = set(self.get_unmapped_tabs())
+        for t in tabs:
+            if t not in unmapped:
+                raise ValueError(f"Tab {t} is already assigned to a circuit")
+
+        entity_id, template_name, template_dict, circuit_dict = make_defaults("circuit")
+        circuit_dict["tabs"] = sorted(tabs)
+
+        tab_label = ", ".join(str(t) for t in sorted(tabs))
+        circuit_dict["name"] = f"New Circuit (Tab {tab_label})"
+
+        existing_ids = {c["id"] for c in self._circuits()}
+        base_id = entity_id
+        counter = 2
+        while entity_id in existing_ids:
+            entity_id = f"{base_id}_{counter}"
+            circuit_dict["id"] = entity_id
+            counter += 1
+
+        self._templates()[template_name] = template_dict
+        self._circuits().append(circuit_dict)
+        self._dirty = True
+        return self._merge_entity(circuit_dict)
+
+    def delete_entity(self, entity_id: str) -> None:
+        """Remove an entity and its template if no other circuit uses it."""
+        circuits = self._circuits()
+        circuit = None
+        for i, c in enumerate(circuits):
+            if c.get("id") == entity_id:
+                circuit = circuits.pop(i)
+                break
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+
+        template_name = circuit["template"]
+        still_used = any(c.get("template") == template_name for c in circuits)
+        if not still_used:
+            self._templates().pop(template_name, None)
+        self._dirty = True
+
+    # -- Active days --
+
+    def get_active_days(self, entity_id: str) -> list[int]:
+        """Return active weekdays (0=Mon..6=Sun) for an entity.
+
+        Reads from ``time_of_day_profile``.  Empty list = all days.
+        """
+        entity = self.get_entity(entity_id)
+        tod = entity.time_of_day_profile or {}
+        days: list[int] = tod.get("active_days", [])
+        return [d for d in days if isinstance(d, int) and 0 <= d <= 6]
+
+    def update_active_days(self, entity_id: str, days: list[int]) -> None:
+        """Write active weekdays into the entity's template."""
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+
+        template_name = circuit["template"]
+        template = self._templates().get(template_name, {})
+
+        clean = sorted(set(d for d in days if 0 <= d <= 6))
+        store_value = clean if len(clean) < 7 else []
+
+        tod: dict[str, Any] = template.setdefault("time_of_day_profile", {"enabled": True})
+        if store_value:
+            tod["active_days"] = store_value
+        else:
+            tod.pop("active_days", None)
+
+        self._mark_user_modified(template_name)
+        self._dirty = True
+
+    def get_bess_active_days(self) -> list[int]:
+        """Return active weekdays for BESS (empty = all days)."""
+        bess = self.get_bess_config()
+        days: list[int] = bess.get("active_days", [])
+        return [d for d in days if isinstance(d, int) and 0 <= d <= 6]
+
+    def update_bess_active_days(self, days: list[int]) -> None:
+        """Write active weekdays into BESS config."""
+        bess = self._state.setdefault("bess", {"enabled": True})
+        clean = sorted(set(d for d in days if 0 <= d <= 6))
+        if clean and len(clean) < 7:
+            bess["active_days"] = clean
+        else:
+            bess.pop("active_days", None)
+        self._dirty = True
+
+    # -- Profile --
+
+    def get_entity_profile(self, entity_id: str) -> dict[int, float]:
+        """Return resolved 24-hour multipliers for an entity.
+
+        For PV entities the profile is computed from the geographic solar
+        curve using the panel's latitude.  For EVSE entities the profile
+        comes from ``hour_factors`` in the charging schedule.
+        """
+        entity = self.get_entity(entity_id)
+
+        if entity.entity_type == "pv":
+            lat = self._state.get("panel_config", {}).get("latitude", 37.7)
+            return compute_solar_curve(6, 21, latitude=lat)
+
+        tod = entity.time_of_day_profile
+        if not tod or not tod.get("enabled"):
+            return {h: 1.0 for h in range(24)}
+
+        # Explicit hour factors (EVSE schedules, custom profiles)
+        hf = tod.get("hour_factors", {})
+        if hf:
+            return {h: float(hf.get(h, hf.get(str(h), 0.0))) for h in range(24)}
+
+        # Fallback: hourly_multipliers key
+        multipliers = {h: 0.0 for h in range(24)}
+        hourly = tod.get("hourly_multipliers", {})
+        peak_hours = tod.get("peak_hours", [])
+        peak_mult = tod.get("peak_multiplier", 1.0)
+        off_peak_mult = tod.get("off_peak_multiplier", 0.0)
+
+        for h in range(24):
+            if h in hourly or str(h) in hourly:
+                multipliers[h] = float(hourly.get(h, hourly.get(str(h), 0.0)))
+            elif h in peak_hours:
+                multipliers[h] = peak_mult
+            else:
+                multipliers[h] = off_peak_mult
+
+        return multipliers
+
+    def update_entity_profile(self, entity_id: str, multipliers: dict[int, float]) -> None:
+        """Write 24-hour multipliers into the entity's template."""
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+
+        template_name = circuit["template"]
+        template = self._templates().get(template_name, {})
+        tod = template.setdefault("time_of_day_profile", {"enabled": True})
+        preserved_days = tod.get("active_days")
+        tod["enabled"] = True
+        tod["hourly_multipliers"] = {h: v for h, v in sorted(multipliers.items())}
+
+        peak_hours = [h for h, v in multipliers.items() if v >= 0.8]
+        if peak_hours:
+            tod["peak_hours"] = sorted(peak_hours)
+
+        if preserved_days:
+            tod["active_days"] = preserved_days
+
+        self._mark_user_modified(template_name)
+        self._dirty = True
+
+    def apply_preset(
+        self,
+        entity_id: str,
+        preset_name: str,
+        month: int,
+        day: int,
+        start_hour: int = 0,
+        end_hour: int = 24,
+        random_days: bool = False,
+    ) -> dict[int, float]:
+        """Apply a named preset to an entity's profile and return the multipliers.
+
+        When *random_days* is True, randomly selects 3-6 weekdays as the
+        entity's active days.
+        """
+        lat = self._state.get("panel_config", {}).get("latitude", 37.7)
+        multipliers = get_preset(
+            preset_name,
+            month=month,
+            day=day,
+            start_hour=start_hour,
+            end_hour=end_hour,
+            latitude=lat,
+        )
+        self.update_entity_profile(entity_id, multipliers)
+        if random_days:
+            import random as _rng
+
+            count = _rng.randint(3, 6)
+            days = sorted(_rng.sample(range(7), count))
+            self.update_active_days(entity_id, days)
+        self._dirty = True
+        return multipliers
+
+    # -- Battery charge mode --
+
+    def get_battery_charge_mode(self) -> str:
+        """Return the BESS charge mode (default ``"self-consumption"``).
+
+        Legacy configs may carry mode strings outside the dashboard's known set
+        (e.g. ``solar-gen`` from earlier defaults). Normalize anything not in
+        the supported set to ``self-consumption`` so the UI dropdown renders a
+        real value instead of blank."""
+        bess = self.get_bess_config()
+        raw = str(bess.get("charge_mode", "self-consumption"))
+        if raw in ("self-consumption", "custom", "backup-only"):
+            return raw
+        return "self-consumption"
+
+    def update_battery_charge_mode(
+        self,
+        mode: str,
+        rate_label: str | None = None,
+    ) -> None:
+        """Set the BESS charge mode.
+
+        When *rate_label* is provided and mode is ``custom``, the label
+        is stored so the energy system resolves the full URDB record for
+        rate-aware dispatch.  Static charge/discharge hour lists are
+        cleared since the rate record supersedes them.
+        """
+        valid_modes = ("self-consumption", "custom", "backup-only")
+        if mode not in valid_modes:
+            raise ValueError(f"Invalid charge mode: {mode!r}")
+        bess = self._state.setdefault("bess", {"enabled": True})
+        bess["charge_mode"] = mode
+        if mode == "custom" and rate_label:
+            bess["rate_label"] = rate_label
+            bess.pop("charge_hours", None)
+            bess.pop("discharge_hours", None)
+        elif mode != "custom":
+            bess.pop("rate_label", None)
+        self._dirty = True
+
+    # -- Battery profile --
+
+    def get_battery_profile(self) -> dict[int, str]:
+        """Return the 24-hour BESS schedule as hour -> mode mapping."""
+        bess = self.get_bess_config()
+        charge_hours = set(bess.get("charge_hours", []))
+        discharge_hours = set(bess.get("discharge_hours", []))
+
+        profile: dict[int, str] = {}
+        for h in range(24):
+            if h in charge_hours:
+                profile[h] = "charge"
+            elif h in discharge_hours:
+                profile[h] = "discharge"
+            else:
+                profile[h] = "idle"
+        return profile
+
+    def update_battery_profile(self, hour_modes: dict[int, str]) -> None:
+        """Write per-hour charge/discharge/idle schedule into BESS config."""
+        bess = self._state.setdefault("bess", {"enabled": True})
+        bess["charge_hours"] = sorted(h for h, m in hour_modes.items() if m == "charge")
+        bess["discharge_hours"] = sorted(h for h, m in hour_modes.items() if m == "discharge")
+        self._dirty = True
+
+    def apply_battery_preset(self, preset_name: str) -> dict[int, str]:
+        """Apply a named battery preset and return the schedule."""
+        hour_modes = get_battery_preset(preset_name)
+        self.update_battery_profile(hour_modes)
+        self._dirty = True
+        return hour_modes
+
+    # -- EVSE schedule --
+
+    def get_evse_schedule(self, entity_id: str) -> dict[str, Any]:
+        """Return EVSE charging schedule info.
+
+        Returns a dict with keys: start, duration, preset, profile.
+        """
+        entity = self.get_entity(entity_id)
+        tod = entity.time_of_day_profile or {}
+
+        if not tod.get("enabled", False):
+            profile = {h: 1.0 for h in range(24)}
+            return {"start": 0, "duration": 24, "preset": None, "profile": profile}
+
+        hf = tod.get("hour_factors", {})
+        if not hf:
+            profile = {h: 1.0 for h in range(24)}
+            return {"start": 0, "duration": 24, "preset": None, "profile": profile}
+
+        profile = {h: float(hf.get(h, hf.get(str(h), 0.0))) for h in range(24)}
+
+        # Derive start and duration, handling midnight wrap-around
+        charging = sorted(h for h in range(24) if profile.get(h, 0.0) > 0)
+        if not charging:
+            start, duration = 0, 0
+        elif len(charging) == 24:
+            start, duration = 0, 24
+        else:
+            # Find the largest gap — start is the hour after that gap
+            max_gap = 0
+            start = charging[0]
+            for i in range(len(charging)):
+                cur = charging[i]
+                nxt = charging[(i + 1) % len(charging)]
+                gap = (nxt - cur) % 24
+                if gap > max_gap:
+                    max_gap = gap
+                    start = nxt
+            duration = len(charging)
+
+        # Try to match a known preset
+        active_preset: str | None = None
+        for name, (ps, pd) in get_evse_tuples().items():
+            expected = evse_schedule_factors(ps, pd)
+            if all(profile.get(h, 0.0) == expected.get(h, 0.0) for h in range(24)):
+                active_preset = name
+                break
+
+        return {
+            "start": start,
+            "duration": duration,
+            "preset": active_preset,
+            "profile": profile,
+        }
+
+    def update_evse_schedule(self, entity_id: str, start_hour: int, duration_hours: int) -> None:
+        """Update EVSE charging schedule from start hour and duration."""
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+
+        template_name = circuit["template"]
+        template = self._templates().get(template_name, {})
+        tod: dict[str, Any] = template.setdefault("time_of_day_profile", {"enabled": True})
+        preserved_days = tod.get("active_days")
+        tod["enabled"] = True
+        tod["hour_factors"] = evse_schedule_factors(start_hour, duration_hours)
+        if preserved_days:
+            tod["active_days"] = preserved_days
+
+        self._mark_user_modified(template_name)
+        self._dirty = True
+
+    def apply_evse_preset(self, entity_id: str, preset_name: str) -> dict[int, float]:
+        """Apply an EVSE charging preset and return the schedule factors."""
+        factors = get_evse_preset(preset_name)
+
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+
+        template_name = circuit["template"]
+        template = self._templates().get(template_name, {})
+        tod: dict[str, Any] = template.setdefault("time_of_day_profile", {"enabled": True})
+        tod["enabled"] = True
+        tod["hour_factors"] = factors
+
+        self._mark_user_modified(template_name)
+        self._dirty = True
+        return factors
+
+    # -- Energy projection --
+
+    def compute_energy_projection(self, period: str = "year") -> list[dict[str, float | str]]:
+        """Compute daily energy summaries for system sizing.
+
+        Args:
+            period: "week", "month", or "year".
+
+        Returns:
+            List of daily dicts with keys: date, consumption_kwh,
+            pv_kwh, battery_kwh, grid_kwh.
+        """
+        panel = self.get_panel_config()
+        lat = panel.get("latitude", 37.7)
+        lon = panel.get("longitude", -122.4)
+
+        cached = get_cached_weather(lat, lon)
+        monthly_factors: dict[int, float] = {}
+        if cached is not None:
+            monthly_factors = cached.monthly_factors
+
+        entities = self.list_entities()
+
+        # Pre-compute per-entity hourly profiles (for consumer circuits)
+        consumer_profiles: list[tuple[float, dict[int, float]]] = []
+        pv_specs: list[tuple[float, float]] = []  # (nameplate, efficiency)
+        battery_specs: list[tuple[float, float, list[int], list[int]]] = []
+
+        # Battery from top-level bess config (not an entity)
+        bess = self.get_bess_config()
+        if bess.get("enabled"):
+            charge_p = abs(float(bess.get("max_charge_w") or 3500))
+            discharge_p = abs(float(bess.get("max_discharge_w") or 3500))
+            charge_hrs: list[int] = bess.get("charge_hours") or []
+            discharge_hrs: list[int] = bess.get("discharge_hours") or []
+            battery_specs.append((charge_p, discharge_p, charge_hrs, discharge_hrs))
+
+        for entity in entities:
+            ep = entity.energy_profile
+            if entity.entity_type == "pv":
+                raw_np = ep.get("nameplate_capacity_w")
+                nameplate = (
+                    float(raw_np) if raw_np is not None else abs(float(ep["power_range"][0]))
+                )
+                raw_eff = ep.get("efficiency")
+                efficiency = float(raw_eff) if raw_eff is not None else 0.85
+                pv_specs.append((nameplate, efficiency))
+            else:
+                profile = self.get_entity_profile(entity.id)
+                typical = float(ep["typical_power"])
+
+                # Apply cycling duty cycle if explicitly configured
+                cycling = entity.cycling_pattern
+                duty = 1.0
+                if cycling:
+                    on_dur = cycling.get("on_duration", 900)
+                    off_dur = cycling.get("off_duration", 1800)
+                    duty = on_dur / (on_dur + off_dur) if (on_dur + off_dur) > 0 else 1.0
+
+                consumer_profiles.append((typical * duty, profile))
+
+        # Determine date range
+        days_in_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        if period == "week":
+            months_days = [(6, list(range(15, 22)))]
+        elif period == "month":
+            months_days = [(6, list(range(1, 31)))]
+        else:  # year
+            months_days = [(m, list(range(1, days_in_month[m] + 1))) for m in range(1, 13)]
+
+        results: list[dict[str, float | str]] = []
+        for month, days in months_days:
+            solar_curve = compute_solar_curve(month, 15, latitude=lat)
+            weather = monthly_factors.get(month, 0.85)
+
+            for day in days:
+                # Consumer consumption
+                consumption_wh = 0.0
+                for typical, profile in consumer_profiles:
+                    for h in range(24):
+                        consumption_wh += abs(typical) * profile.get(h, 0.0)
+
+                # PV production
+                pv_wh = 0.0
+                for nameplate, eff in pv_specs:
+                    for h in range(24):
+                        pv_wh += nameplate * solar_curve.get(h, 0.0) * eff * weather
+
+                # Battery net
+                battery_wh = 0.0
+                for charge_p, discharge_p, charge_hrs, discharge_hrs in battery_specs:
+                    battery_wh -= charge_p * len(charge_hrs)
+                    battery_wh += discharge_p * len(discharge_hrs)
+
+                grid_wh = consumption_wh - pv_wh - battery_wh
+
+                results.append(
+                    {
+                        "date": f"2025-{month:02d}-{day:02d}",
+                        "consumption_kwh": round(consumption_wh / 1000, 2),
+                        "pv_kwh": round(pv_wh / 1000, 2),
+                        "battery_kwh": round(battery_wh / 1000, 2),
+                        "grid_kwh": round(grid_wh / 1000, 2),
+                    }
+                )
+
+        return results

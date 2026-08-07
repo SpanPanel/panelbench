@@ -4,8 +4,8 @@ integration tests against the in-process amqtt broker fixture."""
 
 from unittest.mock import MagicMock
 
-from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
-from span_panel_simulator.emitter_adapter.runtime import (
+from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
+from panelbench.emitter_adapter.runtime import (
     _evse_tick_inputs,
     _load_shedding_config_from_engine,
     bess_config_from_engine,

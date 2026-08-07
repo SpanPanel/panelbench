@@ -13,7 +13,7 @@ export CERT_DIR
 export ADVERTISE_ADDRESS
 python -c "
 import os
-from span_panel_simulator.certs import generate_certificates
+from panelbench.certs import generate_certificates
 from pathlib import Path
 addr = os.environ.get('ADVERTISE_ADDRESS') or None
 generate_certificates(Path(os.environ['CERT_DIR']), advertise_address=addr)
@@ -38,4 +38,4 @@ sleep 1
 
 echo "==> Starting simulator..."
 export CERT_DIR
-exec python -m span_panel_simulator "$@"
+exec python -m panelbench "$@"

@@ -9,7 +9,7 @@ import yaml
 if TYPE_CHECKING:
     from pathlib import Path
 
-from span_panel_simulator.profile_applicator import apply_usage_profiles
+from panelbench.profile_applicator import apply_usage_profiles
 
 
 def _clone_config() -> dict[str, object]:

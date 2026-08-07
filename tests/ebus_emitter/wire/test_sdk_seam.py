@@ -5,7 +5,7 @@ from __future__ import annotations
 import ebus_sdk
 import pytest
 
-from span_panel_simulator.ebus_emitter.wire._sdk_seam import make_property, set_property_value
+from panelbench.ebus_emitter.wire._sdk_seam import make_property, set_property_value
 
 
 def test_make_property_attaches_to_node() -> None:
@@ -50,7 +50,7 @@ def test_unmodelled_unit_reaches_the_wire_as_a_string() -> None:
     """
     import ebus_sdk
 
-    from span_panel_simulator.ebus_emitter.wire.graph_builder import _to_sdk_unit
+    from panelbench.ebus_emitter.wire.graph_builder import _to_sdk_unit
 
     assert _to_sdk_unit("kA") == "kA"
     assert _to_sdk_unit("V") is ebus_sdk.Unit("V")

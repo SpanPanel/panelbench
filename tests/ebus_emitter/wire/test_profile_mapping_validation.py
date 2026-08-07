@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from span_panel_simulator.ebus_emitter.exceptions import ProfileValidationError
-from span_panel_simulator.ebus_emitter.wire.mapping_loader import MappingTable, load_mapping_table
-from span_panel_simulator.ebus_emitter.wire.profile_loader import ProfileTable, load_profiles
+from panelbench.ebus_emitter.exceptions import ProfileValidationError
+from panelbench.ebus_emitter.wire.mapping_loader import MappingTable, load_mapping_table
+from panelbench.ebus_emitter.wire.profile_loader import ProfileTable, load_profiles
 
 
 def test_load_profiles_returns_all_vendored() -> None:
@@ -103,7 +103,7 @@ def test_abstract_unit_token_is_rejected_at_load(tmp_path: Path) -> None:
     import json
     import shutil
 
-    from span_panel_simulator.ebus_emitter.wire import profile_loader
+    from panelbench.ebus_emitter.wire import profile_loader
 
     profiles = tmp_path / "profiles"
     shutil.copytree(profile_loader._DEFAULT_DIR, profiles)
@@ -123,7 +123,7 @@ def test_abstract_unit_token_passes_with_an_explicit_unit(tmp_path: Path) -> Non
     import json
     import shutil
 
-    from span_panel_simulator.ebus_emitter.wire import profile_loader
+    from panelbench.ebus_emitter.wire import profile_loader
 
     profiles = tmp_path / "profiles"
     shutil.copytree(profile_loader._DEFAULT_DIR, profiles)

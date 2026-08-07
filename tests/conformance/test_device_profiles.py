@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from span_panel_simulator.conformance.device_profiles import load_device_profiles
-from span_panel_simulator.conformance.model import build_tree
-from span_panel_simulator.conformance.rules import Bucket, check_profile_coverage
+from panelbench.conformance.device_profiles import load_device_profiles
+from panelbench.conformance.model import build_tree
+from panelbench.conformance.rules import Bucket, check_profile_coverage
 
 
 def _profile_dir(tmp_path: Path) -> Path:

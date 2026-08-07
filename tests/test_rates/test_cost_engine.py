@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from span_panel_simulator.rates.cost_engine import compute_costs
+from panelbench.rates.cost_engine import compute_costs
 
 TZ = "America/Los_Angeles"
 

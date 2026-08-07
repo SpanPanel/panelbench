@@ -1,14 +1,35 @@
-# SPAN Panel Simulator
+# SPAN PanelBench
 
-A standalone simulator that mimics real SPAN panel behavior.
+A SPAN panel on an MQTT broker: a conformance-checked publisher of the **eBus v1.0 parent/child device tree**, for building and verifying consumers against.
 
-[![Open your Home Assistant instance and show the App Store.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/)
-
-- Provides mDNS discovery to panels not yet using the Home Assistant integration and direct connections to the SpanPanel SPAN integration for Home Assistant.
-- When used with the [SpanPanel](https://github.com/SpanPanel/span-panel-api) Home Assistant integration, the App can mimic additional panels and for modeling
-  upgrades to the electrical system.
+People write software against this instead of against hardware. If it publishes something subtly wrong, the error does not stay here — a consumer is written to
+cope with the mistake and then breaks against a real panel that does it correctly. **A simulator that is wrong in a way nobody notices is worse than no
+simulator.** So being provably faithful is the product, not a nicety, and two checks enforce it: the vendored eBus capability catalogs are byte-compared against
+the specification, and everything published on the wire is checked against those catalogs. See [DEVELOPER.md](DEVELOPER.md#spec-conformance).
 
 Includes a web dashboard for real-time configuration, grid simulation, Home Assistant history replay, and energy "what-if" modeling.
+
+## Status: not installable yet, and that is deliberate
+
+**No SPAN firmware publishes the v1.0 tree.** It arrives in `r202633+`, projected — not committed — for the first two weeks of September 2026. Until then this
+cannot be released as a Home Assistant app.
+
+Cloning follows the same line: it reads a panel running `r202633+` and **does not clone earlier firmware**. A flat-schema panel is
+[`SpanPanel/simulator`](https://github.com/SpanPanel/simulator)'s job, not this one — the two schemas are not convertible, so there is no fallback path here.
+
+What this is for today is the reference producer that [`span-panel-api`](https://github.com/SpanPanel/span-panel-api) and the Home Assistant integration are
+developed and verified against, ahead of hardware existing.
+
+### Which repository you want
+
+| | Schema | Firmware | Status |
+| --- | --- | --- | --- |
+| **this repo** | parent/child device tree (`data-model-version` `1.x`) | `r202633+` | pre-release; no firmware yet |
+| [`SpanPanel/simulator`](https://github.com/SpanPanel/simulator) | flat single-device | `r202603`–`r202627` | released, installable today |
+
+The two are **permanently separate**, not versions of one thing. A panel speaks one schema or the other, a publisher cannot hot-load a wire format the way
+`span-panel-api` hot-loads a parser, and the flat simulator is a deliberate fork that no longer tracks upstream. Bugs are fixed in whichever repo has them.
+When the fleet moves to `r202633+`, the flat simulator stops being published and this becomes the one that matters.
 
 ## Workflow
 
@@ -18,7 +39,8 @@ configs excluded).
 1. **Examine templates** — Load and run the included configs (`default_config.yaml`, `simple_test_config.yaml`, etc.) to see how circuits, PV, battery, and EVSE
    are modeled. Pick one as a starting point for your own configuration.
 
-2. **Clone** — The **Clone** button creates an editable copy from a template or from your real panel; cloning your panel preserves recorder history per circuit.
+2. **Clone** — The **Clone** button creates an editable copy from a template, or from a panel running `r202633+` firmware; cloning a panel preserves recorder
+   history per circuit.
 
 3. **Model** — The **Model** button on a running panel opens the what-if view; add battery, PV, or circuits and compare before/after. Edits mark equipment as
    **SYN**; click the badge to revert to **REC**.
@@ -34,17 +56,17 @@ configs excluded).
 
 ![Modeling view — Before/After energy comparison with BESS, dual charts with range zoom and circuit overlays](docs/images/modeling.png)
 
-## Home Assistant App
+## Home Assistant App — not yet published
 
-The simulator is packaged as a Home Assistant app repository for the App Store. It is installed as a third-party app repository in Home Assistant, not via HACS.
+The add-on is built and kept working, but **no image is published for this repository yet**, because there is no firmware for it to stand in for. Adding the
+repository URL to Home Assistant today will not find an installable app. Run it standalone instead — see Quick Start below.
 
-Users with the `span-panel` integration can spin up simulated panels directly in their HA environment.
-
-Repository URL: `https://github.com/SpanPanel/simulator`
+The steps below are what will apply once `r202633+` firmware ships and this is released. Until then, for a panel you can actually install against, use
+[`SpanPanel/simulator`](https://github.com/SpanPanel/simulator).
 
 1. Go to **Settings > Apps** > **App Store** > three-dot menu > **Repositories**
-2. Add `https://github.com/SpanPanel/simulator`
-3. Install **SPAN Panel Simulator** from the store
+2. Add `https://github.com/SpanPanel/panelbench`
+3. Install **SPAN PanelBench** from the store
 4. Start the App — a default panel config is included
 5. The `span-panel` integration discovers running panels automatically via the Supervisor Discovery API (default configs excluded)
 6. Open the web dashboard via **Open Web UI** to configure panels
@@ -102,7 +124,7 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 
 - **Multi-panel** — load multiple YAML configs; click a row to select, start/stop/restart individual panels. Running panels appear as discovered devices in the
   SpanPanel integration (default configs excluded).
-- **Clone** — create an editable copy from a template or from a real panel (IP + passphrase).
+- **Clone** — create an editable copy from a template, or from a panel running `r202633+` firmware (IP + passphrase).
 - **Model** — open the energy what-if view for a running panel.
 - **Purge** — remove recorder history written by the simulated panel's sensors when the simulated panel was added to HA's integration.
 - **File operations** — import/export YAML, save & reload
@@ -131,12 +153,12 @@ your real usage, or override a specific circuit while keeping the rest on record
 
 ### Energy Modeling
 
-The modeling view lets you answer "what if" questions about adding solar or battery storage to your panel. Clone your real panel, then add or modify PV and
+The modeling view lets you answer "what if" questions about adding solar or battery storage to your panel. Start from a template or a clone of your own panel, then add or modify PV and
 Battery entities to see the projected impact on your grid consumption over historical data.
 
 **Typical workflow:**
 
-1. Clone your real SPAN panel from the dashboard
+1. Start from a template config, or clone your own panel, from the dashboard
 2. Connect to HA so circuits replay actual recorded power data
 3. Click **Model** on the running panel to enter the modeling view
 4. The **Before** chart shows your site power as-is (loads minus any existing solar)

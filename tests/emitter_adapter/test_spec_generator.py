@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from span_panel_simulator.emitter_adapter.instance_ids import stable_circuit_uuid
-from span_panel_simulator.emitter_adapter.spec_generator import build_manifest
+from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
+from panelbench.emitter_adapter.spec_generator import build_manifest
 
 
 def _profile() -> dict:

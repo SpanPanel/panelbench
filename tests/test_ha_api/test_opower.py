@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from span_panel_simulator.ha_api.opower import (
+from panelbench.ha_api.opower import (
     async_discover_opower,
     async_get_opower_cost,
 )

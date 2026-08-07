@@ -1,6 +1,6 @@
 import pytest
 
-from span_panel_simulator.ebus_emitter.relay_resolver import (
+from panelbench.ebus_emitter.relay_resolver import (
     RelayRequester,
     RelayResolver,
     RelayState,

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp import ClientSession
 
-from span_panel_simulator.supervisor_discovery import SupervisorDiscovery
+from panelbench.supervisor_discovery import SupervisorDiscovery
 
 
 @pytest.fixture
@@ -49,8 +49,8 @@ async def test_register_panel_posts_to_supervisor(discovery: SupervisorDiscovery
     with (
         patch("aiohttp.ClientSession", return_value=mock_session),
         patch(
-            "span_panel_simulator.supervisor_discovery._container_hostname",
-            return_value="f8c38f2b-span-panel-simulator",
+            "panelbench.supervisor_discovery._container_hostname",
+            return_value="f8c38f2b-panelbench",
         ),
     ):
         await discovery.register_panel("sim-001", 8081)
@@ -84,8 +84,8 @@ async def test_register_failure_logged_not_raised(discovery: SupervisorDiscovery
     with (
         patch("aiohttp.ClientSession", return_value=mock_session),
         patch(
-            "span_panel_simulator.supervisor_discovery._container_hostname",
-            return_value="f8c38f2b-span-panel-simulator",
+            "panelbench.supervisor_discovery._container_hostname",
+            return_value="f8c38f2b-panelbench",
         ),
     ):
         await discovery.register_panel("sim-001", 8081)

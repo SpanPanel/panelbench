@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from span_panel_simulator.energy.tou import resolve_tou_dispatch
+from panelbench.energy.tou import resolve_tou_dispatch
 
 _TZ = ZoneInfo("America/Los_Angeles")
 

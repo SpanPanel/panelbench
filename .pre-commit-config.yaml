@@ -36,7 +36,7 @@ repos:
           - types-PyYAML
           - types-aiofiles
         pass_filenames: false
-        entry: mypy --strict src/span_panel_simulator
+        entry: mypy --strict src/panelbench
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

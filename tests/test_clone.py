@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import yaml
 from ebus_sdk import DiscoveredDevice
 
-from span_panel_simulator.clone import (
+from panelbench.clone import (
     TYPE_BESS,
     TYPE_CIRCUIT,
     TYPE_EVSE,
@@ -17,8 +17,8 @@ from span_panel_simulator.clone import (
     update_config_from_scrape,
     write_clone_config,
 )
-from span_panel_simulator.scraper import ScrapedPanel
-from span_panel_simulator.validation import validate_yaml_config
+from panelbench.scraper import ScrapedPanel
+from panelbench.validation import validate_yaml_config
 
 if TYPE_CHECKING:
     from pathlib import Path

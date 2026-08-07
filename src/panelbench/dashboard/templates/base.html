@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPAN PanelBench Dashboard</title>
+  <link rel="stylesheet" href="{{ static_url }}/dashboard.css">
+  <script src="{{ static_url }}/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>SPAN PanelBench Dashboard</h1>
+    <div class="header-actions">
+      <select id="theme-select" class="theme-select" title="Theme">
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </div>
+  </header>
+  <main id="main-content">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    // Make month/day available to HTMX requests (derived from date slider)
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+      if (window.getSimDate) {
+        var d = window.getSimDate();
+        evt.detail.parameters['month'] = String(d.month);
+        evt.detail.parameters['day'] = String(d.day);
+      }
+    });
+
+    // Page-level busy cursor for slow HTMX operations
+    var _pageBusyPaths = ['start-panel', 'stop-panel', 'restart-panel',
+                          'clone-from-panel', 'clone-confirm', 'import',
+                          'save-reload', 'sync-panel-source'];
+    document.body.addEventListener('htmx:beforeRequest', function(evt) {
+      var path = evt.detail.pathInfo.requestPath;
+      if (_pageBusyPaths.some(function(p) { return path.indexOf(p) !== -1; })) {
+        document.body.classList.add('page-busy');
+      }
+    });
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+      var path = evt.detail.pathInfo.requestPath;
+      if (_pageBusyPaths.some(function(p) { return path.indexOf(p) !== -1; })) {
+        document.body.classList.remove('page-busy');
+      }
+    });
+
+    // Toggle random preset parameters visibility
+    function toggleRandomParams(sel, entityId) {
+      var el = document.getElementById('random-params-' + entityId);
+      if (el) el.style.display = sel.value === 'random' ? 'inline-flex' : 'none';
+    }
+
+    // Busy-state wrapper for manual fetch() calls (non-HTMX).
+    // Adds .busy class to trigger element and page-level busy cursor.
+    function busyFetch(trigger, url, options) {
+      trigger.classList.add('busy');
+      document.body.classList.add('page-busy');
+      return fetch(url, options).finally(function() {
+        trigger.classList.remove('busy');
+        document.body.classList.remove('page-busy');
+      });
+    }
+
+    // Theme switcher
+    (function() {
+      var sel = document.getElementById('theme-select');
+      var saved = localStorage.getItem('theme') || 'system';
+      sel.value = saved;
+      document.documentElement.setAttribute('data-theme', saved);
+
+      sel.addEventListener('change', function() {
+        var t = sel.value;
+        document.documentElement.setAttribute('data-theme', t);
+        localStorage.setItem('theme', t);
+      });
+    })();
+  </script>
+</body>
+</html>

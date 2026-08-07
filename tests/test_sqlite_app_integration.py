@@ -11,10 +11,10 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from span_panel_simulator.app import SimulatorApp
-from span_panel_simulator.history_generator import SyntheticHistoryGenerator
-from span_panel_simulator.recorder import RecorderDataSource
-from span_panel_simulator.sqlite_history import SCHEMA_SQL, SqliteHistoryProvider
+from panelbench.app import SimulatorApp
+from panelbench.history_generator import SyntheticHistoryGenerator
+from panelbench.recorder import RecorderDataSource
+from panelbench.sqlite_history import SCHEMA_SQL, SqliteHistoryProvider
 
 
 class TestSqliteRecorderRoundTrip:

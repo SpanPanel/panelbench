@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from span_panel_simulator.rates.cache import RateCache
+from panelbench.rates.cache import RateCache
 
 if TYPE_CHECKING:
     from pathlib import Path

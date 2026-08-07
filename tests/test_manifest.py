@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from span_panel_simulator.ha_api.manifest import (
+from panelbench.ha_api.manifest import (
     CircuitManifestEntry,
     PanelManifest,
     _parse_panel,
