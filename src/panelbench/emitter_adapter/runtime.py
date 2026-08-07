@@ -238,6 +238,7 @@ async def start_clone(
     engine: DynamicSimulationEngine,
     *,
     broker: BrokerConnection | None = None,
+    publisher: MqttPublisher | None = None,
 ) -> CloneRuntime:
     """Assemble the emitter for ``engine``: build manifest, open MQTT, run
     lifecycle. Returns a runtime the panel holds across ticks.
@@ -246,7 +247,14 @@ async def start_clone(
         1. ``broker:`` section in the YAML config (config explicitness wins).
         2. The supplied ``broker`` fallback (typically constructed once by
            ``SimulatorApp`` from CLI/env).
-        3. Default 127.0.0.1:1883 anonymous (no TLS)."""
+        3. Default 127.0.0.1:1883 anonymous (no TLS).
+
+    ``publisher`` substitutes the MQTT client, and when given no broker is
+    resolved or connected. It exists so a capture can be taken through this
+    function rather than beside it: a script that reassembled the emitter itself
+    would be a second, quietly diverging copy of the wiring below, and a capture
+    is only worth anything if it went through the same assembly a real panel
+    does."""
     manifest = build_manifest(engine.config)
 
     uuid_to_circuit_id = {stable_circuit_uuid(c["id"]): c["id"] for c in engine.config["circuits"]}
@@ -263,18 +271,23 @@ async def start_clone(
         retain=lwt_retain,
     )
 
-    broker_cfg: BrokerConfigYAML = engine.config.get("broker") or {}
-    resolved = _resolve_broker(broker_cfg, broker)
-    mqtt = _AiomqttPublisher(
-        host=resolved.host,
-        port=resolved.port,
-        client_id=f"span-sim-{engine.serial_number}",
-        username=resolved.username,
-        password=resolved.password,
-        will=will,
-        ca_cert_path=resolved.ca_cert_path,
-    )
-    await mqtt.connect()
+    mqtt: MqttPublisher
+    if publisher is not None:
+        mqtt = publisher
+    else:
+        broker_cfg: BrokerConfigYAML = engine.config.get("broker") or {}
+        resolved = _resolve_broker(broker_cfg, broker)
+        aiomqtt_publisher = _AiomqttPublisher(
+            host=resolved.host,
+            port=resolved.port,
+            client_id=f"span-sim-{engine.serial_number}",
+            username=resolved.username,
+            password=resolved.password,
+            will=will,
+            ca_cert_path=resolved.ca_cert_path,
+        )
+        await aiomqtt_publisher.connect()
+        mqtt = aiomqtt_publisher
 
     # The emitter Phase 2 reshape pluralised the BESS-config parameter:
     # ``bess_configs`` is a tuple keyed internally by ``instance_id``. The
