@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "span-panel-simulator"
+name = "panelbench"
 version = "1.0.14"
 description = "Standalone eBus simulator for SPAN panels"
 requires-python = ">=3.14"
@@ -17,7 +17,7 @@ dependencies = [
     "zeroconf>=0.131.0",
     "timezonefinder>=6.0",
     # Runtime dependencies of the vendored eBus emitter
-    # (`src/span_panel_simulator/ebus_emitter`, see its module docstring for provenance).
+    # (`src/panelbench/ebus_emitter`, see its module docstring for provenance).
     #
     # ebus-sdk carries the parent/child device tree the panel/child schema requires.
     # `graph_builder` targets the tree API (`parent=<Device>`, no
@@ -52,10 +52,10 @@ dev = [
 ]
 
 [project.scripts]
-span-simulator = "span_panel_simulator.__main__:main"
+panelbench = "panelbench.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-# `packages` already ships every file under src/span_panel_simulator, including
+# `packages` already ships every file under src/panelbench, including
 # dashboard/templates and dashboard/static. A `force-include` table re-adding
 # those two directories at the same destination paths made hatchling write each
 # file twice; newer hatchling rejects that outright ("A second file is being
@@ -65,10 +65,10 @@ span-simulator = "span_panel_simulator.__main__:main"
 #
 # The same applies to the vendored emitter's data files
 # (`ebus_emitter/wire/profiles/*.json`, `ebus_emitter/wire/mapping/*.yaml`): they live
-# under `src/span_panel_simulator`, so `packages` already ships them. Upstream declared
+# under `src/panelbench`, so `packages` already ships them. Upstream declared
 # them via `force-include` because its package root was elsewhere; re-adding that here
 # would reintroduce the duplicate-path collision described above.
-packages = ["src/span_panel_simulator"]
+packages = ["src/panelbench"]
 
 [tool.ruff]
 # Pinned to py313 because ruff 0.15.x has a formatter bug under py314 that

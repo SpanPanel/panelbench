@@ -9,9 +9,9 @@ from unittest.mock import MagicMock
 
 from aiohttp.test_utils import TestClient, TestServer
 
-from span_panel_simulator.bootstrap import BootstrapHttpServer
-from span_panel_simulator.const import DEFAULT_FIRMWARE_VERSION
-from span_panel_simulator.schema import load_schema, render_for_panel
+from panelbench.bootstrap import BootstrapHttpServer
+from panelbench.const import DEFAULT_FIRMWARE_VERSION
+from panelbench.schema import load_schema, render_for_panel
 
 
 def _make_server() -> BootstrapHttpServer:
@@ -105,11 +105,7 @@ async def test_no_admin_endpoints() -> None:
 async def test_schema_endpoint_serves_40_tab_format() -> None:
     """Bootstrap HTTP endpoint serves a rendered schema whose space.format matches panel size."""
     template = load_schema(
-        Path(__file__).parent.parent
-        / "src"
-        / "span_panel_simulator"
-        / "data"
-        / "homie_schema.json"
+        Path(__file__).parent.parent / "src" / "panelbench" / "data" / "homie_schema.json"
     )
     rendered = render_for_panel(template, 40)
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from span_panel_simulator.rates.resolver import resolve_rate
+from panelbench.rates.resolver import resolve_rate
 
 
 def _epoch(year: int, month: int, day: int, hour: int, tz: str) -> int:

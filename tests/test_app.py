@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from span_panel_simulator.app import SimulatorApp, _discover_configs, _file_hash
-from span_panel_simulator.schema import load_schema
+from panelbench.app import SimulatorApp, _discover_configs, _file_hash
+from panelbench.schema import load_schema
 
 _SIMPLE_CONFIG = """\
 panel_config:
@@ -94,7 +94,7 @@ class TestConfigDiscovery:
 
 
 _BUNDLED_SCHEMA = (
-    Path(__file__).parent.parent / "src" / "span_panel_simulator" / "data" / "homie_schema.json"
+    Path(__file__).parent.parent / "src" / "panelbench" / "data" / "homie_schema.json"
 )
 
 _BAD_SIZE_CONFIG = """\
@@ -194,7 +194,7 @@ class TestReloadContinuesOnPerPathFailure:
         mock_server.start = AsyncMock()
         mock_server.stop = AsyncMock()
 
-        with patch("span_panel_simulator.app.BootstrapHttpServer", return_value=mock_server):
+        with patch("panelbench.app.BootstrapHttpServer", return_value=mock_server):
             result = await app.reload()
 
         # Good panel started; bad one recorded as an error.

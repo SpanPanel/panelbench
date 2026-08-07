@@ -81,7 +81,7 @@ ensure_prerequisites() {
 ensure_venv() {
     echo "==> Syncing dependencies..."
     # Every dependency now resolves from PyPI — the emitter is vendored at
-    # src/span_panel_simulator/ebus_emitter rather than installed from a local path —
+    # src/panelbench/ebus_emitter rather than installed from a local path —
     # so a plain sync is sufficient. dev-setup.sh remains the documented entry point.
     bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
     # shellcheck disable=SC1091
@@ -93,7 +93,7 @@ generate_certs() {
     mkdir -p "${CERT_DIR}"
     ADVERTISE_ADDRESS="${ADVERTISE_ADDR}" CERT_DIR="${CERT_DIR}" "${VENV_DIR}/bin/python3" -c "
 import os
-from span_panel_simulator.certs import generate_certificates
+from panelbench.certs import generate_certificates
 from pathlib import Path
 addr = os.environ.get('ADVERTISE_ADDRESS') or None
 generate_certificates(Path(os.environ['CERT_DIR']), advertise_address=addr)
@@ -225,7 +225,7 @@ run_simulator() {
     # listing on the machine can read it.
     export HA_URL HA_TOKEN
 
-    "${VENV_DIR}/bin/python3" -m span_panel_simulator \
+    "${VENV_DIR}/bin/python3" -m panelbench \
         --config-dir "${config_dir}" \
         --base-http-port "${HTTP_PORT}" \
         --broker-port "${BROKER_PORT}" \

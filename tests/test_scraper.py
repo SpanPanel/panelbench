@@ -7,8 +7,8 @@ import json
 import pytest
 from ebus_sdk import DiscoveredDevice
 
-from span_panel_simulator.clone import TYPE_CIRCUIT, TYPE_PANEL
-from span_panel_simulator.scraper import (
+from panelbench.clone import TYPE_CIRCUIT, TYPE_PANEL
+from panelbench.scraper import (
     PanelCredentials,
     ScrapeError,
     _validate_discovered_tree,

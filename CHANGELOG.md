@@ -60,7 +60,7 @@
 
 ### Changed
 
-- **The flat emitter is vendored at `src/span_panel_simulator/flat_emitter`**, copied from
+- **The flat emitter is vendored at `src/panelbench/flat_emitter`**, copied from
   `ebus-emitter` 0.2.1 (commit `5b84de8`) — MIT, same copyright holders. The upstream repo
   has permanently diverged onto the parent/child (v1.0) Homie data model while this
   simulator continues to publish the flat schema, so the dependency delivered no upstream

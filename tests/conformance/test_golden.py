@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from span_panel_simulator.conformance import (
+from panelbench.conformance import (
     ConformanceReport,
     build_tree,
     check,
@@ -21,8 +21,8 @@ from span_panel_simulator.conformance import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-CATALOGS = Path("src/span_panel_simulator/ebus_emitter/wire/catalogs")
-PROFILES = Path("src/span_panel_simulator/ebus_emitter/wire/profiles")
+CATALOGS = Path("src/panelbench/ebus_emitter/wire/catalogs")
+PROFILES = Path("src/panelbench/ebus_emitter/wire/profiles")
 
 
 def _report() -> ConformanceReport:

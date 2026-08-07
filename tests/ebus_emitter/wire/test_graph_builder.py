@@ -1,7 +1,7 @@
-from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
-from span_panel_simulator.ebus_emitter.wire.graph_builder import build_graph
-from span_panel_simulator.ebus_emitter.wire.mapping_loader import load_mapping_table
-from span_panel_simulator.ebus_emitter.wire.profile_loader import load_profiles
+from panelbench.ebus_emitter.manifest import DeviceInstance, DeviceManifest
+from panelbench.ebus_emitter.wire.graph_builder import build_graph
+from panelbench.ebus_emitter.wire.mapping_loader import load_mapping_table
+from panelbench.ebus_emitter.wire.profile_loader import load_profiles
 
 
 def _manifest_panel_with_one_circuit() -> DeviceManifest:

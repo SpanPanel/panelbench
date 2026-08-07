@@ -6,7 +6,7 @@ on:
     paths:
       - "src/**"
       - "mosquitto/**"
-      - "span_panel_simulator/**"
+      - "panelbench/**"
       - "pyproject.toml"
       - ".github/workflows/build-addon.yaml"
   workflow_dispatch:
@@ -50,18 +50,18 @@ jobs:
       - name: Extract version from config.yaml
         id: version
         run: |
-          version=$(grep '^version:' span_panel_simulator/config.yaml | sed 's/version: *"\(.*\)"/\1/')
+          version=$(grep '^version:' panelbench/config.yaml | sed 's/version: *"\(.*\)"/\1/')
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: span_panel_simulator/Dockerfile
+          file: panelbench/Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
           build-args: |
             BUILD_FROM=${{ matrix.base }}
           tags: |
-            ${{ env.REGISTRY }}/spanpanel/simulator/${{ matrix.arch }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/spanpanel/simulator/${{ matrix.arch }}:latest
+            ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}:latest

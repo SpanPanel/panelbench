@@ -19,12 +19,12 @@ producing energy.
 
 from __future__ import annotations
 
-from span_panel_simulator.ebus_emitter.snapshot import (
+from panelbench.ebus_emitter.snapshot import (
     EbusCircuitSnapshot,
     EbusPanelInfo,
     EbusPanelSnapshot,
 )
-from span_panel_simulator.ebus_emitter.wire.bag_builder import _RESOLVERS
+from panelbench.ebus_emitter.wire.bag_builder import _RESOLVERS
 
 _IMPORTED = _RESOLVERS[("circuit", "meter/imported-energy")]
 _EXPORTED = _RESOLVERS[("circuit", "meter/exported-energy")]

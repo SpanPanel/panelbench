@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from span_panel_simulator.conformance.report import build_report, render_json, render_text
-from span_panel_simulator.conformance.rules import Bucket, Finding, Severity
+from panelbench.conformance.report import build_report, render_json, render_text
+from panelbench.conformance.rules import Bucket, Finding, Severity
 
 VIOLATION = Finding(
     rule="V3",

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from span_panel_simulator.rates.openei import (
+from panelbench.rates.openei import (
     OpenEIError,
     fetch_rate_detail,
     fetch_rate_plans,
@@ -28,14 +28,14 @@ class TestFetchUtilities:
                 {"utility_name": "City of Palo Alto", "eia": "14328"},
             ]
         }
-        with patch("span_panel_simulator.rates.openei._get_json", return_value=response_data):
+        with patch("panelbench.rates.openei._get_json", return_value=response_data):
             result = await fetch_utilities(37.7, -122.4, API_URL, API_KEY)
         assert len(result) >= 1
         assert result[0].utility_name == "City of Palo Alto"  # sorted alphabetically
 
     @pytest.mark.asyncio
     async def test_empty_result(self) -> None:
-        with patch("span_panel_simulator.rates.openei._get_json", return_value={"items": []}):
+        with patch("panelbench.rates.openei._get_json", return_value={"items": []}):
             result = await fetch_utilities(0.0, 0.0, API_URL, API_KEY)
         assert result == []
 
@@ -47,7 +47,7 @@ class TestFetchUtilities:
                 {"utility_name": "PG&E", "eia": "14328"},
             ]
         }
-        with patch("span_panel_simulator.rates.openei._get_json", return_value=response_data):
+        with patch("panelbench.rates.openei._get_json", return_value=response_data):
             result = await fetch_utilities(37.7, -122.4, API_URL, API_KEY)
         assert len(result) == 1
 
@@ -75,7 +75,7 @@ class TestFetchRatePlans:
                 },
             ]
         }
-        with patch("span_panel_simulator.rates.openei._get_json", return_value=response_data):
+        with patch("panelbench.rates.openei._get_json", return_value=response_data):
             result = await fetch_rate_plans("Pacific Gas & Electric Co", API_URL, API_KEY)
         assert len(result) == 2
         # Sorted by name
@@ -109,7 +109,7 @@ class TestFetchRatePlans:
                 },
             ]
         }
-        with patch("span_panel_simulator.rates.openei._get_json", return_value=response_data):
+        with patch("panelbench.rates.openei._get_json", return_value=response_data):
             result = await fetch_rate_plans("PG&E", API_URL, API_KEY)
         assert len(result) == 1
         assert result[0].label == "current_2024"
@@ -133,7 +133,7 @@ class TestFetchRateDetail:
                 }
             ]
         }
-        with patch("span_panel_simulator.rates.openei._get_json", return_value=response_data):
+        with patch("panelbench.rates.openei._get_json", return_value=response_data):
             result = await fetch_rate_detail("abc123", API_URL, API_KEY)
         assert result["label"] == "abc123"
         assert result["energyratestructure"] == [[{"rate": 0.25}]]
@@ -141,7 +141,7 @@ class TestFetchRateDetail:
     @pytest.mark.asyncio
     async def test_label_not_found_raises(self) -> None:
         with (
-            patch("span_panel_simulator.rates.openei._get_json", return_value={"items": []}),
+            patch("panelbench.rates.openei._get_json", return_value={"items": []}),
             pytest.raises(OpenEIError, match="not found"),
         ):
             await fetch_rate_detail("nonexistent", API_URL, API_KEY)
@@ -150,7 +150,7 @@ class TestFetchRateDetail:
     async def test_api_error_raises(self) -> None:
         with (
             patch(
-                "span_panel_simulator.rates.openei._get_json",
+                "panelbench.rates.openei._get_json",
                 side_effect=OpenEIError("HTTP 401: Unauthorized"),
             ),
             pytest.raises(OpenEIError, match="401"),

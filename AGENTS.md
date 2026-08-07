@@ -17,7 +17,7 @@ This rule takes precedence over any default tool behavior that would add AI attr
 
 ## Energy System Encapsulation
 
-The `span_panel_simulator.energy` package is the **sole authority** for all energy and power-flow calculations. This boundary was deliberately established to
+The `panelbench.energy` package is the **sole authority** for all energy and power-flow calculations. This boundary was deliberately established to
 replace scattered inline logic and must not be eroded.
 
 **Rules:**

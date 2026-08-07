@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from span_panel_simulator.dashboard import DashboardContext, create_dashboard_app
-from span_panel_simulator.dashboard.routes import RecorderPurgeResult
+from panelbench.dashboard import DashboardContext, create_dashboard_app
+from panelbench.dashboard.routes import RecorderPurgeResult
 
 pytestmark = pytest.mark.asyncio
 
@@ -107,7 +107,7 @@ async def test_purge_recorder_success_invokes_backend(
         return RecorderPurgeResult("purged", 3)
 
     monkeypatch.setattr(
-        "span_panel_simulator.dashboard.routes._purge_recorder_for_config",
+        "panelbench.dashboard.routes._purge_recorder_for_config",
         fake_purge,
     )
 
@@ -138,7 +138,7 @@ async def test_purge_recorder_shows_none_found(cfg_dir, monkeypatch: pytest.Monk
         return RecorderPurgeResult("none_found", 0)
 
     monkeypatch.setattr(
-        "span_panel_simulator.dashboard.routes._purge_recorder_for_config",
+        "panelbench.dashboard.routes._purge_recorder_for_config",
         fake_purge,
     )
 
@@ -165,7 +165,7 @@ async def test_purge_recorder_single_entity_word(cfg_dir, monkeypatch: pytest.Mo
         return RecorderPurgeResult("purged", 1)
 
     monkeypatch.setattr(
-        "span_panel_simulator.dashboard.routes._purge_recorder_for_config",
+        "panelbench.dashboard.routes._purge_recorder_for_config",
         fake_purge,
     )
 

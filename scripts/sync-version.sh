@@ -7,9 +7,9 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 TOML="$REPO_ROOT/pyproject.toml"
-INIT="$REPO_ROOT/src/span_panel_simulator/__init__.py"
-CONFIG="$REPO_ROOT/span_panel_simulator/config.yaml"
-DOCKERFILE="$REPO_ROOT/span_panel_simulator/Dockerfile"
+INIT="$REPO_ROOT/src/panelbench/__init__.py"
+CONFIG="$REPO_ROOT/panelbench/config.yaml"
+DOCKERFILE="$REPO_ROOT/panelbench/Dockerfile"
 
 # Extract version from pyproject.toml
 VERSION=$(grep -m1 '^version' "$TOML" | sed 's/version *= *"\(.*\)"/\1/')

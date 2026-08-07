@@ -1,4 +1,4 @@
-from span_panel_simulator.ebus_emitter.wire.wire_paths import (
+from panelbench.ebus_emitter.wire.wire_paths import (
     device_description_topic,
     device_state_topic,
     parse_set_topic,

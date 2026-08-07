@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from span_panel_simulator.certs import generate_certificates
+from panelbench.certs import generate_certificates
 
 if TYPE_CHECKING:
     from pathlib import Path

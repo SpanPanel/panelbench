@@ -1,4 +1,4 @@
-from span_panel_simulator.ebus_emitter.exceptions import (
+from panelbench.ebus_emitter.exceptions import (
     EmitterError,
     EmitterStateError,
     ManifestValidationError,

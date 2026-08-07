@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from span_panel_simulator.__main__ import _run_until_signalled
-from span_panel_simulator.app import SimulatorApp
+from panelbench.__main__ import _run_until_signalled
+from panelbench.app import SimulatorApp
 
 
 class _FakeApp:

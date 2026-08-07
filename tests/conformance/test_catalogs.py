@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from span_panel_simulator.conformance.catalogs import (
+from panelbench.conformance.catalogs import (
     ABSTRACT_UNITS,
     CatalogError,
     load_catalogs,
 )
 
-VENDORED = Path("src/span_panel_simulator/ebus_emitter/wire/catalogs")
+VENDORED = Path("src/panelbench/ebus_emitter/wire/catalogs")
 
 
 def test_loads_vendored_catalogs_keyed_by_capability_type() -> None:
@@ -82,9 +82,7 @@ def test_no_composed_profile_property_uses_an_unpublishable_unit() -> None:
 
     composed: list[str] = []
     catalogs = load_catalogs(VENDORED)
-    for path in sorted(
-        Path("src/span_panel_simulator/ebus_emitter/wire/profiles").rglob("*.json")
-    ):
+    for path in sorted(Path("src/panelbench/ebus_emitter/wire/profiles").rglob("*.json")):
         raw = json.loads(path.read_text())
         for device_type in raw.get("device_types", {}).values():
             for node_id, use in device_type.get("capabilities", {}).items():

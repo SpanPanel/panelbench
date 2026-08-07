@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from span_panel_simulator.conformance.model import DescriptionError, build_tree, parse_device
+from panelbench.conformance.model import DescriptionError, build_tree, parse_device
 
 
 def test_parse_device_reads_nodes_and_properties() -> None:

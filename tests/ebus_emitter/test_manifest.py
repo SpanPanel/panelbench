@@ -1,6 +1,6 @@
 import pytest
 
-from span_panel_simulator.ebus_emitter.manifest import DeviceInstance, DeviceManifest
+from panelbench.ebus_emitter.manifest import DeviceInstance, DeviceManifest
 
 
 def _instance(

@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from span_panel_simulator.ebus_emitter import (
+from panelbench.ebus_emitter import (
     BESSConfig,
     DeviceInstance,
     DeviceManifest,

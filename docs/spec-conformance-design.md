@@ -61,12 +61,12 @@ Homie 5 makes this small. Each device publishes one retained `$description` JSON
 Three units. The first two know nothing about SPAN or MQTT and are the reusable core.
 
 ```text
-src/span_panel_simulator/conformance/model.py            $description documents -> typed tree
-src/span_panel_simulator/conformance/catalogs.py         vendored capability catalogs as data
-src/span_panel_simulator/conformance/device_profiles.py  vendored device profiles as data
-src/span_panel_simulator/conformance/rules.py            (tree, catalogs, profiles) -> [Finding]
-src/span_panel_simulator/conformance/report.py           aggregate + render text and JSON
-src/span_panel_simulator/conformance/feeds.py            thin adapters producing documents
+src/panelbench/conformance/model.py            $description documents -> typed tree
+src/panelbench/conformance/catalogs.py         vendored capability catalogs as data
+src/panelbench/conformance/device_profiles.py  vendored device profiles as data
+src/panelbench/conformance/rules.py            (tree, catalogs, profiles) -> [Finding]
+src/panelbench/conformance/report.py           aggregate + render text and JSON
+src/panelbench/conformance/feeds.py            thin adapters producing documents
 scripts/check-conformance.py                             CLI, mirroring check-spec-provenance.py
 ```
 
@@ -90,7 +90,7 @@ is unenforceable.
 Both feeds are a few lines each and share every rule. A live-broker mode is deliberately not built: it drags credentials and a running broker into CI, is
 non-deterministic, and welds the tool to one transport — which is the opposite of the property that makes the core reusable.
 
-**Enforced boundary:** `model.py` and `rules.py` import nothing from `span_panel_simulator` and nothing MQTT-related. A test asserts this. That constraint is
+**Enforced boundary:** `model.py` and `rules.py` import nothing from `panelbench` and nothing MQTT-related. A test asserts this. That constraint is
 what would let the core be offered upstream later as a publisher-side conformance checker, which is a category the specification's own `tools/` does not
 currently have — all four scripts there are author-side.
 

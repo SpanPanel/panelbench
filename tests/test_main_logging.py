@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 
-from span_panel_simulator.__main__ import _configure_logging, _NoisyDependencyFilter
+from panelbench.__main__ import _configure_logging, _NoisyDependencyFilter
 
 
 def _record(name: str, level: int) -> logging.LogRecord:
@@ -45,8 +45,8 @@ def test_debug_threshold_lets_the_schema_dump_through() -> None:
 
 def test_simulator_own_logs_are_untouched() -> None:
     noise_filter = _NoisyDependencyFilter(logging.WARNING)
-    assert noise_filter.filter(_record("span_panel_simulator.app", logging.INFO))
-    assert noise_filter.filter(_record("span_panel_simulator.panel", logging.DEBUG))
+    assert noise_filter.filter(_record("panelbench.app", logging.INFO))
+    assert noise_filter.filter(_record("panelbench.panel", logging.DEBUG))
 
 
 def test_child_loggers_of_a_noisy_name_are_filtered_too() -> None:
@@ -84,7 +84,7 @@ def test_configure_logging_suppresses_the_real_homie_logger(
 
     logging.getLogger("homie").info("reason=nodeDescriptionNode,node={...}")
     logging.getLogger("homie").warning("broker trouble")
-    logging.getLogger("span_panel_simulator.app").info("Reload complete")
+    logging.getLogger("panelbench.app").info("Reload complete")
 
     err = capsys.readouterr().err
     assert "nodeDescriptionNode" not in err

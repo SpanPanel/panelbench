@@ -1,0 +1,37 @@
+name: "SPAN PanelBench"
+description: "Simulates a SPAN electrical panel for testing and upgrade modeling"
+version: "1.0.14"
+slug: "panelbench"
+url: "https://github.com/SpanPanel/panelbench"
+image: "ghcr.io/spanpanel/panelbench/{arch}"
+arch:
+  - amd64
+  - aarch64
+host_network: true
+homeassistant_api: true
+discovery:
+  - span_panel
+ingress: true
+ingress_port: 18080
+panel_icon: "mdi:flash"
+panel_title: "SPAN Simulator"
+watchdog: "http://[HOST]:[PORT:18080]/"
+map:
+  - type: config
+    read_only: false
+backup: hot
+backup_exclude:
+  - "*.key"
+  - "*.crt"
+options:
+  tick_interval: 1.0
+  log_level: "INFO"
+  dashboard_enabled: true
+  base_http_port: 8081
+schema:
+  tick_interval: "float(0.5,60.0)"
+  log_level: list(DEBUG|INFO|WARNING|ERROR)
+  dashboard_enabled: bool
+  base_http_port: "int(1024,65535)?"
+startup: application
+init: false

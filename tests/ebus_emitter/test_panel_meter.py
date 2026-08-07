@@ -1,8 +1,8 @@
 import pytest
 
-from span_panel_simulator.ebus_emitter.conventions.tab_legs import Leg
-from span_panel_simulator.ebus_emitter.manifest_physics import CircuitPhysics, PanelPhysics
-from span_panel_simulator.ebus_emitter.panel_meter import circuit_current_a, resolve
+from panelbench.ebus_emitter.conventions.tab_legs import Leg
+from panelbench.ebus_emitter.manifest_physics import CircuitPhysics, PanelPhysics
+from panelbench.ebus_emitter.panel_meter import circuit_current_a, resolve
 
 
 def _panel(**overrides: object) -> PanelPhysics:
@@ -32,7 +32,7 @@ def _circuit(
     always_on: bool = False,
 ) -> CircuitPhysics:
     if legs is None:
-        from span_panel_simulator.ebus_emitter.conventions.tab_legs import legs_for_tabs
+        from panelbench.ebus_emitter.conventions.tab_legs import legs_for_tabs
 
         legs = legs_for_tabs(tabs)
     return CircuitPhysics(

@@ -1,4 +1,4 @@
-from span_panel_simulator.ebus_emitter.wire.property_bag import PropertyBag, PropertyDiffer
+from panelbench.ebus_emitter.wire.property_bag import PropertyBag, PropertyDiffer
 
 
 def _bag(*items: tuple[str, str, str, object]) -> PropertyBag:
