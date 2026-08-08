@@ -3,8 +3,8 @@
   "counts": {
     "divergence": 4,
     "extension": 82,
-    "match": 557,
-    "omission": 1486,
+    "match": 565,
+    "omission": 1491,
     "violation": 0
   },
   "observations": [
@@ -1774,6 +1774,11 @@
     "be7742043a06554aab2a1e38cc776603/pcs/requested-import-limit",
     "be7742043a06554aab2a1e38cc776603/pcs/requested-import-limit-active",
     "be7742043a06554aab2a1e38cc776603/pcs/requested-import-limit-enablement",
+    "bess-mid/grid/last-outage-time",
+    "bess-mid/grid/last-restoration-time",
+    "bess-mid/info/data-model-version",
+    "bess-mid/info/nameplate-capacity",
+    "bess-mid/info/part-number",
     "bess/info/data-model-version",
     "bess/info/hardware-version",
     "bess/meter/apparent-energy-exported",

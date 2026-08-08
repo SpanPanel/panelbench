@@ -110,9 +110,10 @@ class BESSConfigYAML(TypedDict, total=False):
     instance_id: str
     product_name: str
     model: str
-    # The SKU. Read by the reference emitter as ``info/part-number``; nothing
-    # here binds it yet, which is one of the gaps the fidelity comparator names.
-    part_number: str
+    part_number: str  # The SKU, published as ``info/part-number``.
+    # Model designation for the MID this BESS brings with it, when known. Distinct
+    # from the battery's own ``model``: they are separate devices in v1.0.
+    mid_product_name: str
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]

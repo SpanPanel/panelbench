@@ -1,12 +1,6 @@
 {
   "extra_devices": {},
   "extra_properties": {},
-  "missing_devices": {
-    "energy.ebus.device.mid::Microgrid Interconnect Device": 7
-  },
-  "missing_properties": {
-    "energy.ebus.device.pv::Solar": [
-      "info/model"
-    ]
-  }
+  "missing_devices": {},
+  "missing_properties": {}
 }

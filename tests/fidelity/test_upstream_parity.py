@@ -17,17 +17,26 @@ comparison:
 
 ⓐ↔ⓑ is the sharpest structural claim: a minimal surface, so any asymmetry is
 unambiguously a producer defect. ⓒ↔ⓓ exercises far more of the tree — every
-circuit template, both EVSEs, PV, tandem breakers — and reaches gaps the minimal
-config is too small to express. ``bess info/part-number`` is the worked example:
-the minimal config carries no ``part_number``, so neither producer publishes one
-and ⓐ↔ⓑ reports parity; the rich config does, and ⓒ↔ⓓ names the gap.
+circuit template, both EVSEs, PV, tandem breakers — and reached gaps the minimal
+config was too small to express. ``bess info/part-number`` was the worked example:
+the minimal config carries no ``part_number``, so neither producer published one
+and ⓐ↔ⓑ reported parity; the rich config does, ⓒ↔ⓓ named the gap, and adopting
+the upstream emitter closed it.
 
-The gap set is held in a committed baseline per cell rather than asserted to be
-empty. A permanently red test gets ignored, and there is real divergence today; a
-baseline makes it exact, so that **any** movement fails — a new gap appearing, or
-a known gap being closed. Both deserve a deliberate look, and closing one should
-shrink the file rather than pass silently. When a baseline reaches empty, delete
-it and assert parity directly for that cell.
+**The rich cell is now at full structural parity**, so it has no baseline: it
+asserts an empty report directly, and any gap is a regression rather than
+something to record.
+
+The minimal cell keeps one, for a single entry that is a config difference rather
+than a producer defect. The reference hardcodes the PV model in its example
+script; panelbench reads it from a ``pv:`` config block, and upstream's config has
+nowhere to put one. Closing it would mean either editing a file a byte-drift test
+pins, or inventing a vendor SKU in our source — so it is recorded instead.
+
+A baseline exists to make a known divergence exact while it is being closed, so
+**any** movement fails: a new gap appearing, or a known one closing. Both deserve
+a deliberate look. When a baseline reaches empty, delete it and assert parity
+directly, as the rich cell now does.
 """
 
 from __future__ import annotations
@@ -44,6 +53,7 @@ from .comparator import (
     PANELBENCH_CONFIG,
     REFERENCE_CONFIG,
     UPSTREAM,
+    ParityReport,
     capture_panelbench,
     capture_reference,
     compare,
@@ -62,12 +72,19 @@ class Cell:
 
     name: str
     config: Path
-    baseline: Path
+    baseline: Path | None
+    """``None`` once the cell reaches parity.
+
+    A baseline exists to make a known divergence exact while it is being closed.
+    An *empty* baseline file would be a weaker statement than its own absence: it
+    reads as a place to record the next gap, where asserting parity directly says
+    there is not supposed to be one.
+    """
 
 
 CELLS = (
     Cell("minimal", REFERENCE_CONFIG, FIXTURES / "parity_baseline_minimal.json"),
-    Cell("rich", PANELBENCH_CONFIG, FIXTURES / "parity_baseline_rich.json"),
+    Cell("rich", PANELBENCH_CONFIG, None),
 )
 
 _by_name = pytest.mark.parametrize("cell", CELLS, ids=lambda c: c.name)
@@ -78,8 +95,16 @@ _by_name = pytest.mark.parametrize("cell", CELLS, ids=lambda c: c.name)
 async def test_structural_parity_matches_the_recorded_baseline(cell: Cell) -> None:
     """The instrument. Fails on any structural movement in either direction."""
     report = compare(capture_reference(cell.config), await capture_panelbench(cell.config))
-    expected = json.loads(cell.baseline.read_text())
 
+    if cell.baseline is None:
+        assert report.as_baseline() == ParityReport().as_baseline(), (
+            f"the {cell.name} config was at full structural parity and no longer is.\n"
+            f"{report.describe()}\n\n"
+            "This is a producer regression, not a baseline to update."
+        )
+        return
+
+    expected = json.loads(cell.baseline.read_text())
     assert report.as_baseline() == expected, (
         f"structural parity with the reference emitter moved for the {cell.name} config.\n"
         f"{report.describe()}\n\n"

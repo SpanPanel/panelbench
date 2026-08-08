@@ -123,6 +123,9 @@
   "energy.ebus.device.lugs::Upstream lugs  connection/feeds-device-id",
   "energy.ebus.device.lugs::Upstream lugs  connection/feeds-device-status",
   "energy.ebus.device.lugs::Upstream lugs  connection/feeds-device-type",
+  "energy.ebus.device.mid::Microgrid Interconnect Device  info/firmware-version",
+  "energy.ebus.device.mid::Microgrid Interconnect Device  info/hardware-version",
+  "energy.ebus.device.mid::Microgrid Interconnect Device  info/model",
   "energy.ebus.device.pv::Solar  info/firmware-version",
   "energy.ebus.device.pv::Solar  info/serial-number"
 ]

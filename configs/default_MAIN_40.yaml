@@ -10,6 +10,10 @@ panel_config:
   longitude: -122.4
 firmware_version: sim/v0.1.0
 hardware_version: rev2
+pv:
+  enabled: true
+  vendor: Enphase
+  product_name: IQ8PLUS-72-2-US
 bess:
   enabled: true
   instance_id: bess

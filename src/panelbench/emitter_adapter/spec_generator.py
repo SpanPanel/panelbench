@@ -65,6 +65,9 @@ def build_manifest(profile: SimulationConfig) -> DeviceManifest:
     if pv is not None:
         instances.append(pv)
     instances.extend(_evse_instances(profile))
+    mid = _mid_instance(profile)
+    if mid is not None:
+        instances.append(mid)
     return DeviceManifest(instances=tuple(instances))
 
 
@@ -178,6 +181,50 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
         instance_id=_bess_instance_id(bess_cfg),
         display_name="Battery",
         metadata=bess_meta,
+    )
+
+
+def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
+    """The Microgrid Interconnect Device a commissioned BESS brings with it.
+
+    v1.0 introduced this: *every* BESS child publishes a MID carrying the grid and
+    islanding state, and where the hardware presents no separable MID the panel
+    synthesizes one. It is the islanding authority, and it is where
+    ``grid-forming-entity`` and ``islanding-state`` live — the successors to the
+    flat schema's ``dominant-power-source``.
+
+    Gated on a BESS *and* an islandable enclosure, because a MID that cannot island
+    has nothing to be the authority over.
+
+    Placement is not set here. ``wire/mapping/mid.yaml`` declares it
+    ``child-of-parent`` with ``parent_entity_class: bess``, so the graph builder
+    parents it under the battery and the panel sees it as a grandchild — which is
+    what real r202633 firmware publishes, verified live by eBus. The device id
+    follows ``<bess-id>-mid`` from the migration guide's stability table; on real
+    firmware the BESS id is itself ``<proxier>-<serial>``, which is why the same
+    rule yields ``<panel>-<bess>-mid`` there and a shorter id here.
+
+    Every metadata key is optional to the emitter, so this publishes only what the
+    config actually knows rather than inventing identity for a synthesized device.
+    """
+    bess_cfg = profile.get("bess") or {}
+    if not bess_cfg.get("enabled") or not _islandable(profile):
+        return None
+
+    metadata = {"vendor-name": str(bess_cfg.get("vendor", "Span"))}
+    serial = bess_cfg.get("serial_number")
+    if serial is not None:
+        # Derived from the battery's serial, not invented: the MID is part of that
+        # unit, so a consumer resolving one to the other should be able to.
+        metadata["serial-number"] = f"{serial}-mid"
+    mid_model = bess_cfg.get("mid_product_name")
+    if mid_model is not None:
+        metadata["model"] = str(mid_model)
+    return DeviceInstance(
+        entity_class="mid",
+        instance_id=f"{_bess_instance_id(bess_cfg)}-mid",
+        display_name="Microgrid Interconnect Device",
+        metadata=metadata,
     )
 
 
