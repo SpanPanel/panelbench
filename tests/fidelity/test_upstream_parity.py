@@ -159,6 +159,20 @@ def test_the_shared_config_still_carries_what_the_reference_needs() -> None:
     than fail — a MID that stops being expected, or a producer publishing nothing
     because it was handed no ticks.
 
+    The PV keys are here for the opposite reason: both producers read them, and
+    *asymmetrically*. The reference's only PV gate is a circuit whose template
+    declares ``device_type: pv`` (``run_forty_tab_minimal.py:358``); panelbench
+    also accepts ``pv.enabled`` (``spec_generator.py:232``). Drop one and parity
+    catches it as an extra device — but drop **both** and each producer silently
+    stops publishing PV, so the cell agrees perfectly about a device tree with no
+    solar in it. ``nameplate_capacity_w`` is the quietest of the three: both sides
+    fall back to the same 5000.0 default, so losing it changes a published value
+    with nothing, anywhere, disagreeing.
+
+    This matters more since ``default_MAIN_40`` became the superset config: it is
+    the only cell that exercises PV at all, so its coverage is not recoverable
+    from another template.
+
     A YAML comment cannot carry this warning: every config writer round-trips
     through ``yaml.dump``, which preserves unknown keys but drops comments.
     """
@@ -182,6 +196,27 @@ def test_the_shared_config_still_carries_what_the_reference_needs() -> None:
     ticks = config.get("ticks")
     assert ticks, "the reference runner publishes nothing without a ticks block"
     assert all("circuits" in tick for tick in ticks), "each tick needs a circuits mapping"
+
+    assert (config.get("pv") or {}).get("enabled") is True, (
+        "pv.enabled gates panelbench's PV device; without it PV survives only as "
+        "long as a pv-typed circuit does"
+    )
+    templates = config.get("circuit_templates") or {}
+    referenced = {c.get("template") for c in (config.get("circuits") or [])}
+    solar = [
+        name
+        for name, template in templates.items()
+        if template.get("device_type") == "pv" and name in referenced
+    ]
+    assert solar, (
+        "no circuit resolves to a template with device_type: pv — this is the "
+        "reference's only PV gate, so the rich cell would stop measuring solar"
+    )
+    assert all("nameplate_capacity_w" in templates[name] for name in solar), (
+        "the solar template's nameplate_capacity_w feeds info/nominal-power-w on "
+        "both sides; without it both fall to the same 5000.0 default and no "
+        "instrument disagrees"
+    )
 
 
 def test_vendored_reference_matches_upstream() -> None:
