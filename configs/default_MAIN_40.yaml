@@ -1,12 +1,25 @@
 panel_config:
   serial_number: sim-40t-001
+  display_name: Span Panel
   total_tabs: 40
   main_size: 200
+  postal_code: '94103'
+  time_zone: America/Los_Angeles
+  islandable: true
   latitude: 37.7
   longitude: -122.4
+firmware_version: sim/v0.1.0
+hardware_version: rev2
 bess:
   enabled: true
+  instance_id: bess
+  vendor: Span
+  product_name: SPAN Battery
+  part_number: SPN-BESS-001
+  serial_number: SIM-BESS-40T-001
+  relative_position: UPSTREAM
   nameplate_capacity_kwh: 13.5
+  initial_soe_kwh: 6.75
   max_charge_w: 3500.0
   max_discharge_w: 3500.0
   charge_efficiency: 0.95
@@ -512,6 +525,7 @@ circuit_templates:
     priority: NEVER
     device_type: pv
     breaker_rating: 30
+    nameplate_capacity_w: 10000.0
   pool:
     energy_profile:
       mode: consumer
@@ -779,3 +793,30 @@ simulation_params:
   time_acceleration: 1.0
   noise_factor: 0.01
   enable_realistic_behaviors: true
+ticks:
+- name: loads and both EVSEs with some PV
+  current_time: 0.0
+  grid_online: true
+  circuits:
+    master_bedroom_lights: 40.0
+    living_room_lights: 50.0
+    kitchen_outlets_1: 300.0
+    refrigerator: 120.0
+    main_hvac: 1400.0
+    water_heater: 4500.0
+    span_drive_garage: 2410.0
+    span_drive_driveway: 2420.0
+    solar_inverter: -2430.0
+- name: PV surplus charges BESS and exports
+  current_time: 60.0
+  grid_online: true
+  circuits:
+    master_bedroom_lights: 40.0
+    living_room_lights: 50.0
+    kitchen_outlets_1: 300.0
+    refrigerator: 120.0
+    main_hvac: 0.0
+    water_heater: 0.0
+    span_drive_garage: 2410.0
+    span_drive_driveway: 0.0
+    solar_inverter: -8500.0

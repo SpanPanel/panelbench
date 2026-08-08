@@ -110,6 +110,9 @@ class BESSConfigYAML(TypedDict, total=False):
     instance_id: str
     product_name: str
     model: str
+    # The SKU. Read by the reference emitter as ``info/part-number``; nothing
+    # here binds it yet, which is one of the gaps the fidelity comparator names.
+    part_number: str
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]

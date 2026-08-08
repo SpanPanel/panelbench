@@ -34,6 +34,17 @@ UPSTREAM = FIXTURES / "upstream"
 REFERENCE_CONFIG = UPSTREAM / "forty_tab_minimal.yaml"
 REFERENCE_RUNNER = UPSTREAM / "run_forty_tab_minimal.py"
 
+_REPO = Path(__file__).resolve().parent.parent.parent
+PANELBENCH_CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
+"""The tracked 40-tab template, extended to a superset both producers read.
+
+Not a fixture copy. The reference runner reads a narrow slice of the YAML and
+ignores the rest, and panelbench loads with ``yaml.safe_load`` into TypedDicts,
+so each side takes the keys it understands from one file. A second copy under
+``fixtures/`` would drift, and the rich cell would then measure a config nobody
+runs.
+"""
+
 # Homie topics are `ebus/<version>/<device-id>/<rest...>`.
 _DEVICE_SEGMENT = 2
 _MIN_SEGMENTS = 4
@@ -137,6 +148,33 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
 
 def by_role(devices: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
     return {role_of(did, props): props for did, props in devices.items()}
+
+
+def declared_properties(body: dict[str, str]) -> set[str]:
+    """``node/property`` keys a device announces in its ``$description``."""
+    description = body.get("$description")
+    if not description:
+        return set()
+    try:
+        nodes = json.loads(description).get("nodes") or {}
+    except json.JSONDecodeError:
+        return set()
+    return {
+        f"{node_id}/{prop}"
+        for node_id, node in nodes.items()
+        for prop in (node.get("properties") or {})
+    }
+
+
+def class_of(body: dict[str, str]) -> str:
+    """The trailing segment of the declared device type, e.g. ``lugs``, ``mid``."""
+    description = body.get("$description")
+    if not description:
+        return "?"
+    try:
+        return str(json.loads(description).get("type", "?")).rsplit(".", 1)[-1]
+    except json.JSONDecodeError:
+        return "?"
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,18 @@
+{
+  "panelbench": {
+    "energy.ebus.device.bess::Battery": "bess is not <proxier-id>-<identifier>",
+    "energy.ebus.device.evse::SPAN Drive - Driveway": "evse-2 is not <proxier-id>-<identifier>",
+    "energy.ebus.device.evse::SPAN Drive - Garage": "evse is not <proxier-id>-<identifier>",
+    "energy.ebus.device.lugs::Downstream lugs": "lugs-downstream is not <panel-serial>-lugs-{up,dn}",
+    "energy.ebus.device.lugs::Upstream lugs": "lugs-upstream is not <panel-serial>-lugs-{up,dn}",
+    "energy.ebus.device.pv::Solar": "pv is not <proxier-id>-<identifier>"
+  },
+  "reference": {
+    "energy.ebus.device.bess::Battery": "bess is not <proxier-id>-<identifier>",
+    "energy.ebus.device.evse::SPAN Drive - Driveway": "evse-2 is not <proxier-id>-<identifier>",
+    "energy.ebus.device.evse::SPAN Drive - Garage": "evse is not <proxier-id>-<identifier>",
+    "energy.ebus.device.lugs::Downstream lugs": "lugs-downstream is not <panel-serial>-lugs-{up,dn}",
+    "energy.ebus.device.lugs::Upstream lugs": "lugs-upstream is not <panel-serial>-lugs-{up,dn}",
+    "energy.ebus.device.pv::Solar": "pv is not <proxier-id>-<identifier>"
+  }
+}
