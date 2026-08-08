@@ -824,3 +824,16 @@ ticks:
     span_drive_garage: 2410.0
     span_drive_driveway: 0.0
     solar_inverter: -8500.0
+- name: grid outage, the BESS forms the island
+  current_time: 120.0
+  grid_online: false
+  circuits:
+    master_bedroom_lights: 40.0
+    living_room_lights: 50.0
+    kitchen_outlets_1: 300.0
+    refrigerator: 120.0
+    main_hvac: 0.0
+    water_heater: 0.0
+    span_drive_garage: 0.0
+    span_drive_driveway: 0.0
+    solar_inverter: -1200.0

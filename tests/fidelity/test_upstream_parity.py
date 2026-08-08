@@ -196,6 +196,11 @@ def test_the_shared_config_still_carries_what_the_reference_needs() -> None:
     ticks = config.get("ticks")
     assert ticks, "the reference runner publishes nothing without a ticks block"
     assert all("circuits" in tick for tick in ticks), "each tick needs a circuits mapping"
+    assert any(tick.get("grid_online") is False for tick in ticks), (
+        "no tick takes the grid down, so the MID's islanded branch — the one "
+        "where grid-forming-entity has to name a device rather than say GRID — "
+        "is never reached by anything in this repo (see test_islanded_wire.py)"
+    )
 
     assert (config.get("pv") or {}).get("enabled") is True, (
         "pv.enabled gates panelbench's PV device; without it PV survives only as "
