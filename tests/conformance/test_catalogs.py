@@ -9,8 +9,12 @@ from panelbench.conformance.catalogs import (
     CatalogError,
     load_catalogs,
 )
+from panelbench.conformance.emitter_data import emitter_catalogs, emitter_profiles
 
-VENDORED = Path("src/panelbench/ebus_emitter/wire/catalogs")
+# What the producer published from. The byte-identical spec copies under
+# spec/catalogs are provenance's business, and the two are tied together by
+# test_the_wheel_catalogs_are_the_ones_provenance_vouches_for below.
+VENDORED = emitter_catalogs()
 
 
 def test_loads_vendored_catalogs_keyed_by_capability_type() -> None:
@@ -82,7 +86,7 @@ def test_no_composed_profile_property_uses_an_unpublishable_unit() -> None:
 
     composed: list[str] = []
     catalogs = load_catalogs(VENDORED)
-    for path in sorted(Path("src/panelbench/ebus_emitter/wire/profiles").rglob("*.json")):
+    for path in sorted(emitter_profiles().rglob("*.json")):
         raw = json.loads(path.read_text())
         for device_type in raw.get("device_types", {}).values():
             for node_id, use in device_type.get("capabilities", {}).items():
@@ -105,3 +109,36 @@ def test_no_composed_profile_property_uses_an_unpublishable_unit() -> None:
         "profile properties that would publish with no unit; give each an explicit "
         f"concrete unit in the profile selection: {composed}"
     )
+
+
+def test_the_wheel_catalogs_are_the_ones_provenance_vouches_for() -> None:
+    """The link that makes the whole chain of custody hold.
+
+    ``check-spec-provenance.py`` proves ``spec/catalogs`` is byte-identical to the
+    eBus specification at the commit ``.ebus-spec.json`` pins. Every conformance
+    check above measures against the *wheel's* catalogs instead, because those are
+    the bytes the emitter actually composed the published tree from.
+
+    Those are two different files, and without this the chain has a hole in the
+    middle: the specification would vouch for a copy nothing reads, and
+    conformance would measure against data nothing vouched for. A pin bump that
+    quietly changed a catalog would pass every other test in this file.
+
+    Failing here means the emitter's catalogs and our pinned specification commit
+    have diverged. Re-sync ``spec/catalogs`` and update ``synced_commit``, or hold
+    the pin — but do it deliberately.
+    """
+    vendored = Path("spec/catalogs")
+    wheel = emitter_catalogs()
+
+    ours = {p.name: p.read_bytes() for p in vendored.glob("*.json")}
+    theirs = {p.name: p.read_bytes() for p in wheel.glob("*.json")}
+
+    assert ours, f"no vendored catalogs under {vendored}"
+    assert set(ours) == set(theirs), (
+        "the emitter ships a different set of catalogs than we vendored: "
+        f"only in the wheel {sorted(set(theirs) - set(ours))}, "
+        f"only vendored {sorted(set(ours) - set(theirs))}"
+    )
+    differing = sorted(name for name, body in ours.items() if theirs[name] != body)
+    assert not differing, f"catalogs that differ between the wheel and spec/catalogs: {differing}"

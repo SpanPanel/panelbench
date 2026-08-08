@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from panelbench.conformance.catalogs import load_catalogs
+from panelbench.conformance.emitter_data import emitter_catalogs
 from panelbench.conformance.model import HomieTree, build_tree
 from panelbench.conformance.rules import check_violations
 
-CATALOGS = load_catalogs(Path("src/panelbench/ebus_emitter/wire/catalogs"))
+CATALOGS = load_catalogs(emitter_catalogs())
 
 
 def _tree(prop: dict[str, object], prop_id: str = "soe") -> HomieTree:

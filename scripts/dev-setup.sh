@@ -2,10 +2,11 @@
 #
 # Developer bootstrap.
 #
-# The emitter used to be an external checkout installed editable from
-# EBUS_EMITTER_PATH. It is now vendored at `src/panelbench/ebus_emitter`
-# (see that package's docstring for provenance and rationale), so every dependency
-# resolves from PyPI and this script is a thin wrapper over `uv sync`.
+# The emitter is a pinned git dependency (`ebus-panel-sim`), not a checkout and no
+# longer a vendored copy either. It ships its own capability catalogs and device
+# profiles, which is what conformance measures against; `spec/catalogs` holds the
+# byte-identical specification copies that `check-spec-provenance.py` verifies.
+# So every dependency resolves from the lockfile and this is a thin `uv sync`.
 
 set -euo pipefail
 
@@ -15,4 +16,4 @@ cd "${REPO_ROOT}"
 echo "Syncing simulator deps…"
 uv sync --group dev
 
-echo "Done. Verify with: uv run python -c 'import panelbench.ebus_emitter as e; print(e.__file__)'"
+echo "Done. Verify with: uv run python -c 'import ebus_panel_sim as e; print(e.__file__)'"

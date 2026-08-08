@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from .catalogs import Catalog, CatalogError, load_catalogs
 from .device_profiles import DeviceProfile, ProfileError, load_device_profiles
+from .emitter_data import emitter_catalogs, emitter_profiles
 from .feeds import CaptureError, from_capture, from_devices
 from .model import DescriptionError, HomieTree, build_tree
 from .report import ConformanceReport, build_report, render_json, render_text
@@ -37,6 +38,8 @@ __all__ = [
     "check_observations",
     "check_profile_coverage",
     "check_violations",
+    "emitter_catalogs",
+    "emitter_profiles",
     "from_capture",
     "from_devices",
     "load_catalogs",

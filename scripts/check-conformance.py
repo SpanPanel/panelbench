@@ -30,6 +30,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 from panelbench.conformance import (
     build_tree,
     check,
+    emitter_catalogs,
+    emitter_profiles,
     from_capture,
     load_catalogs,
     load_device_profiles,
@@ -38,8 +40,10 @@ from panelbench.conformance import (
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-CATALOGS = REPO_ROOT / "src/panelbench/ebus_emitter/wire/catalogs"
-PROFILES = REPO_ROOT / "src/panelbench/ebus_emitter/wire/profiles"
+# The data the emitter published from, not a copy of it — see
+# panelbench.conformance.emitter_data for why that distinction matters.
+CATALOGS = emitter_catalogs()
+PROFILES = emitter_profiles()
 
 
 def _reshape_stdin() -> int:

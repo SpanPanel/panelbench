@@ -1,6 +1,6 @@
 """Vendored eBus capability catalogs, loaded as data.
 
-Reads the JSON copies under ``ebus_emitter/wire/catalogs`` without importing anything
+Reads the catalog JSON the emitter ships, without importing anything
 from the emitter: the checker must be able to validate a tree it did not build.
 """
 

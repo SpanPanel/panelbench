@@ -14,6 +14,8 @@ from panelbench.conformance import (
     ConformanceReport,
     build_tree,
     check,
+    emitter_catalogs,
+    emitter_profiles,
     from_capture,
     load_catalogs,
     load_device_profiles,
@@ -21,8 +23,8 @@ from panelbench.conformance import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-CATALOGS = Path("src/panelbench/ebus_emitter/wire/catalogs")
-PROFILES = Path("src/panelbench/ebus_emitter/wire/profiles")
+CATALOGS = emitter_catalogs()
+PROFILES = emitter_profiles()
 
 
 def _report() -> ConformanceReport:

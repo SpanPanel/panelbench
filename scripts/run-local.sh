@@ -80,9 +80,9 @@ ensure_prerequisites() {
 
 ensure_venv() {
     echo "==> Syncing dependencies..."
-    # Every dependency now resolves from PyPI — the emitter is vendored at
-    # src/panelbench/ebus_emitter rather than installed from a local path —
-    # so a plain sync is sufficient. dev-setup.sh remains the documented entry point.
+    # Every dependency resolves from the lockfile — the emitter is a pinned git
+    # dependency rather than a local path or a vendored copy — so a plain sync is
+    # sufficient. dev-setup.sh remains the documented entry point.
     bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
     # shellcheck disable=SC1091
     source "${VENV_DIR}/bin/activate"
