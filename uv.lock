@@ -313,8 +313,8 @@ wheels = [
 
 [[package]]
 name = "ebus-panel-sim"
-version = "0.3.2"
-source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=feat%2Fbyo-transport-passthrough#8e89994911661f66463aa6dfcfaad970184cafd3" }
+version = "0.3.3"
+source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=feat%2Fbyo-transport-passthrough#d7765e0240c918a7537f4d9ca26844151383f028" }
 dependencies = [
     { name = "ebus-sdk" },
     { name = "pyyaml" },
