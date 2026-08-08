@@ -31,11 +31,12 @@ from panelbench.config_defaults import normalize_circuit_templates
 from panelbench.exceptions import SimulationConfigurationError
 
 if TYPE_CHECKING:
+    from ebus_panel_sim import BESSDevice
+
     from panelbench.config_types import (
         CircuitTemplateExtended,
         SimulationConfig,
     )
-    from panelbench.ebus_emitter import BESSDevice
     from panelbench.energy import EnergySystem, PowerInputs
     from panelbench.recorder import RecorderDataSource
 
@@ -1366,8 +1367,9 @@ def _build_modeling_bess(
     if not (isinstance(bess_yaml, dict) and bess_yaml.get("enabled")):
         return None
 
-    from panelbench.ebus_emitter import BESSConfig, ChargeMode
-    from panelbench.ebus_emitter import BESSDevice as _BESSDevice
+    from ebus_panel_sim import BESSConfig
+    from ebus_panel_sim import BESSDevice as _BESSDevice
+    from ebus_panel_sim.native_devices.bess import ChargeMode
 
     raw_mode = bess_yaml.get("charge_mode", "self-consumption")
     mode: ChargeMode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
@@ -1404,7 +1406,7 @@ def _bess_dispatch(
     no device is configured."""
     if device is None:
         return 0.0
-    from panelbench.ebus_emitter.native_devices import NativeTickContext
+    from ebus_panel_sim.native_devices import NativeTickContext
 
     snap = device.tick(
         NativeTickContext(

@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from panelbench.ebus_emitter import DeviceInstance, DeviceManifest
+from ebus_panel_sim import DeviceInstance, DeviceManifest
+
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 
@@ -159,10 +160,11 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
         "nameplate-capacity-kwh": str(bess_cfg.get("nameplate_capacity_kwh", 13.5)),
         "relative-position": str(bess_cfg.get("relative_position", "UPSTREAM")),
     }
-    if "product_name" in bess_cfg:
-        bess_meta["product-name"] = str(bess_cfg["product_name"])
-    if "model" in bess_cfg:
-        bess_meta["model"] = str(bess_cfg["model"])
+    model = bess_cfg.get("model") or bess_cfg.get("product_name")
+    if model is not None:
+        bess_meta["model"] = str(model)
+    if "part_number" in bess_cfg:
+        bess_meta["part-number"] = str(bess_cfg["part_number"])
     if "serial_number" in bess_cfg:
         bess_meta["serial-number"] = str(bess_cfg["serial_number"])
     if "firmware_version" in bess_cfg:
@@ -190,14 +192,14 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
         relative_position = "IN_PANEL" if pv_feed is not None else "UPSTREAM"
     metadata = {
         "vendor-name": str(pv_cfg.get("vendor", "Enphase")),
-        "nameplate-capacity-w": str(
+        "nominal-power-w": str(
             pv_cfg.get("nameplate_capacity_w") or _device_nameplate_w(profile, "pv", 5000.0),
         ),
         "inverter-type": inverter_type,
         "relative-position": str(relative_position),
     }
     if "product_name" in pv_cfg:
-        metadata["product-name"] = str(pv_cfg["product_name"])
+        metadata["model"] = str(pv_cfg["product_name"])
     if "serial_number" in pv_cfg:
         metadata["serial-number"] = str(pv_cfg["serial_number"])
     if "firmware_version" in pv_cfg:
@@ -230,7 +232,7 @@ def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     panel_id = profile["panel_config"]["serial_number"]
     base_metadata = {
         "vendor-name": str(evse_cfg.get("vendor", "SPAN")),
-        "product-name": str(evse_cfg.get("product", "SPAN Drive")),
+        "model": str(evse_cfg.get("product", "SPAN Drive")),
         "part-number": str(evse_cfg.get("part_number", "SPN-DRV-001")),
         "firmware-version": str(evse_cfg.get("firmware_version", "sim/v0.1.0")),
         "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),

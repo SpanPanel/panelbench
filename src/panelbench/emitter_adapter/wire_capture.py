@@ -30,13 +30,20 @@ _DEVICE_SEGMENT = 2
 _MIN_SEGMENTS = 4
 
 
-class RecordingPublisher:
-    """Satisfies `MqttPublisher`, keeping the last payload seen per topic.
+class RecordingTransport:
+    """Satisfies `MqttDeviceTransport`, keeping the last payload seen per topic.
 
     Last-wins rather than an append-only log, because that is what a broker's
     retained store holds and therefore what a consumer replays on connect. A
     value corrected within a single tick should leave only the correction here.
+
+    Synchronous, like the contract it implements. There is no queue and no client
+    behind it, so a publish is complete the moment it returns — which is what
+    makes a capture a plain function call rather than something to await and
+    drain.
     """
+
+    is_running = True
 
     def __init__(self) -> None:
         self.retained: dict[str, bytes] = {}
@@ -44,16 +51,13 @@ class RecordingPublisher:
     def is_connected(self) -> bool:
         return True
 
-    async def publish(
-        self, topic: str, payload: bytes, qos: int = 0, retain: bool = False
-    ) -> None:
+    def publish(self, topic: str, data: str, qos: int = 1, retain: bool = False) -> object:
         del qos, retain
-        self.retained[topic] = payload
+        self.retained[topic] = str(data).encode()
+        return None
 
-    async def subscribe(self, topic: str) -> None:
-        del topic
-
-    async def disconnect(self) -> None:
+    def subscribe(self, sub: str, param: object = None, qos: int = 1) -> object:
+        del sub, param, qos
         return None
 
 
@@ -80,8 +84,8 @@ async def capture(config: pathlib.Path) -> dict[str, dict[str, str]]:
     engine = DynamicSimulationEngine(config_path=config)
     await engine.initialize_async()
 
-    recorder = RecordingPublisher()
-    runtime = await emitter_runtime.start_clone(engine, publisher=recorder)
+    recorder = RecordingTransport()
+    runtime = await emitter_runtime.start_clone(engine, transport=recorder)
     # start() publishes the tree and its descriptions; one tick fills in values.
     await emitter_runtime.publish_tick(runtime)
 

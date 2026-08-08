@@ -17,20 +17,24 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import aiomqtt
-
-from panelbench.ebus_emitter import (
+from ebus_panel_sim import (
     BESSConfig,
-    ChargeMode,
     DeviceManifest,
     EbusPanelSnapshot,
     Emitter,
     LoadSheddingConfig,
+    MqttDeviceTransport,
     PanelEnvelopeTick,
     SetterRegistry,
     TickInputs,
 )
+
+# Not re-exported from the package root, unlike every other name above.
+from ebus_panel_sim.native_devices.bess import ChargeMode
+
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.spec_generator import build_manifest
+from panelbench.emitter_adapter.transport import LoopBoundTransport
 
 if TYPE_CHECKING:
     from panelbench.config_types import (
@@ -80,9 +84,14 @@ class CloneRuntime:
     engine: DynamicSimulationEngine
     manifest: DeviceManifest
     setters: SetterRegistry
-    mqtt: MqttPublisher
+    transport: MqttDeviceTransport
     emitter: Emitter
     uuid_to_circuit_id: dict[str, str]
+    mqtt: MqttPublisher | None = None
+    """The async client, when this runtime opened one.
+
+    ``None`` when a transport was injected: whoever supplied it owns its
+    lifecycle, which is the same rule the SDK follows for an injected client."""
 
 
 class _AiomqttPublisher:
@@ -238,7 +247,7 @@ async def start_clone(
     engine: DynamicSimulationEngine,
     *,
     broker: BrokerConnection | None = None,
-    publisher: MqttPublisher | None = None,
+    transport: MqttDeviceTransport | None = None,
 ) -> CloneRuntime:
     """Assemble the emitter for ``engine``: build manifest, open MQTT, run
     lifecycle. Returns a runtime the panel holds across ticks.
@@ -249,12 +258,14 @@ async def start_clone(
            ``SimulatorApp`` from CLI/env).
         3. Default 127.0.0.1:1883 anonymous (no TLS).
 
-    ``publisher`` substitutes the MQTT client, and when given no broker is
+    ``transport`` substitutes the MQTT client, and when given no broker is
     resolved or connected. It exists so a capture can be taken through this
     function rather than beside it: a script that reassembled the emitter itself
     would be a second, quietly diverging copy of the wiring below, and a capture
     is only worth anything if it went through the same assembly a real panel
-    does."""
+    does. Its lifecycle stays with whoever supplied it — the same rule the SDK
+    applies to an injected client, and the reason ``MqttDeviceTransport`` has no
+    ``start`` or ``stop``."""
     manifest = build_manifest(engine.config)
 
     uuid_to_circuit_id = {stable_circuit_uuid(c["id"]): c["id"] for c in engine.config["circuits"]}
@@ -263,18 +274,14 @@ async def start_clone(
     # SetterRegistry — no producer-side wiring required.
     setters = SetterRegistry()
 
-    lwt_topic, lwt_payload, lwt_qos, lwt_retain = Emitter.lwt_settings(manifest)
-    will = aiomqtt.Will(
-        topic=lwt_topic,
-        payload=lwt_payload,
-        qos=lwt_qos,
-        retain=lwt_retain,
-    )
+    # The will rides the CONNECT packet, so it has to be registered on the client
+    # before it connects — earlier than there is an Emitter to ask, which is why
+    # `lwt_settings` is a staticmethod over the manifest. The qos and retain
+    # defaults match what the SDK's own client applies to the same descriptor.
+    lwt = Emitter.lwt_settings(manifest)
 
-    mqtt: MqttPublisher
-    if publisher is not None:
-        mqtt = publisher
-    else:
+    mqtt: MqttPublisher | None = None
+    if transport is None:
         broker_cfg: BrokerConfigYAML = engine.config.get("broker") or {}
         resolved = _resolve_broker(broker_cfg, broker)
         aiomqtt_publisher = _AiomqttPublisher(
@@ -283,11 +290,23 @@ async def start_clone(
             client_id=f"span-sim-{engine.serial_number}",
             username=resolved.username,
             password=resolved.password,
-            will=will,
+            will=aiomqtt.Will(
+                topic=lwt["topic"],
+                payload=lwt["payload"],
+                qos=0,
+                retain=True,
+            ),
             ca_cert_path=resolved.ca_cert_path,
         )
         await aiomqtt_publisher.connect()
         mqtt = aiomqtt_publisher
+        loop_bound = LoopBoundTransport(
+            publish=aiomqtt_publisher.publish,
+            subscribe=aiomqtt_publisher.subscribe,
+            connected=aiomqtt_publisher.is_connected,
+        )
+        loop_bound.start()
+        transport = loop_bound
 
     # The emitter Phase 2 reshape pluralised the BESS-config parameter:
     # ``bess_configs`` is a tuple keyed internally by ``instance_id``. The
@@ -298,7 +317,7 @@ async def start_clone(
     emitter = Emitter(
         manifest,
         setters,
-        mqtt,
+        mqttc=transport,
         bess_configs=bess_configs,
         load_shedding_config=_load_shedding_config_from_engine(engine),
     )
@@ -307,12 +326,16 @@ async def start_clone(
         engine=engine,
         manifest=manifest,
         setters=setters,
-        mqtt=mqtt,
+        transport=transport,
         emitter=emitter,
         uuid_to_circuit_id=uuid_to_circuit_id,
+        mqtt=mqtt,
     )
 
-    await emitter.start()
+    # Synchronous, and returns immediately for an injected client rather than
+    # polling is_connected for the connect timeout: the SDK never starts a client
+    # it did not build, so nothing would change during the wait.
+    emitter.start()
     return runtime
 
 
@@ -327,14 +350,25 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
         evse=_evse_tick_inputs(runtime.engine.config, raw["circuits"]),
         envelope=PanelEnvelopeTick(),
     )
-    return await runtime.emitter.publish_tick(tick)
+    return runtime.emitter.publish_tick(tick)
 
 
 async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
+    """Tear down, letting the loop turn before the client goes away.
+
+    ``stop`` queues the root's final ``$state`` through the transport and cannot
+    flush it: the SDK's publish path is synchronous and this transport is backed
+    by an async client. Closing the client in the same breath drops that state and
+    leaves consumers looking at a retained tree that still says ``ready``. So the
+    transport is drained first, and only then is the connection closed.
+    """
     try:
-        await runtime.emitter.stop(graceful=graceful, clear_retained=True)
+        runtime.emitter.stop(graceful=graceful, clear_retained=True)
     finally:
-        await runtime.mqtt.disconnect()
+        if isinstance(runtime.transport, LoopBoundTransport):
+            await runtime.transport.aclose()
+        if runtime.mqtt is not None:
+            await runtime.mqtt.disconnect()
 
 
 def _evse_tick_inputs(

@@ -18,8 +18,9 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
+    from ebus_panel_sim import EbusBatterySnapshot
+
     from panelbench.config_types import BESSConfigYAML
-    from panelbench.ebus_emitter import EbusBatterySnapshot
     from panelbench.emitter_adapter.runtime import BrokerConnection, CloneRuntime
     from panelbench.recorder import RecorderDataSource
 

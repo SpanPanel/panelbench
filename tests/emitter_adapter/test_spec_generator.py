@@ -153,7 +153,9 @@ def test_pv_metadata_includes_inverter_type() -> None:
     manifest = build_manifest(profile)
     pv = manifest.of_class("pv")[0]
     assert pv.metadata["inverter-type"] == "hybrid"
-    assert pv.metadata["nameplate-capacity-w"] == "7000.0"
+    # `nominal-power-w`, not `nameplate-capacity-w`: the emitter requires this
+    # spelling and rejects the manifest without it.
+    assert pv.metadata["nominal-power-w"] == "7000.0"
     assert pv.metadata["relative-position"] == "UPSTREAM"
     # Hybrid PV → panel becomes islandable.
     panel = manifest.of_class("panel")[0]
@@ -168,7 +170,11 @@ def test_evse_metadata_includes_physics_keys() -> None:
     }
     evse = build_manifest(profile).of_class("evse")[0]
     assert evse.metadata["max-current-a"] == "40.0"
-    assert evse.metadata["product-name"] == "SPAN Drive"
+    # v1.0 split the SKU from the human designation: `part-number` is the SKU,
+    # `model` the designation. This used to publish the designation as
+    # `product-name`, which the emitter does not read and consumers never saw.
+    assert evse.metadata["model"] == "SPAN Drive"
+    assert evse.metadata["part-number"] == "SPN-DRV-001"
 
 
 def test_circuit_relay_behavior_translates_underscore_to_hyphen() -> None:
