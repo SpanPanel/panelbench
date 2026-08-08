@@ -115,10 +115,19 @@ module = "timezonefinder"
 ignore_missing_imports = true
 
 [tool.uv.sources]
-# spanpanel/main is the fork's integration branch: upstream main, plus our
-# not-yet-merged contributions, plus fixes upstream has not taken. Pinning a
-# review branch instead once left the lock on a mid-review commit for days,
-# missing API this repo had already started calling.
+# spanpanel/main is the fork's integration branch: an upstream release tag, plus
+# only the fixes upstream has not taken yet. It sat on our own unmerged PR branch
+# until upstream released 0.4.0 carrying it; rebasing onto the tag dropped the
+# stack, so the delta from a release is now two commits and readable as a diff.
+#
+# Prefer a release here the moment one carries what we need. It does not yet:
+# PyPI 0.4.0 still publishes grid/grid-forming-entity as the class name "BESS"
+# rather than a device id, measured against the released wheel and against this
+# suite (pin 0.4.0 and tests/fidelity/test_islanded_wire.py fails, alone). When
+# that fix lands upstream, drop this source override rather than bumping the rev.
+#
+# Pinning a *review* branch instead once left the lock on a mid-review commit for
+# days, missing API this repo had already started calling.
 ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "spanpanel/main" }
 
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a

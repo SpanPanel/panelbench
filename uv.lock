@@ -313,8 +313,8 @@ wheels = [
 
 [[package]]
 name = "ebus-panel-sim"
-version = "0.3.3"
-source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=spanpanel%2Fmain#f7ec1cfad0b4bc67c62212347b513934b706ea4f" }
+version = "0.4.0"
+source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=spanpanel%2Fmain#e20c368b3568fabd1a524ad311eec976a6a473ca" }
 dependencies = [
     { name = "ebus-sdk" },
     { name = "pyyaml" },
