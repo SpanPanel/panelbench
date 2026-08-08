@@ -5,9 +5,19 @@ specification permits omission — so a producer that publishes almost nothing i
 perfectly conformant. This asks the other question: does panelbench publish what
 the reference producer publishes?
 
-Compares **structure and metadata only**. Numeric payloads and timestamps vary by
-design between the two and are never grounds for a failure; what is compared is
-which devices exist, and which properties each declares.
+Two comparisons live here, and they answer different questions.
+
+``compare`` is structural: which devices exist, and which properties each
+declares. Numeric payloads and timestamps vary by design between the two and are
+never grounds for a failure.
+
+``compare_identity_values`` compares the *payloads* of the ``info`` node, and
+only those. Structure alone cannot see a device whose identity is wrong rather
+than absent — a MID publishing the wrong serial is byte-for-byte structurally
+perfect. ``info`` is the right and only scope for this: it is a catalog-declared
+node whose properties resolve from ``DeviceInstance.metadata``, so it is exactly
+the surface a manifest builder decides. Every other node resolves from tick
+physics, where divergence is expected.
 
 Devices are aligned by declared ``type`` and ``name``, never by instance id. The
 reference hashes ids with ``sha256("panel-sim-example:" + id)[:32]`` while
@@ -48,6 +58,14 @@ runs.
 # Homie topics are `ebus/<version>/<device-id>/<rest...>`.
 _DEVICE_SEGMENT = 2
 _MIN_SEGMENTS = 4
+
+IDENTITY_NODE = "info"
+"""The catalog node carrying manifest-derived identity, per ``wire/catalogs/info.json``.
+
+Named rather than inlined because it is a claim about the specification: these
+are the properties a *manifest builder* decides, which is what makes them
+comparable across producers at all.
+"""
 
 
 class RecordingTransport:
@@ -219,6 +237,49 @@ class ParityReport:
             for key in keys:
                 lines.append(f"  extra:   {role}  {key}")
         return "\n".join(lines) or "  (no structural difference)"
+
+
+@dataclass(frozen=True)
+class ValueReport:
+    """Identity payloads that disagree between the two producers."""
+
+    differing: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    """role -> ``info/...`` key -> ``[reference value, panelbench value]``."""
+
+    def as_baseline(self) -> dict[str, dict[str, list[str]]]:
+        return self.differing
+
+    def describe(self) -> str:
+        lines = [
+            f"  {role}  {key}\n      reference:  {ref!r}\n      panelbench: {sub!r}"
+            for role, keys in sorted(self.differing.items())
+            for key, (ref, sub) in sorted(keys.items())
+        ]
+        return "\n".join(lines) or "  (every shared identity value agrees)"
+
+
+def compare_identity_values(
+    reference: dict[str, dict[str, str]], subject: dict[str, dict[str, str]]
+) -> ValueReport:
+    """Diff ``info/*`` payloads for devices and keys both producers publish.
+
+    Keys only one side publishes are ``compare``'s finding, not this one.
+    Reporting them here too would couple the two baselines, so that a single
+    missing property has to be recorded — and later cleared — in two files.
+    """
+    ref = by_role(reference)
+    sub = by_role(subject)
+
+    differing: dict[str, dict[str, list[str]]] = {}
+    for role in sorted(set(ref) & set(sub)):
+        mismatched = {
+            key: [ref[role][key], sub[role][key]]
+            for key in sorted(set(ref[role]) & set(sub[role]))
+            if key.startswith(f"{IDENTITY_NODE}/") and ref[role][key] != sub[role][key]
+        }
+        if mismatched:
+            differing[role] = mismatched
+    return ValueReport(differing=differing)
 
 
 def compare(

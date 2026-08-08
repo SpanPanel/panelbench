@@ -1,0 +1,48 @@
+{
+  "minimal": {
+    "energy.ebus.device.distribution-enclosure::Example 40-tab Panel": {
+      "info/firmware-version": [
+        "example/v0.1.0",
+        "sim/v0.1.0"
+      ],
+      "info/serial-number": [
+        "example-40t-001",
+        "sim-example-40t-001"
+      ]
+    },
+    "energy.ebus.device.evse::SPAN Drive - Driveway": {
+      "info/firmware-version": [
+        "example/v0.1.0",
+        "sim/v0.1.0"
+      ],
+      "info/serial-number": [
+        "SIM-EVSE-example-40t-001-2",
+        "SIM-EVSE-sim-example-40t-001-2"
+      ]
+    },
+    "energy.ebus.device.evse::SPAN Drive - Garage": {
+      "info/firmware-version": [
+        "example/v0.1.0",
+        "sim/v0.1.0"
+      ],
+      "info/serial-number": [
+        "SIM-EVSE-example-40t-001",
+        "SIM-EVSE-sim-example-40t-001"
+      ]
+    }
+  },
+  "rich": {
+    "energy.ebus.device.evse::SPAN Drive - Driveway": {
+      "info/firmware-version": [
+        "example/v0.1.0",
+        "sim/v0.1.0"
+      ]
+    },
+    "energy.ebus.device.evse::SPAN Drive - Garage": {
+      "info/firmware-version": [
+        "example/v0.1.0",
+        "sim/v0.1.0"
+      ]
+    }
+  }
+}
