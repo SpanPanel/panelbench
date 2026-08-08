@@ -11,8 +11,7 @@ Includes a web dashboard for real-time configuration, grid simulation, Home Assi
 
 ## Status: not installable yet, and that is deliberate
 
-**No SPAN firmware publishes the v1.0 tree.** It arrives in `r202633+`, projected — not committed — for the first two weeks of September 2026. Until then this
-cannot be released as a Home Assistant app.
+**No SPAN firmware publishes the v1.0 tree.** It arrives in `r202633+`.
 
 Cloning follows the same line: it reads a panel running `r202633+` and **does not clone earlier firmware**. A flat-schema panel is
 [`SpanPanel/simulator`](https://github.com/SpanPanel/simulator)'s job, not this one — the two schemas are not convertible, so there is no fallback path here.
