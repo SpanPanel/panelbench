@@ -115,7 +115,11 @@ module = "timezonefinder"
 ignore_missing_imports = true
 
 [tool.uv.sources]
-ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "feat/byo-transport-passthrough" }
+# spanpanel/main is the fork's integration branch: upstream main, plus our
+# not-yet-merged contributions, plus fixes upstream has not taken. Pinning a
+# review branch instead once left the lock on a mid-review commit for days,
+# missing API this repo had already started calling.
+ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "spanpanel/main" }
 
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a
 # TYPE_CHECKING import. mypy under --strict still complains about the forward ref when

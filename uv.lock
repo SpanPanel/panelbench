@@ -314,7 +314,7 @@ wheels = [
 [[package]]
 name = "ebus-panel-sim"
 version = "0.3.3"
-source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=feat%2Fbyo-transport-passthrough#d7765e0240c918a7537f4d9ca26844151383f028" }
+source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=spanpanel%2Fmain#f7ec1cfad0b4bc67c62212347b513934b706ea4f" }
 dependencies = [
     { name = "ebus-sdk" },
     { name = "pyyaml" },
@@ -718,7 +718,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "amqtt", specifier = ">=0.11.3" },
-    { name = "ebus-panel-sim", git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=feat%2Fbyo-transport-passthrough" },
+    { name = "ebus-panel-sim", git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=spanpanel%2Fmain" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.0" },
