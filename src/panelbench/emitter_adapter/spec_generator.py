@@ -16,12 +16,19 @@ from typing import TYPE_CHECKING
 
 from ebus_panel_sim import DeviceInstance, DeviceManifest
 
-from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
+from panelbench.emitter_adapter.instance_ids import (
+    bess_device_id,
+    evse_device_id,
+    evse_serial_number,
+    lugs_device_ids,
+    mid_device_id,
+    pv_device_id,
+    stable_circuit_uuid,
+)
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 
 if TYPE_CHECKING:
     from panelbench.config_types import (
-        BESSConfigYAML,
         CircuitDefinitionExtended,
         CircuitTemplateExtended,
         SimulationConfig,
@@ -98,16 +105,17 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
 
 
 def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
+    upstream_id, downstream_id = lugs_device_ids(profile["panel_config"]["serial_number"])
     return [
         DeviceInstance(
             entity_class="lugs",
-            instance_id="lugs-upstream",
+            instance_id=upstream_id,
             display_name="Upstream lugs",
             metadata={"direction": "upstream"},
         ),
         DeviceInstance(
             entity_class="lugs",
-            instance_id="lugs-downstream",
+            instance_id=downstream_id,
             display_name="Downstream lugs",
             metadata={"direction": "downstream"},
         ),
@@ -191,7 +199,7 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
         bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
     return DeviceInstance(
         entity_class="bess",
-        instance_id=_bess_instance_id(bess_cfg),
+        instance_id=bess_device_id(profile["panel_config"]["serial_number"], bess_cfg),
         display_name="Battery",
         metadata=bess_meta,
     )
@@ -235,7 +243,7 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
         metadata["model"] = str(mid_model)
     return DeviceInstance(
         entity_class="mid",
-        instance_id=f"{_bess_instance_id(bess_cfg)}-mid",
+        instance_id=mid_device_id(profile["panel_config"]["serial_number"], bess_cfg),
         display_name="Microgrid Interconnect Device",
         metadata=metadata,
     )
@@ -270,7 +278,7 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
         metadata["feed"] = pv_feed
     return DeviceInstance(
         entity_class="pv",
-        instance_id=str(pv_cfg.get("instance_id", "pv")),
+        instance_id=pv_device_id(profile["panel_config"]["serial_number"], pv_cfg),
         display_name="Solar",
         metadata=metadata,
     )
@@ -297,12 +305,11 @@ def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
         "firmware-version": str(evse_cfg.get("firmware_version", "sim/v0.1.0")),
         "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),
     }
-    base_id = str(evse_cfg.get("instance_id", "evse"))
     instances: list[DeviceInstance] = []
     for idx, feed in enumerate(feeds, start=1):
-        instance_id = base_id if idx == 1 else f"{base_id}-{idx}"
+        instance_id = evse_device_id(panel_id, evse_cfg, idx)
         metadata = dict(base_metadata)
-        metadata["serial-number"] = _evse_serial_number(evse_cfg, panel_id, idx)
+        metadata["serial-number"] = evse_serial_number(evse_cfg, idx)
         if feed:
             metadata["feed"] = feed
         instances.append(
@@ -324,10 +331,6 @@ def _islandable(profile: SimulationConfig) -> bool:
         return bool(panel_cfg["islandable"])
     pv_cfg = profile.get("pv") or {}
     return bool(pv_cfg.get("enabled") and pv_cfg.get("inverter_type") == "hybrid")
-
-
-def _bess_instance_id(bess: BESSConfigYAML) -> str:
-    return str(bess.get("instance_id", "bess"))
 
 
 def _feed_circuit_id(profile: SimulationConfig, device_type: str) -> str | None:
@@ -356,13 +359,6 @@ def _circuits_for_device_type(
         if template is not None and template.get("device_type") == device_type:
             circuits.append(circuit)
     return circuits
-
-
-def _evse_serial_number(evse_cfg: object, panel_id: str, idx: int) -> str:
-    if isinstance(evse_cfg, dict) and "serial_number" in evse_cfg:
-        serial = str(evse_cfg["serial_number"])
-        return serial if idx == 1 else f"{serial}-{idx}"
-    return f"SIM-EVSE-{panel_id}" if idx == 1 else f"SIM-EVSE-{panel_id}-{idx}"
 
 
 def _evse_display_name(feed_circuits: list[CircuitDefinitionExtended], idx: int) -> str:

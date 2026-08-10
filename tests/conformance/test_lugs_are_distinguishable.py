@@ -39,8 +39,6 @@ from panelbench.emitter_adapter.wire_capture import capture
 _REPO = pathlib.Path(__file__).resolve().parent.parent.parent
 _CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
 
-_UPSTREAM = "lugs-upstream"
-_DOWNSTREAM = "lugs-downstream"
 _METER = (
     "meter/active-power",
     "meter/current-a",
@@ -50,15 +48,24 @@ _METER = (
 )
 
 
+def _by_direction(captured: dict[str, dict[str, str]], direction: str) -> dict[str, str]:
+    """Resolve a lugs device the way a consumer does — by `info/direction`.
+
+    Never by device id. `schema_1`'s `find_lugs` resolves by direction, so a test
+    keyed on ids would assert an assumption the mapper does not make, and would
+    break for a reason unrelated to what it measures the next time ids change.
+    """
+    found = [body for body in captured.values() if body.get("info/direction") == direction]
+    assert len(found) == 1, f"expected exactly one {direction} lugs device, found {len(found)}"
+    return found[0]
+
+
 @pytest.mark.asyncio
 async def test_the_two_lugs_devices_publish_different_meters() -> None:
     captured = await capture(_CONFIG)
 
-    for device in (_UPSTREAM, _DOWNSTREAM):
-        assert device in captured, f"{device} published nothing, so the pair cannot be compared"
-
-    upstream = captured[_UPSTREAM]
-    downstream = captured[_DOWNSTREAM]
+    upstream = _by_direction(captured, "UPSTREAM")
+    downstream = _by_direction(captured, "DOWNSTREAM")
 
     shared = [prop for prop in _METER if prop in upstream and prop in downstream]
     assert shared, f"neither lugs device published any of {_METER}"
@@ -66,7 +73,7 @@ async def test_the_two_lugs_devices_publish_different_meters() -> None:
     differing = [prop for prop in shared if upstream[prop] != downstream[prop]]
 
     assert differing, (
-        "lugs-upstream and lugs-downstream published byte-identical meters on every "
+        "the upstream and downstream lugs published byte-identical meters on every "
         f"property ({shared}), so nothing can tell them apart and a consumer that "
         "swapped grid power for feedthrough would read the same. The usual cause is "
         "circuits placed downstream-of-lugs, which makes the feedthrough sum equal the "

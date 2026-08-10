@@ -32,15 +32,15 @@ def test_build_manifest_derives_pv_and_evse_from_device_type_templates() -> None
     manifest = build_manifest(_profile())
 
     pv = manifest.of_class("pv")[0]
-    assert pv.instance_id == "pv"
+    assert pv.instance_id == "sim-40t-001-pv-1"
     assert pv.metadata["feed"] == stable_circuit_uuid("solar_inverter")
     assert pv.metadata["relative-position"] == "IN_PANEL"
 
     evse = manifest.of_class("evse")[0]
-    assert evse.instance_id == "evse"
+    assert evse.instance_id == "sim-40t-001-SIM-EVSE-001"
     assert evse.metadata["feed"] == stable_circuit_uuid("span_drive_garage")
     assert len(manifest.of_class("evse")) == 2
-    assert manifest.of_class("evse")[1].instance_id == "evse-2"
+    assert manifest.of_class("evse")[1].instance_id == "sim-40t-001-SIM-EVSE-002"
     assert manifest.of_class("evse")[1].metadata["feed"] == stable_circuit_uuid(
         "span_drive_driveway",
     )
@@ -152,7 +152,7 @@ def test_bess_metadata_includes_physics_keys() -> None:
         "bess": {"enabled": True, "nameplate_capacity_kwh": 13.5, "initial_soe_kwh": 6.75},
     }
     bess = build_manifest(profile).of_class("bess")[0]
-    assert bess.instance_id == "bess"
+    assert bess.instance_id == "abc-123-bess"
     assert bess.metadata["vendor-name"] == "Span"
     assert bess.metadata["nameplate-capacity-kwh"] == "13.5"
     assert bess.metadata["relative-position"] == "UPSTREAM"

@@ -32,7 +32,11 @@ from ebus_panel_sim import (
 # Not re-exported from the package root, unlike every other name above.
 from ebus_panel_sim.native_devices.bess import ChargeMode
 
-from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
+from panelbench.emitter_adapter.instance_ids import (
+    bess_device_id,
+    evse_device_id,
+    stable_circuit_uuid,
+)
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.transport import LoopBoundTransport
 
@@ -174,9 +178,8 @@ def _build_bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig |
         return None
     raw_mode = bess.get("charge_mode", "self-consumption")
     mode: ChargeMode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
-    del serial_number
     return BESSConfig(
-        instance_id=str(bess.get("instance_id", "bess")),
+        instance_id=bess_device_id(serial_number, bess),
         nameplate_capacity_kwh=float(bess.get("nameplate_capacity_kwh", 13.5)),
         max_charge_w=float(bess.get("max_charge_w", 3500.0)),
         max_discharge_w=float(bess.get("max_discharge_w", 3500.0)),
@@ -384,16 +387,15 @@ def _evse_tick_inputs(
     configured to one feed.
     """
     evse_cfg = config.get("evse")
-    base_evse_id = "evse"
     explicit_feed: str | None = None
-    if isinstance(evse_cfg, dict):
-        base_evse_id = str(evse_cfg.get("instance_id", base_evse_id))
+    if evse_cfg is not None:
         raw_feed = evse_cfg.get("feed")
         explicit_feed = str(raw_feed) if raw_feed else None
 
+    panel_id = config["panel_config"]["serial_number"]
     feeds = [explicit_feed] if explicit_feed else _feeds_for_device_type(config, "evse")
     return {
-        (base_evse_id if idx == 1 else f"{base_evse_id}-{idx}"): circuit_powers.get(feed, 0.0)
+        evse_device_id(panel_id, evse_cfg, idx): circuit_powers.get(feed, 0.0)
         for idx, feed in enumerate(feeds, start=1)
         if feed is not None
     }

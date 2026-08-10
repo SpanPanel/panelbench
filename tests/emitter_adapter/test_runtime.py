@@ -44,7 +44,7 @@ def testbess_config_from_engine_uses_yaml_values() -> None:
     }
     cfg = bess_config_from_engine(engine)
     assert cfg is not None
-    assert cfg.instance_id == "bess"
+    assert cfg.instance_id == "abc-bess"
     assert cfg.nameplate_capacity_kwh == 20.0
     assert cfg.max_charge_w == 5000.0
     assert cfg.charge_mode == "backup-only"
@@ -67,7 +67,7 @@ def testbess_config_from_engine_uses_explicit_instance_id() -> None:
     }
     cfg = bess_config_from_engine(engine)
     assert cfg is not None
-    assert cfg.instance_id == "bess-0"
+    assert cfg.instance_id == "abc-bess-0"
 
 
 def test_load_shedding_config_default_threshold() -> None:
@@ -86,6 +86,7 @@ def test_load_shedding_config_custom_threshold() -> None:
 
 def test_evse_tick_inputs_include_each_evse_feed() -> None:
     config = {
+        "panel_config": {"serial_number": "abc"},
         "circuit_templates": {
             "span_drive": {"device_type": "evse"},
             "lighting": {},
@@ -100,7 +101,10 @@ def test_evse_tick_inputs_include_each_evse_feed() -> None:
         stable_circuit_uuid("span_drive_garage"): 7200.0,
         stable_circuit_uuid("span_drive_driveway"): 3600.0,
     }
+    # Keys must equal the manifest's EVSE device ids: the emitter looks its EVSE
+    # physics up by instance id, so a disagreement here is a KeyError, not a
+    # cosmetic drift. Both sides derive them from `instance_ids`.
     assert _evse_tick_inputs(config, circuit_powers) == {
-        "evse": 7200.0,
-        "evse-2": 3600.0,
+        "abc-SIM-EVSE-001": 7200.0,
+        "abc-SIM-EVSE-002": 3600.0,
     }
