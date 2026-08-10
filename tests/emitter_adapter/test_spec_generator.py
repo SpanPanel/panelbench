@@ -37,10 +37,10 @@ def test_build_manifest_derives_pv_and_evse_from_device_type_templates() -> None
     assert pv.metadata["relative-position"] == "IN_PANEL"
 
     evse = manifest.of_class("evse")[0]
-    assert evse.instance_id == "sim-40t-001-SIM-EVSE-001"
+    assert evse.instance_id == "sim-40t-001-SIM-EVSE-sim-40t-001"
     assert evse.metadata["feed"] == stable_circuit_uuid("span_drive_garage")
     assert len(manifest.of_class("evse")) == 2
-    assert manifest.of_class("evse")[1].instance_id == "sim-40t-001-SIM-EVSE-002"
+    assert manifest.of_class("evse")[1].instance_id == "sim-40t-001-SIM-EVSE-sim-40t-001-2"
     assert manifest.of_class("evse")[1].metadata["feed"] == stable_circuit_uuid(
         "span_drive_driveway",
     )

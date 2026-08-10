@@ -105,6 +105,6 @@ def test_evse_tick_inputs_include_each_evse_feed() -> None:
     # physics up by instance id, so a disagreement here is a KeyError, not a
     # cosmetic drift. Both sides derive them from `instance_ids`.
     assert _evse_tick_inputs(config, circuit_powers) == {
-        "abc-SIM-EVSE-001": 7200.0,
-        "abc-SIM-EVSE-002": 3600.0,
+        "abc-SIM-EVSE-abc": 7200.0,
+        "abc-SIM-EVSE-abc-2": 3600.0,
     }

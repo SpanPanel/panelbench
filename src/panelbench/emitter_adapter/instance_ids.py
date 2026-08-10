@@ -78,21 +78,29 @@ def evse_device_id(panel_id: str, evse: Mapping[str, object] | None, idx: int) -
     explicit = _config_str(evse, "instance_id")
     if explicit is not None:
         return f"{panel_id}-{explicit}" if idx == 1 else f"{panel_id}-{explicit}-{idx}"
-    return f"{panel_id}-{evse_serial_number(evse, idx)}"
+    return f"{panel_id}-{evse_serial_number(evse, panel_id, idx)}"
 
 
-def evse_serial_number(evse: Mapping[str, object] | None, idx: int) -> str:
-    """The EVSE's own serial, which must not embed the panel it is attached to.
+def evse_serial_number(evse: Mapping[str, object] | None, panel_id: str, idx: int) -> str:
+    """The EVSE's own serial — and it must match what the flat simulator publishes.
 
-    A DER's serial belongs to the DER. The synthetic default used to be
-    `SIM-EVSE-<panel-serial>`, which made the proxied device id read
-    `<panel>-SIM-EVSE-<panel>` once ids took the `<proxier>-<identifier>` form —
-    the panel twice, for a value that is supposed to identify the charger.
+    `<panel>-SIM-EVSE-<panel>` reads redundantly once ids take the
+    `<proxier>-<identifier>` form, and a real Drive's serial would not embed the
+    panel it is attached to. Both true, and both outranked by this: the frozen flat
+    simulator publishes `evse/serial-number = SIM-EVSE-<panel-serial>`, and
+    `info/serial-number` is the **only** identifier a consumer can use to recognise
+    the same physical Drive on both sides of the firmware upgrade — the proxy model
+    says so explicitly, because a proxied device id is not stable across the
+    proxy-to-native transition.
+
+    So the two simulators must agree on it or the migration harness is comparing two
+    different chargers. Briefly changed to `SIM-EVSE-<idx>` for tidiness, which broke
+    exactly that; the flat side is frozen, so this side is the one that conforms.
     """
     configured = _config_str(evse, "serial_number")
     if configured is not None:
         return configured if idx == 1 else f"{configured}-{idx}"
-    return f"SIM-EVSE-{idx:03d}"
+    return f"SIM-EVSE-{panel_id}" if idx == 1 else f"SIM-EVSE-{panel_id}-{idx}"
 
 
 def _der_identifier(cfg: Mapping[str, object] | None, default: str) -> str:

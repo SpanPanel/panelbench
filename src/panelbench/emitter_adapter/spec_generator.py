@@ -309,7 +309,7 @@ def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     for idx, feed in enumerate(feeds, start=1):
         instance_id = evse_device_id(panel_id, evse_cfg, idx)
         metadata = dict(base_metadata)
-        metadata["serial-number"] = evse_serial_number(evse_cfg, idx)
+        metadata["serial-number"] = evse_serial_number(evse_cfg, panel_id, idx)
         if feed:
             metadata["feed"] = feed
         instances.append(
