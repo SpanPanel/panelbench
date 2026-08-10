@@ -145,7 +145,20 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     "breaker-rating-a": str(breaker_rating),
                     "default-priority": priority,
                     "relay-behavior": relay_behavior,
-                    "placement": str(c.get("placement", "downstream-of-lugs")),
+                    # A main panel's circuits sit on its busbar, so `upstream-of-lugs`
+                    # is the only placement any config here models. `downstream-of-lugs`
+                    # means the load is past the feedthrough, which the spec puts in a
+                    # *sub-enclosure* — its own device with its own circuits — not in
+                    # this panel's circuit list (distribution-enclosure.md 0.12, and
+                    # electrification-bus/distribution-enclosure-simulator#30).
+                    #
+                    # The old default was `downstream-of-lugs`, inherited from upstream's
+                    # example. It put every circuit past the feedthrough, which makes the
+                    # feedthrough sum equal the whole panel and the two lugs devices
+                    # publish byte-identical meters — indistinguishable, so a mapping that
+                    # swapped them read the same. `test_lugs_are_distinguishable.py` is the
+                    # guard; this default is only what keeps configs terse.
+                    "placement": str(c.get("placement", "upstream-of-lugs")),
                     "always-on": "true" if relay_behavior == "always-on" else "false",
                     "pcs-priority": str(c.get("pcs_priority", idx)),
                 },

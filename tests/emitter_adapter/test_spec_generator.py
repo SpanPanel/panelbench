@@ -93,6 +93,26 @@ def test_panel_metadata_includes_physics_keys() -> None:
     assert panel.metadata["islandable"] == "false"
 
 
+def test_a_circuit_may_still_declare_itself_downstream_of_the_lugs() -> None:
+    """The default is `upstream-of-lugs` because that is where a main panel's
+    circuits sit, but the emitter accepts either value and a config that means the
+    other one must be able to say so. Keeping the override is what stops the
+    default from being a silent policy: `test_lugs_are_distinguishable.py` then
+    catches the case where *everything* ends up downstream.
+    """
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuits": [
+            {"id": "shop", "name": "Shop Feed", "tabs": [5], "placement": "downstream-of-lugs"},
+            {"id": "kitchen", "name": "Kitchen", "tabs": [1]},
+        ],
+    }
+    by_name = {c.display_name: c for c in build_manifest(profile).of_class("circuit")}
+
+    assert by_name["Shop Feed"].metadata["placement"] == "downstream-of-lugs"
+    assert by_name["Kitchen"].metadata["placement"] == "upstream-of-lugs"
+
+
 def test_circuit_metadata_includes_physics_keys() -> None:
     profile = {
         "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
@@ -118,7 +138,7 @@ def test_circuit_metadata_includes_physics_keys() -> None:
     assert kitchen.metadata["breaker-rating-a"] == "15.0"
     assert kitchen.metadata["default-priority"] == "NICE_TO_HAVE"
     assert kitchen.metadata["relay-behavior"] == "controllable"
-    assert kitchen.metadata["placement"] == "downstream-of-lugs"
+    assert kitchen.metadata["placement"] == "upstream-of-lugs"
     assert kitchen.metadata["always-on"] == "false"
 
     hvac = by_name["HVAC"]
