@@ -21,6 +21,11 @@ bess:
   product_name: SPAN Battery
   part_number: SPN-BESS-001
   serial_number: SIM-BESS-40T-001
+  # Placeholder. The BESS declares info/firmware-version and the emitter passes it
+  # through; without a value here the property is declared and never published,
+  # which creates a consumer entity that waits forever. Synthetic, so it attests
+  # the mapping and not what real firmware sends.
+  firmware_version: sim-bess/v0.1.0
   relative_position: UPSTREAM
   nameplate_capacity_kwh: 13.5
   initial_soe_kwh: 6.75

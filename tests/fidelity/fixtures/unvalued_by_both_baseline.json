@@ -1,5 +1,4 @@
 [
-  "energy.ebus.device.bess::Battery  info/firmware-version",
   "energy.ebus.device.circuit::Bathroom Lights  connection/count",
   "energy.ebus.device.circuit::Bathroom Lights  connection/feeds-device-id",
   "energy.ebus.device.circuit::Bathroom Lights  connection/feeds-device-status",
