@@ -30,7 +30,7 @@ from ebus_panel_sim import (
 )
 
 # Not re-exported from the package root, unlike every other name above.
-from ebus_panel_sim.native_devices.bess import ChargeMode
+from ebus_panel_sim import ChargeMode
 
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
