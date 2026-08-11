@@ -1367,9 +1367,8 @@ def _build_modeling_bess(
     if not (isinstance(bess_yaml, dict) and bess_yaml.get("enabled")):
         return None
 
-    from ebus_panel_sim import BESSConfig
+    from ebus_panel_sim import BESSConfig, ChargeMode
     from ebus_panel_sim import BESSDevice as _BESSDevice
-    from ebus_panel_sim import ChargeMode
 
     raw_mode = bess_yaml.get("charge_mode", "self-consumption")
     mode: ChargeMode = "backup-only" if raw_mode == "backup-only" else "self-consumption"

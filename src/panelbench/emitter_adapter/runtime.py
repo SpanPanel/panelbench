@@ -17,8 +17,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import aiomqtt
+
+# Not re-exported from the package root, unlike every other name above.
 from ebus_panel_sim import (
     BESSConfig,
+    ChargeMode,
     DeviceManifest,
     EbusPanelSnapshot,
     Emitter,
@@ -28,9 +31,6 @@ from ebus_panel_sim import (
     SetterRegistry,
     TickInputs,
 )
-
-# Not re-exported from the package root, unlike every other name above.
-from ebus_panel_sim import ChargeMode
 
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
