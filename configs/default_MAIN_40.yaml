@@ -16,6 +16,13 @@ pv:
   product_name: IQ8PLUS-72-2-US
 bess:
   enabled: true
+  # This battery forms a premises-wiring island, which is what makes the panel
+  # publish a MID child -- `devices/bess.md` requires one for a grid-forming BESS and
+  # treats its absence as "no premises-wiring backup". Stated here rather than left to
+  # be inferred from the PV inverter, which is what the gate used to read: that
+  # inference is silently wrong for a grid-forming battery paired with AC-coupled PV,
+  # or with no PV at all.
+  grid_forming: true
   instance_id: bess
   vendor: Span
   product_name: SPAN Battery

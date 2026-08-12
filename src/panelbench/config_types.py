@@ -113,6 +113,10 @@ class BESSConfigYAML(TypedDict, total=False):
     part_number: str  # The SKU, published as ``info/part-number``.
     # Model designation for the MID this BESS brings with it, when known. Distinct
     # from the battery's own ``model``: they are separate devices in v1.0.
+    # Whether this battery forms a premises-wiring island. The spec makes the MID
+    # child mandatory for one that does, and its absence the signal for one that does
+    # not, so this is what decides whether a MID is published.
+    grid_forming: bool
     mid_product_name: str
     serial_number: str
     firmware_version: str
