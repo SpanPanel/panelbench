@@ -18,6 +18,7 @@ from ebus_panel_sim import DeviceInstance, DeviceManifest
 
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
+    evse_circuit_serial,
     evse_device_id,
     evse_serial_number,
     lugs_device_ids,
@@ -313,7 +314,17 @@ def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     for idx, feed in enumerate(feeds, start=1):
         instance_id = evse_device_id(panel_id, evse_cfg, idx)
         metadata = dict(base_metadata)
-        metadata["serial-number"] = evse_serial_number(evse_cfg, panel_id, idx)
+        # The circuit's own serial wins over the panel-and-position derivation, so a
+        # config that pins identity is immune to circuit reordering. `feed_circuits`
+        # is the same list `feeds` was built from, in the same order, so index `idx-1`
+        # is this instance's circuit -- except on the explicit-feed path, which pins a
+        # single feed by id and has no circuit to read.
+        circuit = (
+            feed_circuits[idx - 1] if not explicit_feed and idx <= len(feed_circuits) else None
+        )
+        metadata["serial-number"] = evse_circuit_serial(circuit) or evse_serial_number(
+            evse_cfg, panel_id, idx
+        )
         if feed:
             metadata["feed"] = feed
         instances.append(

@@ -17,7 +17,7 @@
       ],
       "info/serial-number": [
         "SIM-EVSE-example-40t-001-2",
-        "SIM-EVSE-sim-example-40t-001-2"
+        "sim-evse-sim-example-40t-001-2"
       ]
     },
     "energy.ebus.device.evse::SPAN Drive - Garage": {
@@ -27,7 +27,7 @@
       ],
       "info/serial-number": [
         "SIM-EVSE-example-40t-001",
-        "SIM-EVSE-sim-example-40t-001"
+        "sim-evse-sim-example-40t-001"
       ]
     }
   },
@@ -36,12 +36,20 @@
       "info/firmware-version": [
         "example/v0.1.0",
         "sim/v0.1.0"
+      ],
+      "info/serial-number": [
+        "SIM-EVSE-sim-40t-001-2",
+        "sim-evse-sim-40t-001-2"
       ]
     },
     "energy.ebus.device.evse::SPAN Drive - Garage": {
       "info/firmware-version": [
         "example/v0.1.0",
         "sim/v0.1.0"
+      ],
+      "info/serial-number": [
+        "SIM-EVSE-sim-40t-001",
+        "sim-evse-sim-40t-001"
       ]
     }
   }

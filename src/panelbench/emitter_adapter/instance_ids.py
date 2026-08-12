@@ -95,12 +95,42 @@ def evse_serial_number(evse: Mapping[str, object] | None, panel_id: str, idx: in
 
     So the two simulators must agree on it or the migration harness is comparing two
     different chargers. Briefly changed to `SIM-EVSE-<idx>` for tidiness, which broke
-    exactly that; the flat side is frozen, so this side is the one that conforms.
+    exactly that; this side is the one that conforms.
+
+    **Lower-case since flat 1.0.16.** That release made the drive serial the flat
+    simulator's Homie *node id*, which makes it a topic level rather than only a
+    property value — and Homie 5 allows only `a`-`z`, `0`-`9` and `-` there. The
+    previous `SIM-EVSE-…` was legal as a value and illegal as an id, so flat could not
+    move to meet this side; this side moves. Nothing in the wire format changed here,
+    only the case of a simulated serial.
+
+    A *circuit* may carry its own `serial_number`, and that is the form to prefer: the
+    positional fallback below derives `-<idx>` from circuit walk order, so reordering
+    two drives in a config silently re-keys both of them. See `_evse_circuit_serial`.
     """
     configured = _config_str(evse, "serial_number")
     if configured is not None:
         return configured if idx == 1 else f"{configured}-{idx}"
-    return f"SIM-EVSE-{panel_id}" if idx == 1 else f"SIM-EVSE-{panel_id}-{idx}"
+    return f"sim-evse-{panel_id}" if idx == 1 else f"sim-evse-{panel_id}-{idx}"
+
+
+def evse_circuit_serial(circuit: Mapping[str, object] | None) -> str | None:
+    """A drive's own serial, read from the circuit it feeds.
+
+    Identity belongs to the drive, not to its position in a list. The fallback in
+    `evse_serial_number` appends `-<idx>` taken from the order circuits are walked, so
+    swapping two `device_type: evse` circuits in a config re-keys both drives: Home
+    Assistant builds new devices, the old ones strand with their history, and nothing
+    errors. `schema-1`'s own keying function names inventing an ordinal as the thing
+    to avoid, and that fallback invents one on the producer side.
+
+    Setting this per circuit removes the ordinal from the answer entirely. It is not
+    yet set in the shipped configs, because the flat simulator has no per-circuit
+    serial and the two must still agree while the upgrade rehearsal exists. When flat
+    retires, the shipped configs should adopt this and the positional fallback should
+    go with it.
+    """
+    return _config_str(circuit, "serial_number")
 
 
 def _der_identifier(cfg: Mapping[str, object] | None, default: str) -> str:
