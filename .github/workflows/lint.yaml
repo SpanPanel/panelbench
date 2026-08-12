@@ -3,6 +3,13 @@ name: Lint & Type Check
 on:
   pull_request:
     branches: [main]
+  # Also on push, because pull_request alone leaves `main` unwatched. The mypy hook
+  # was broken from the moment the emitter stopped being vendored and stayed broken
+  # across several pushes, all of them reporting green — the only workflow running on
+  # push was the add-on image build. The breakage surfaced on the next unrelated
+  # dependabot PR, which is a confusing place to learn about it.
+  push:
+    branches: [main]
 
 jobs:
   lint:

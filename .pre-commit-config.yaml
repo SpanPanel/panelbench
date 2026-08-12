@@ -21,11 +21,21 @@ repos:
       - id: mypy
         args: [--strict]
         additional_dependencies:
-          # Pinned to match the runtime pin in pyproject.toml. The hook runs in its
-          # own isolated environment, so without this mypy cannot resolve `ebus_sdk`
-          # and the SDK's py.typed types go unchecked. This replaced a pair of
-          # ignore_missing_imports overrides that silenced the import instead.
-          - ebus-sdk==0.17.0
+          # Matched to the runtime dependencies in pyproject.toml. The hook runs in its
+          # own isolated environment, so anything missing here is not merely unchecked
+          # — mypy reports `import-not-found` and the hook fails.
+          #
+          # `ebus-panel-sim` is listed because the emitter stopped being vendored. While
+          # it lived at `src/panelbench/ebus_emitter` mypy resolved it as an in-repo
+          # module and no entry was needed; the moment it became a dependency this hook
+          # could no longer see it. That went unnoticed because `lint.yaml` runs on
+          # `pull_request` only, so a push straight to `main` never exercises it.
+          #
+          # The git ref mirrors pyproject's, moving branch and all. A pin here that the
+          # runtime does not share would type-check against code nobody runs, which is
+          # how `ebus-sdk` drifted to 0.17.0 while the project had moved to 0.19.0.
+          - ebus-panel-sim @ git+https://github.com/SpanPanel/distribution-enclosure-simulator.git@spanpanel/main
+          - ebus-sdk==0.19.0
           - aiomqtt>=2.0.0
           - aiohttp>=3.9.0
           - aiohttp-jinja2>=1.6
