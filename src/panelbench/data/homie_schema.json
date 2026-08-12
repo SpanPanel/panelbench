@@ -1,4 +1,5 @@
 {
+    "dataModelVersion": "1.0",
     "firmwareVersion": "spanos2/r202603/05",
     "homieDomain": "ebus",
     "homieVersion": 5,

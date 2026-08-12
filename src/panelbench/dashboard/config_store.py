@@ -12,11 +12,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
+from panelbench.inverter import AC_COUPLED, normalise_inverter_type, template_inverter_type
+
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from panelbench.config_types import BESSConfigYAML
-
+from panelbench.config_types import BESSConfigYAML
 from panelbench.dashboard.defaults import make_defaults
 from panelbench.dashboard.presets import (
     evse_schedule_factors,
@@ -42,6 +43,7 @@ class EntityView:
     energy_profile: dict[str, Any]
     relay_behavior: str
     priority: str
+    inverter_type: str = AC_COUPLED
     cycling_pattern: dict[str, Any] | None = None
     time_of_day_profile: dict[str, Any] | None = None
     smart_behavior: dict[str, Any] | None = None
@@ -337,6 +339,7 @@ class ConfigStore:
             energy_profile=energy_profile,
             relay_behavior=template.get("relay_behavior", "controllable"),
             priority=template.get("priority", "NEVER"),
+            inverter_type=template_inverter_type(template),
             cycling_pattern=template.get("cycling_pattern"),
             time_of_day_profile=template.get("time_of_day_profile"),
             smart_behavior=template.get("smart_behavior"),
@@ -385,9 +388,13 @@ class ConfigStore:
                 tabs_raw = [int(t.strip()) for t in tabs_raw.split(",") if t.strip()]
             circuit["tabs"] = tabs_raw
 
+        # Two keys, written independently. They used to be one: choosing *Hybrid*
+        # wrote `priority: MUST_HAVE`, so picking an inverter silently rewrote the
+        # circuit's published `default-priority`, and "sheds last but is grid-
+        # following" was not expressible at all.
         if "inverter_type" in data:
-            template["priority"] = "MUST_HAVE" if data["inverter_type"] == "hybrid" else "OFF_GRID"
-        elif "priority" in data:
+            template["inverter_type"] = normalise_inverter_type(str(data["inverter_type"]))
+        if "priority" in data:
             template["priority"] = data["priority"]
         if "relay_behavior" in data:
             template["relay_behavior"] = data["relay_behavior"]

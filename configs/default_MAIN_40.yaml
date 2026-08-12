@@ -532,6 +532,15 @@ circuit_templates:
       nameplate_capacity_w: 10000.0
     relay_behavior: non-controllable
     priority: NEVER
+    # A grid-forming inverter. This is what makes the site islandable, which is what
+    # gives the BESS a MID -- the device carrying islanding-state and
+    # grid-forming-entity in v1.0. Shipped hybrid so a fresh clone exercises the MID
+    # path rather than the panel_config override above, which masks it.
+    #
+    # Its own key: `priority` means load shedding only. The two used to be the same
+    # field, so choosing an inverter also rewrote the circuit's published
+    # `default-priority`.
+    inverter_type: hybrid
     device_type: pv
     breaker_rating: 30
     nameplate_capacity_w: 10000.0

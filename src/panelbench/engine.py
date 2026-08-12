@@ -29,6 +29,7 @@ from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
 from panelbench.config_defaults import normalize_circuit_templates
 from panelbench.exceptions import SimulationConfigurationError
+from panelbench.inverter import template_inverter_type
 
 if TYPE_CHECKING:
     from ebus_panel_sim import BESSDevice
@@ -1330,7 +1331,7 @@ class DynamicSimulationEngine:
                     else circuit.template
                 )
                 nameplate = float(tpl["energy_profile"]["typical_power"])
-                inverter_type = "hybrid" if tpl.get("priority") == "MUST_HAVE" else "ac_coupled"
+                inverter_type = template_inverter_type(tpl)
                 pv_config = PVConfig(nameplate_w=abs(nameplate), inverter_type=inverter_type)
                 break
 

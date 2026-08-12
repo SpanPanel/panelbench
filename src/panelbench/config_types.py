@@ -188,6 +188,9 @@ class CircuitTemplateExtended(CircuitTemplate, total=False):
     time_of_day_profile: TimeOfDayProfile
     smart_behavior: SmartBehavior
     device_type: str  # Explicit override: "circuit", "evse", "pv"
+    # Grid-forming or grid-following. Its own key: `priority` is a shedding answer,
+    # and the two used to share one field.
+    inverter_type: str
     hvac_type: str  # "central_ac", "heat_pump", "heat_pump_aux"
     monthly_factors: dict[int, float]  # month (1-12) -> multiplier (1.0 = peak month)
     breaker_rating: int  # Breaker rating in Amps (derived from power_range if not set)

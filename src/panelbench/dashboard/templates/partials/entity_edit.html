@@ -64,9 +64,12 @@
                  min="0.75" max="0.90" step="0.01" style="width:5em">
         </label>
         <label>Inverter Type:
+          {# Reads the inverter, not the shed priority. These were the same field:
+             the control showed Hybrid because the circuit sheds last, and choosing
+             one rewrote the other. #}
           <select name="inverter_type">
-            <option value="grid_tied" {{ 'selected' if e.priority != 'MUST_HAVE' }}>Grid-Tied</option>
-            <option value="hybrid" {{ 'selected' if e.priority == 'MUST_HAVE' }}>Hybrid</option>
+            <option value="ac-coupled" {{ 'selected' if e.inverter_type != 'hybrid' }}>Grid-Tied</option>
+            <option value="hybrid" {{ 'selected' if e.inverter_type == 'hybrid' }}>Hybrid</option>
           </select>
         </label>
       </div>

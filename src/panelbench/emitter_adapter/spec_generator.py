@@ -25,6 +25,12 @@ from panelbench.emitter_adapter.instance_ids import (
     pv_device_id,
     stable_circuit_uuid,
 )
+from panelbench.inverter import (
+    HYBRID,
+    normalise_inverter_type,
+    template_inverter_type,
+    template_is_hybrid,
+)
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 
 if TYPE_CHECKING:
@@ -34,12 +40,12 @@ if TYPE_CHECKING:
         SimulationConfig,
     )
 
-# Allowed Homie-convention values for circuit relay-behavior and PV
-# inverter-type — both are dash-form on the wire.  YAML clones written
-# before the dash convention may still use underscore form, so we
-# normalise once before validating.
+# Allowed Homie-convention values for circuit relay-behavior — dash-form on the
+# wire.  YAML clones written before the dash convention may still use underscore
+# form, so we normalise once before validating.  Inverter type follows the same
+# rule but lives in ``inverter``, because the engine and the dashboard have to
+# agree with this module on it.
 _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-on"})
-_VALID_INVERTER_TYPES = frozenset({"hybrid", "ac-coupled"})
 
 
 def _normalise_relay_behavior(raw: str) -> str:
@@ -48,13 +54,6 @@ def _normalise_relay_behavior(raw: str) -> str:
     ``controllable`` when unrecognised."""
     candidate = raw.lower().replace("_", "-")
     return candidate if candidate in _VALID_RELAY_BEHAVIORS else "controllable"
-
-
-def _normalise_inverter_type(raw: str) -> str:
-    """Coerce ``hybrid`` / ``ac_coupled`` (any underscore-vs-dash form) to
-    the dashed Homie convention; default to ``ac-coupled`` when unrecognised."""
-    candidate = raw.lower().replace("_", "-")
-    return candidate if candidate in _VALID_INVERTER_TYPES else "ac-coupled"
 
 
 def build_manifest(profile: SimulationConfig) -> DeviceManifest:
@@ -254,7 +253,12 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
     pv_feed = _feed_circuit_id(profile, "pv")
     if not pv_cfg.get("enabled") and pv_feed is None:
         return None
-    inverter_type = _normalise_inverter_type(str(pv_cfg.get("inverter_type", "ac-coupled")))
+    declared_inverter = pv_cfg.get("inverter_type")
+    inverter_type = (
+        normalise_inverter_type(str(declared_inverter))
+        if declared_inverter is not None
+        else template_inverter_type(_first_producer_template(profile) or {})
+    )
     relative_position = pv_cfg.get("relative_position")
     if relative_position is None:
         relative_position = "IN_PANEL" if pv_feed is not None else "UPSTREAM"
@@ -330,7 +334,26 @@ def _islandable(profile: SimulationConfig) -> bool:
     if "islandable" in panel_cfg:
         return bool(panel_cfg["islandable"])
     pv_cfg = profile.get("pv") or {}
-    return bool(pv_cfg.get("enabled") and pv_cfg.get("inverter_type") == "hybrid")
+    if pv_cfg.get("enabled"):
+        declared = normalise_inverter_type(str(pv_cfg.get("inverter_type", "")))
+        if declared == HYBRID:
+            return True
+    return template_is_hybrid(_first_producer_template(profile))
+
+
+def _first_producer_template(profile: SimulationConfig) -> CircuitTemplateExtended | None:
+    """The template of the first producer circuit, matching ``engine.py``'s walk."""
+    templates = profile.get("circuit_templates") or {}
+    for circuit in profile.get("circuits") or []:
+        template = templates.get(circuit.get("template", ""))
+        if template is None:
+            continue
+        energy_profile = template.get("energy_profile")
+        if energy_profile is None:
+            continue
+        if str(energy_profile.get("mode", "")) == "producer":
+            return template
+    return None
 
 
 def _feed_circuit_id(profile: SimulationConfig, device_type: str) -> str | None:
