@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.1.0 — the MID follows the battery, and the two generation signals agree
+
+Also unpublished, for the reason `2.0.0` gives. The minor bump marks a change in what this produces on the wire: a consumer that captured a `2.0.0` tree and
+compares it against a `2.1.0` one will see three differences, none of them a bug fix to the consumer's side.
+
+### Fixed
+
+- **`dataModelVersion` is published on the REST schema endpoint.** It was absent, so a consumer dispatching on the REST signal — which is what the migration
+  guide's "Schema-generation detection" says to do, because the parser must exist before the first SUBSCRIBE — selected the *flat* parser for a parent/child
+  tree. It did not fail: it read every value against the wrong vocabulary and reported a clean connection. The MQTT half of the same signal was already
+  published, so the two transports disagreed and nothing looked.
+- **The MID follows the grid-forming BESS, not the PV inverter.** `devices/bess.md` makes MID presence the classifier for premises-segment backup and requires
+  a grid-forming BESS publisher to include a MID child. The gate read the PV inverter's type instead. The two agree for a hybrid-inverter site, which is why a
+  MID appeared at all, and diverge for the cases the spec cares most about: a grid-forming battery with AC-coupled PV, and a grid-forming battery with no PV —
+  the canonical residential backup product, which published no MID at all. `bess.grid_forming` states it outright now; `panel_config.islandable` and a hybrid
+  PV inverter still work as legacy signals, so configs written before the key keep their MID.
+- **EVSE identity is the Drive's serial, not its position.** Charger node ids were positional slots, so a consumer keyed on them would re-key every charger
+  when one was added or removed. Serials are lowercased to satisfy the Homie topic-id rule.
+
+### Changed
+
+- **Circuits default to `upstream-of-lugs`.** The old default put every circuit past the feedthrough, which made the feedthrough sum equal the whole panel and
+  the two lugs devices publish byte-identical meters — indistinguishable, so a mapping that swapped them read the same either way.
+
 ## 2.0.0 — parent/child eBus schema, in its own repository
 
 Not yet published: no image is built for this repository, because no SPAN firmware publishes the v1.0 tree. The version is `2.0.0` because the wire format this
