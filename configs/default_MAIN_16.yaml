@@ -8,8 +8,33 @@ panel_config:
   latitude: 37.7
   longitude: -122.4
 
+pv:
+  # Identity only. There is no `enabled` key: the PV device is instantiated from the
+  # producer circuit templates below, and this section fills in what r202633 documents
+  # on its info node rather than changing whether it exists.
+  #
+  # `serial_number` is deliberately absent, as in default_MAIN_40.yaml:
+  # `_der_identifier` prefers a serial over `instance_id`, so setting one moves the
+  # device id from `<panel>-pv-1` to `<panel>-<serial>`.
+  vendor: Enphase
+  product_name: IQ8PLUS-72-2-US
+  firmware_version: sim-pv/v0.1.0
+
 bess:
   enabled: true
+  # Identity, for the reason default_MAIN_40.yaml states at length: r202633 documents
+  # these on the device's info node and the emitter passes them through, so leaving
+  # them unset publishes a declaration with no value — an entity that never resolves
+  # rather than one a user notices is missing. Synthetic, so they attest the mapping
+  # and not what real firmware sends.
+  #
+  # No mid_* keys here: this panel is not islandable, so it stands up no MID for them
+  # to describe. Adding them would be inert rather than harmless.
+  vendor: Span
+  product_name: SPAN Battery
+  part_number: SPN-BESS-001
+  serial_number: SIM-BESS-16T-001
+  firmware_version: sim-bess/v0.1.0
   nameplate_capacity_kwh: 13.5
   max_charge_w: 3500.0
   max_discharge_w: 3500.0
