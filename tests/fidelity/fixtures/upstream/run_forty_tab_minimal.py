@@ -22,13 +22,14 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 import yaml
 from ebus_sdk import Controller
 
 from ebus_panel_sim import (
     BESSConfig,
+    ChargeMode,
     DeviceInstance,
     DeviceManifest,
     Emitter,
@@ -275,7 +276,7 @@ def _build_bess_config(profile: Mapping[str, object]) -> BESSConfig | None:
     bess = _optional_mapping(profile.get("bess"))
     if not bess.get("enabled"):
         return None
-    mode: Literal["self-consumption", "backup-only"] = (
+    mode: ChargeMode = (
         "backup-only" if bess.get("charge_mode") == "backup-only" else "self-consumption"
     )
     return BESSConfig(

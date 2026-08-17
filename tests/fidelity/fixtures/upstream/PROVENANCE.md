@@ -10,8 +10,8 @@ spec-faithful producer publishes from a given config.
 | `run_forty_tab_minimal.py` | `examples/run_forty_tab_minimal.py` |
 
 - **Repository:** `electrification-bus/distribution-enclosure-simulator`
-- **Commit:** `7fecdb30b62106da00d819aa9ab55adcaf1af980` (v0.3.3)
-- **Examples last changed at:** `c4914e354490837b93b42d56b9ab3a6c628b8826`
+- **Commit:** `8735c24c09d0d16c2eacac7c7664cff49af2248c` (v0.5.1)
+- **Examples last changed at:** `3aaddb45f16eb1d6ea2562011a82120eccf1ea3a`
 
 ## Why vendored rather than imported
 
@@ -45,3 +45,11 @@ annotating them would destroy the only property that makes them useful.
 Copy both files again, update the commit above, then run the parity test. A
 changed gap set is the point — it means the reference moved, and the baseline in
 `../parity_baseline.json` needs deliberate review rather than a blind refresh.
+
+The v0.3.3 → v0.5.1 re-sync moved `run_forty_tab_minimal.py` only, and only its
+annotations: `Literal["self-consumption", "backup-only"]` became the `ChargeMode`
+alias the emitter now exports from its root, which is the same type spelled once.
+`forty_tab_minimal.yaml` did not move at all. `parity_baseline.json` was
+reviewed and left unchanged — it still matches, which is the expected result for
+a reference whose published surface did not move, and is the evidence that it
+did not.
