@@ -111,9 +111,12 @@ class BESSConfigYAML(TypedDict, total=False):
     product_name: str
     model: str
     part_number: str  # The SKU, published as ``info/part-number``.
-    # Model designation for the MID this BESS brings with it, when known. Distinct
-    # from the battery's own ``model``: they are separate devices in v1.0.
+    # Identity for the MID this BESS brings with it, when known. Distinct from the
+    # battery's own values: they are separate devices in v1.0, each with its own
+    # row in a consumer's device registry.
     mid_product_name: str
+    mid_firmware_version: str
+    mid_hardware_version: str
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]

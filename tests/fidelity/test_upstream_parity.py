@@ -54,9 +54,11 @@ from .comparator import (
     REFERENCE_CONFIG,
     UPSTREAM,
     ParityReport,
+    by_role,
     capture_panelbench,
     capture_reference,
     compare,
+    declared_properties,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -103,8 +105,20 @@ _by_name = pytest.mark.parametrize("cell", CELLS, ids=lambda c: c.name)
 @_by_name
 @pytest.mark.asyncio
 async def test_structural_parity_matches_the_recorded_baseline(cell: Cell) -> None:
-    """The instrument. Fails on any structural movement in either direction."""
-    report = compare(capture_reference(cell.config), await capture_panelbench(cell.config))
+    """The instrument. Fails on any structural movement in either direction.
+
+    Extras that the reference *declares* and merely leaves unvalued are filtered
+    out first, for the reason `test_panelbench_publishes_nothing_the_reference_does_not`
+    states at length: `compare` diffs published values, and the reference is
+    upstream's example, so its identity values are as thin as an example needs.
+    Panelbench valuing `info/firmware-version` on a device whose profile both
+    producers share is fidelity to the firmware, not structural drift. The filter
+    is a no-op wherever the reference values what it declares.
+    """
+    reference = capture_reference(cell.config)
+    report = _without_declared_extensions(
+        compare(reference, await capture_panelbench(cell.config)), reference
+    )
 
     if cell.baseline is None:
         assert report.as_baseline() == ParityReport().as_baseline(), (
@@ -132,12 +146,51 @@ async def test_panelbench_publishes_nothing_the_reference_does_not(cell: Cell) -
     contract that the reference does not make, and the integration would build
     entities on it that firmware never sends — the orphan case, arrived at from
     the producer side. There are none today and there should not be any.
+
+    "Does not make" means does not *declare*. `compare` diffs published values, and
+    a property the reference declares but never values is not a claim panelbench
+    invented — both producers agree the property exists, and only one has a value
+    for it in this config. Valuing it is filling in a shared declaration, which is
+    the opposite of an orphan: firmware sends it, and a consumer that builds an
+    entity from it is right to. The reference is upstream's *example*, so its
+    identity values are as thin as an example needs; its `$description` is not.
+
+    So the guard is against a property absent from the reference's own
+    `$description`. That is mechanically checkable from the capture, needs no
+    allowlist to drift, and still fails on the case it was written for: a property
+    panelbench publishes that the shared profile does not declare at all.
     """
-    report = compare(capture_reference(cell.config), await capture_panelbench(cell.config))
+    reference = capture_reference(cell.config)
+    report = compare(reference, await capture_panelbench(cell.config))
+    undeclared = _without_declared_extensions(report, reference)
 
     assert not report.extra_devices, f"devices absent from the reference: {report.extra_devices}"
-    assert not report.extra_properties, (
-        f"properties absent from the reference: {report.extra_properties}"
+    assert not undeclared.extra_properties, (
+        "properties panelbench publishes that the reference does not even declare: "
+        f"{undeclared.extra_properties}"
+    )
+
+
+def _without_declared_extensions(
+    report: ParityReport, reference: dict[str, dict[str, str]]
+) -> ParityReport:
+    """Drop extras the reference declares but leaves unvalued.
+
+    What remains in `extra_properties` is the orphan case: a property panelbench
+    publishes that the shared profile does not declare at all. Nothing else about
+    the report changes — omissions in particular are untouched, because a property
+    the reference values and panelbench does not is a gap either way.
+    """
+    declared = {role: declared_properties(body) for role, body in by_role(reference).items()}
+    remaining = {
+        role: [p for p in props if p not in declared.get(role, set())]
+        for role, props in report.extra_properties.items()
+    }
+    return ParityReport(
+        missing_devices=report.missing_devices,
+        extra_devices=report.extra_devices,
+        missing_properties=report.missing_properties,
+        extra_properties={role: props for role, props in remaining.items() if props},
     )
 
 
