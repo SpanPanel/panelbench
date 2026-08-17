@@ -63,7 +63,17 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 # Where a developer checkout of the emitter usually sits, so drift is caught
 # locally. CI has no checkout and skips.
-_CONVENTIONAL_CHECKOUT = Path.home() / "projects" / "ebus" / "distribution-enclosure-simulator"
+#
+# This must be a checkout of the UPSTREAM repository, because the reference is
+# upstream's file and drift means "upstream moved". It previously named
+# `distribution-enclosure-simulator`, which was the SpanPanel fork — retired once
+# the released wheel carried the fix it existed for. A fork checkout would answer
+# a slightly different question even while it worked, and the retirement makes the
+# distinction concrete: the fork is frozen, so it can never report drift again,
+# and this check fails open (`pytest.skip`) rather than loudly.
+_CONVENTIONAL_CHECKOUT = (
+    Path.home() / "projects" / "ebus" / "distribution-enclosure-simulator-upstream"
+)
 
 
 @dataclass(frozen=True)

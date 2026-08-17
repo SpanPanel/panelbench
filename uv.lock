@@ -313,23 +313,27 @@ wheels = [
 
 [[package]]
 name = "ebus-panel-sim"
-version = "0.5.0"
-source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=spanpanel%2Fmain#8b43bc6c00142cf5ac3498c9a675dcc389cdc020" }
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ebus-sdk" },
     { name = "pyyaml" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/44/98/170cce051e700cce2cd57a778fcf1cf39ad4d7c02e0b786927c982cd6c9b/ebus_panel_sim-0.5.1.tar.gz", hash = "sha256:39f83b7db063bd12d728ae56328007e3f7ef49db9000e542cc0cf0176a3b178a", size = 158507, upload-time = "2026-08-17T17:21:17.367Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/bf/27c47092b1f812fd1b02595c7cfd9a4def1037d18bb192aff64fc295b4fc/ebus_panel_sim-0.5.1-py3-none-any.whl", hash = "sha256:4417e5d32c181724b76246eb6d749905deda9cfe58dd58079a52765fabbd37b9", size = 91013, upload-time = "2026-08-17T17:21:16.081Z" },
+]
 
 [[package]]
 name = "ebus-sdk"
-version = "0.19.0"
+version = "0.20.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ebus-mqtt-client" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/45/044c4cd557850d7dc76e7ce664fedb5ce3ee4dbc2a58e97fb17e24991993/ebus_sdk-0.19.0.tar.gz", hash = "sha256:7987d3cae7c86e31656df9cd6e31e5a2ef950c757ba24f433adf019ca9aaa51c", size = 151155, upload-time = "2026-08-07T14:42:08.602Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1d/b3/4bcd2d439a0c925c6cd1693c87b35e2470ed8c33abb0cf373b4a2591dcdb/ebus_sdk-0.20.1.tar.gz", hash = "sha256:64977c204469356ce8d9a0020efefbbe72ff1e8c98282fcf2a6718d8f04841f8", size = 178963, upload-time = "2026-08-13T07:37:13.977Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/86/aad23b5bd10abb72c3d6bc659ffd67f6b19384aa9b5507050df707ee6cbb/ebus_sdk-0.19.0-py3-none-any.whl", hash = "sha256:33aeec8d61b88373b8d1902bb8338449644d0d5aa4d75835567ad76ffebefd10", size = 95231, upload-time = "2026-08-07T14:42:07.211Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/cd/1794e714be1bf86b9fd29dc69c70e5889e5dc1973d888776de1c25127d6f/ebus_sdk-0.20.1-py3-none-any.whl", hash = "sha256:b955eba21a86bfdda5b3bde7cf125f4035ba33e17da908ca19f256f493bbff25", size = 104265, upload-time = "2026-08-13T07:37:12.52Z" },
 ]
 
 [[package]]
@@ -680,6 +684,7 @@ dependencies = [
     { name = "aiohttp-jinja2" },
     { name = "aiomqtt" },
     { name = "cryptography" },
+    { name = "ebus-panel-sim" },
     { name = "ebus-sdk" },
     { name = "jinja2" },
     { name = "paho-mqtt" },
@@ -691,7 +696,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "amqtt" },
-    { name = "ebus-panel-sim" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -707,7 +711,8 @@ requires-dist = [
     { name = "aiohttp-jinja2", specifier = ">=1.6" },
     { name = "aiomqtt", specifier = ">=2.0.0" },
     { name = "cryptography", specifier = ">=42.0.0" },
-    { name = "ebus-sdk", specifier = "==0.19.0" },
+    { name = "ebus-panel-sim", specifier = "==0.5.1" },
+    { name = "ebus-sdk", specifier = "==0.20.1" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "paho-mqtt", specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -718,7 +723,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "amqtt", specifier = ">=0.11.3" },
-    { name = "ebus-panel-sim", git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=spanpanel%2Fmain" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.0" },
