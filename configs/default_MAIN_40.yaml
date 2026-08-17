@@ -14,6 +14,22 @@ pv:
   enabled: true
   vendor: Enphase
   product_name: IQ8PLUS-72-2-US
+  # Placeholder, for the reason the BESS block below states: r202633 documents
+  # info/firmware-version on the PV, the emitter passes it through, and without a
+  # value here it is declared and never published — which leaves a consumer holding
+  # an entity that waits forever. Synthetic, so it attests the mapping rather than
+  # what real firmware sends.
+  firmware_version: sim-pv/v0.1.0
+  # `serial_number` is deliberately NOT set, even though r202633 documents
+  # info/serial-number here and it is one of the two PV properties still declared
+  # and unvalued. `_der_identifier` prefers a serial over `instance_id` when
+  # building the device id, so setting one moves this device from
+  # `<panel>-pv-1` to `<panel>-<serial>`. Device ids are what a consumer keys its
+  # registry on, and `evse_serial_number` records why they are load-bearing here:
+  # they have to match what the frozen flat simulator publishes, or `simupgrade`
+  # stops rehearsing an upgrade and starts rehearsing a device replacement.
+  # Closing this gap means first confirming the flat side's PV id, which is a
+  # question about the upgrade path rather than about this config.
 bess:
   enabled: true
   instance_id: bess
@@ -26,6 +42,14 @@ bess:
   # which creates a consumer entity that waits forever. Synthetic, so it attests
   # the mapping and not what real firmware sends.
   firmware_version: sim-bess/v0.1.0
+  # The MID's own identity, not the battery's. v1.0 makes them separate devices, so
+  # a consumer builds a second device-registry row from these three; unvalued, that
+  # row shows a blank model and no firmware. `serial-number` is not here because the
+  # generator derives it as `<bess serial>-mid`, which is the resolvable link
+  # between the two halves of one unit.
+  mid_product_name: SPAN MID
+  mid_firmware_version: sim-mid/v0.1.0
+  mid_hardware_version: rev1
   relative_position: UPSTREAM
   nameplate_capacity_kwh: 13.5
   initial_soe_kwh: 6.75

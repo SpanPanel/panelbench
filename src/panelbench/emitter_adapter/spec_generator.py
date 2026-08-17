@@ -241,6 +241,16 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
     mid_model = bess_cfg.get("mid_product_name")
     if mid_model is not None:
         metadata["model"] = str(mid_model)
+    # Firmware and hardware revision are the MID's own, not the battery's, so they
+    # get their own keys rather than reusing the BESS values. r202633 documents all
+    # three of model/firmware-version/hardware-version on the MID's info node, and
+    # they are what a consumer shows on the device card.
+    mid_firmware = bess_cfg.get("mid_firmware_version")
+    if mid_firmware is not None:
+        metadata["firmware-version"] = str(mid_firmware)
+    mid_hardware = bess_cfg.get("mid_hardware_version")
+    if mid_hardware is not None:
+        metadata["hardware-version"] = str(mid_hardware)
     return DeviceInstance(
         entity_class="mid",
         instance_id=mid_device_id(profile["panel_config"]["serial_number"], bess_cfg),
