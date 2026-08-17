@@ -16,8 +16,17 @@ dependencies = [
     "pyyaml>=6.0",
     "zeroconf>=0.131.0",
     "timezonefinder>=6.0",
-    # Runtime dependencies of the vendored eBus emitter
-    # (`src/panelbench/ebus_emitter`, see its module docstring for provenance).
+    # The eBus emitter, and what it runs on.
+    #
+    # `ebus-panel-sim` is a RUNTIME dependency, not a dev one: `app.py` imports
+    # `panelbench.emitter_adapter.runtime`, which imports `Emitter`,
+    # `MqttDeviceTransport` and eight more names from `ebus_panel_sim` at module
+    # scope. It sat in the dev group while the emitter was vendored under
+    # `src/panelbench/ebus_emitter/` and nothing needed to resolve it; de-vendoring
+    # made the group wrong without making any test fail, because the dev group is
+    # exactly what a test run installs. The add-on image builds with
+    # `pip install .`, which installs this list and no groups, so it failed on
+    # `import panelbench.app` with `ModuleNotFoundError: ebus_panel_sim`.
     #
     # ebus-sdk carries the parent/child device tree the panel/child schema requires.
     # `graph_builder` targets the tree API (`parent=<Device>`, no
@@ -38,6 +47,7 @@ dependencies = [
     # `pformat` are both still absent from `homie.py` and the logger is still NOTSET at
     # import, so the filter remains a guard rather than a live need.
     "ebus-sdk==0.19.0",
+    "ebus-panel-sim",
     "paho-mqtt>=2.0.0",
 ]
 
@@ -51,7 +61,6 @@ dev = [
     "pre-commit>=4.0",
     "types-pyyaml>=6.0",
     "amqtt>=0.11.3",
-    "ebus-panel-sim",
 ]
 
 [project.scripts]

@@ -15,7 +15,7 @@ spec-faithful producer publishes from a given config.
 
 ## Why vendored rather than imported
 
-`ebus-panel-sim` is a real dependency of this package's dev group, so the
+`ebus-panel-sim` is a real runtime dependency of this package, so the
 *emitter* needs no vendoring. But its wheel ships `packages = ["src/ebus_panel_sim"]`
 only — `examples/` is not in the distribution, and `run_forty_tab_minimal.py` is
 where the YAML-to-`DeviceManifest` reading lives.
