@@ -131,27 +131,25 @@ ignore_missing_imports = true
 [tool.uv.sources]
 # `ebus-panel-sim` points at SpanPanel/distribution-enclosure-simulator, pinned by commit.
 #
-# The fork is upstream `main` plus exactly the commits that have an OPEN PR upstream, and
-# nothing else — the four sign-frame fixes and the docs that go with them
-# (electrification-bus/distribution-enclosure-simulator#39) and the `ebus-sdk` cap bump
-# (#40, with #41 stacked to release it). It carries no feature of our own: the one commit it
-# used to carry that upstream had never seen (`data-model-version` overridable per manifest)
-# was dropped precisely so this override can expire.
+# The fork is upstream `main` at 0.5.2 plus exactly the commits of the one PR still open
+# upstream -- the four sign-frame fixes and the `AGENTS.md` rule that goes with them
+# (electrification-bus/distribution-enclosure-simulator#39). Nothing of our own.
 #
-# Two things it buys, and both go away when those PRs land:
+# It exists for one reason. PyPI publishes three of the four `power-flows` terms in the meter
+# frame rather than the enclosure's, so they do not sum to zero, and the BESS meter as the
+# exact inverse of `power-flows/battery`. This repository's captures are the evidence base
+# the consumer library derives its sign convention from, so producing them from the unfixed
+# emitter would have our producer contradict our consumer.
+# `tests/conformance/test_power_flow_balance.py` fails against the released wheel and passes
+# against this pin, which is the whole of the argument.
 #
-# 1. The sign fixes. PyPI 0.5.1 publishes three of the four `power-flows` terms in the meter
-#    frame rather than the enclosure's, and the BESS meter as the exact inverse of
-#    `power-flows/battery`. This repo's captures are the evidence base the consumer library
-#    derives its sign convention from, so producing them from the unfixed emitter would have
-#    our producer contradict our consumer.
-# 2. ebus-sdk 0.21. The published 0.5.1 declares `ebus-sdk<0.21`, which pins every consumer
-#    of it below the current SDK regardless of what they want.
+# The `ebus-sdk<0.21` cap was the *second* reason and is gone: our #40 merged and shipped in
+# 0.5.2, so the released wheel no longer pins consumers below the current SDK.
 #
-# **Drop this override when #39 and #40 merge and a release follows** — do not bump the rev
-# to pick up anything else. Depending on a fork for something no PR is chasing is how a
-# temporary override becomes permanent, which is what happened to the last one.
-ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "d38a7165b" }
+# **Drop this override when #39 merges and a release follows** -- do not bump the rev to pick
+# up anything else. Depending on a fork for something no PR is chasing is how a temporary
+# override becomes permanent, which is what happened to the last one.
+ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "e0f0e2c" }
 
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a
 # TYPE_CHECKING import. mypy under --strict still complains about the forward ref when

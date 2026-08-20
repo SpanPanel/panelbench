@@ -313,8 +313,8 @@ wheels = [
 
 [[package]]
 name = "ebus-panel-sim"
-version = "0.5.1"
-source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=d38a7165b#d38a7165b867189a31150aafcfb84b210de2f8e5" }
+version = "0.5.2"
+source = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=e0f0e2c#e0f0e2c6b83f6f782fa87ce36896317e9dedfd2a" }
 dependencies = [
     { name = "ebus-sdk" },
     { name = "pyyaml" },
@@ -707,7 +707,7 @@ requires-dist = [
     { name = "aiohttp-jinja2", specifier = ">=1.6" },
     { name = "aiomqtt", specifier = ">=2.0.0" },
     { name = "cryptography", specifier = ">=42.0.0" },
-    { name = "ebus-panel-sim", git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=d38a7165b" },
+    { name = "ebus-panel-sim", git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git?rev=e0f0e2c" },
     { name = "ebus-sdk", specifier = "==0.20.1" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "paho-mqtt", specifier = ">=2.0.0" },
