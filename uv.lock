@@ -326,14 +326,14 @@ wheels = [
 
 [[package]]
 name = "ebus-sdk"
-version = "0.20.1"
+version = "0.21.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ebus-mqtt-client" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/b3/4bcd2d439a0c925c6cd1693c87b35e2470ed8c33abb0cf373b4a2591dcdb/ebus_sdk-0.20.1.tar.gz", hash = "sha256:64977c204469356ce8d9a0020efefbbe72ff1e8c98282fcf2a6718d8f04841f8", size = 178963, upload-time = "2026-08-13T07:37:13.977Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/3c/784455cbe0e815359b32e2cd6807a889ef53e1bf84ed4210d668c2ee9dfb/ebus_sdk-0.21.0.tar.gz", hash = "sha256:3e6341cfcce9a4d9d37077b0e2edf4392cbe7ecace56596762da0b43914e4ea8", size = 194259, upload-time = "2026-08-20T15:38:15.654Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/cd/1794e714be1bf86b9fd29dc69c70e5889e5dc1973d888776de1c25127d6f/ebus_sdk-0.20.1-py3-none-any.whl", hash = "sha256:b955eba21a86bfdda5b3bde7cf125f4035ba33e17da908ca19f256f493bbff25", size = 104265, upload-time = "2026-08-13T07:37:12.52Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/91/42bed9e8b9f1f33adbf4a4e5768327166b8ab2cfc8b8f3af10bf93984925/ebus_sdk-0.21.0-py3-none-any.whl", hash = "sha256:ba0b8f1398e827defbad33f355260accc4ac52917044e96b7b1865fffed4a65a", size = 111554, upload-time = "2026-08-20T15:38:14.046Z" },
 ]
 
 [[package]]
@@ -712,7 +712,7 @@ requires-dist = [
     { name = "aiomqtt", specifier = ">=2.0.0" },
     { name = "cryptography", specifier = ">=42.0.0" },
     { name = "ebus-panel-sim", specifier = "==0.6.0" },
-    { name = "ebus-sdk", specifier = "==0.20.1" },
+    { name = "ebus-sdk", specifier = "==0.21.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "paho-mqtt", specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },

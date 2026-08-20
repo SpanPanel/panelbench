@@ -42,16 +42,24 @@ dependencies = [
     # from this file rather than the lockfile, so the declared pin is the operative control
     # in production. On any bump, re-check the `homie` logger premise documented in
     # `__main__.py` — 0.18.0 logs a missing client at `debug` when the tree is transport-free
-    # (our GH #11 / PR #20), which is exactly our case. Re-checked at 0.20.1: `setLevel` and
+    # (our GH #11 / PR #20), which is exactly our case. Re-checked at 0.21.0: `setLevel` and
     # `pformat` are both still absent from `homie.py` and the logger is still NOTSET at
     # import, so the filter remains a guard rather than a live need.
     #
-    # 0.20.1 is the floor `ebus-panel-sim` 0.5.1 declares, so these two move together: the
-    # emitter now tears down through `Device.declare_lost()` rather than approximating it.
-    # 0.20.0 also stopped republishing a retained value whose payload is byte-identical to
-    # the last one sent, which is invisible to `RecordingTransport` (last-wins per topic,
-    # like a broker's retained store) and therefore to the fidelity captures.
-    "ebus-sdk==0.20.1",
+    # 0.21.0. The floor `ebus-panel-sim` 0.6.0 declares is still 0.20.1 and its ceiling is
+    # now `<0.22` (our electrification-bus/distribution-enclosure-simulator#40), so the two
+    # no longer have to move together — this repo can take the current SDK while the emitter
+    # keeps a range. Nothing here reaches what 0.21.0 adds: `DeviceSpec` and
+    # `DeviceTreeBuilder` are a producer-side tree API the emitter has not adopted, and
+    # `mqtt_cfg=None` becoming the documented passive mode names behaviour the emitter has
+    # relied on since 0.14.0 rather than changing it.
+    #
+    # Carried forward from 0.20.x, both still true: the emitter tears down through
+    # `Device.declare_lost()` rather than approximating it, and 0.20.0 stopped republishing a
+    # retained value whose payload is byte-identical to the last one sent — invisible to
+    # `RecordingTransport` (last-wins per topic, like a broker's retained store) and
+    # therefore to the fidelity captures.
+    "ebus-sdk==0.21.0",
     "ebus-panel-sim==0.6.0",
     "paho-mqtt>=2.0.0",
 ]
