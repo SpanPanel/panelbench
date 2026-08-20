@@ -5,6 +5,11 @@ panel_config:
   serial_number: "sim-32t-001"
   total_tabs: 32
   main_size: 200
+  # `status/wifi-ssid` is declared by the enclosure and read by consumers today,
+  # as default_MAIN_40.yaml states at length; without a value it is an entity
+  # that never resolves. Synthetic, so it attests the mapping and not what a real
+  # network is called.
+  wifi_ssid: sim-wifi
   latitude: 37.7
   longitude: -122.4
 

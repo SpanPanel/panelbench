@@ -8,6 +8,24 @@ panel_config:
   islandable: true
   latitude: 37.7
   longitude: -122.4
+  # Valued because a real panel publishes it, not because the emitter can. The
+  # v1.0 enclosure declares `status/wifi-ssid` ("SSID to which the Wi-Fi network
+  # interface is connected", MAY) and r202633 documents it as the MQTT successor
+  # to `GET /api/v1/wifi/status`; the flat schema reads the same field today and
+  # the HA integration surfaces it as a panel attribute. A live-capture
+  # differential against real flat firmware found the `core` device class carried
+  # an identical property set to the simulator, so this is not a simulator
+  # artifact.
+  #
+  # Unlike the identity keys below, this one is not merely absent-by-default: the
+  # enclosure declares the property unconditionally and `status/wifi` beside it
+  # already reports the interface up, so a panel that never names the network
+  # leaves a consumer holding an entity that waits forever. `const.py` carries the
+  # same value as the fallback, so a config predating this key does not reopen the
+  # gap; it is spelled out here for the same reason `postal_code` and `time_zone`
+  # are. Synthetic, so it attests the mapping rather than what a real network is
+  # called.
+  wifi_ssid: sim-wifi
 firmware_version: sim/v0.1.0
 hardware_version: rev2
 pv:

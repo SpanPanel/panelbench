@@ -35,6 +35,7 @@ class PanelConfig(TypedDict):
     service_voltage_v: NotRequired[float]  # service voltage (default 240.0)
     line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
+    wifi_ssid: NotRequired[str]  # SSID published on status/wifi-ssid (default DEFAULT_WIFI_SSID)
 
 
 class CyclingPattern(TypedDict, total=False):

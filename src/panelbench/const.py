@@ -35,3 +35,12 @@ DEFAULT_FIRMWARE_VERSION = _firmware_version()
 # Default MQTT credentials (returned by /register)
 DEFAULT_BROKER_USERNAME = "span"
 DEFAULT_BROKER_PASSWORD = "sim-password"
+
+# SSID published on the panel's ``status/wifi-ssid``. A default rather than a
+# config-only key because the enclosure *declares* the property unconditionally
+# and ``status/wifi`` already reports the interface as up: a config that omits
+# the SSID would leave a consumer with an entity that never receives a state, and
+# every cloned config would reopen that gap. Synthetic, and prefixed like every
+# other simulated identity here, so it attests the mapping rather than claiming
+# to be what a real network is called.
+DEFAULT_WIFI_SSID = "sim-wifi"

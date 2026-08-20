@@ -4,10 +4,12 @@ integration tests against the in-process amqtt broker fixture."""
 
 from unittest.mock import MagicMock
 
+from panelbench.const import DEFAULT_WIFI_SSID
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.runtime import (
     _evse_tick_inputs,
     _load_shedding_config_from_engine,
+    _panel_envelope,
     bess_config_from_engine,
 )
 
@@ -108,3 +110,23 @@ def test_evse_tick_inputs_include_each_evse_feed() -> None:
         "abc-sim-evse-abc": 7200.0,
         "abc-sim-evse-abc-2": 3600.0,
     }
+
+
+def test_panel_envelope_publishes_the_configured_ssid() -> None:
+    config = {"panel_config": {"serial_number": "abc", "wifi_ssid": "example-net"}}
+
+    assert _panel_envelope(config).wifi_ssid == "example-net"
+
+
+def test_panel_envelope_falls_back_rather_than_leaving_the_ssid_unvalued() -> None:
+    """The point of the fallback, and the reason it is not merely a config key.
+
+    ``PanelEnvelopeTick``'s own default is ``None``, which the emitter skips — so
+    a config written before this key existed, or cloned from a live panel that
+    could not report one, would publish an enclosure declaring
+    ``status/wifi-ssid`` and never valuing it. That reaches a consumer as an
+    entity stuck at "unknown", which is the failure this guards.
+    """
+    config = {"panel_config": {"serial_number": "abc"}}
+
+    assert _panel_envelope(config).wifi_ssid == DEFAULT_WIFI_SSID
