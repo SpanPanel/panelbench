@@ -32,6 +32,7 @@ from ebus_panel_sim import (
     TickInputs,
 )
 
+from panelbench.const import DEFAULT_WIFI_SSID
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
     evse_device_id,
@@ -351,7 +352,7 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
         grid_online=raw["grid_online"],
         circuits=raw["circuits"],
         evse=_evse_tick_inputs(runtime.engine.config, raw["circuits"]),
-        envelope=PanelEnvelopeTick(),
+        envelope=_panel_envelope(runtime.engine.config),
     )
     return runtime.emitter.publish_tick(tick)
 
@@ -372,6 +373,25 @@ async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
             await runtime.transport.aclose()
         if runtime.mqtt is not None:
             await runtime.mqtt.disconnect()
+
+
+def _panel_envelope(config: SimulationConfig) -> PanelEnvelopeTick:
+    """Panel-envelope facts the emitter cannot derive from circuit physics.
+
+    Only the Wi-Fi SSID is overridden; the rest of ``PanelEnvelopeTick``'s
+    defaults (door closed, links up, cloud connected) already describe the panel
+    this simulator models.
+
+    The SSID is here rather than in the manifest because the emitter resolves
+    ``status/wifi-ssid`` from ``snapshot.status.wifi_ssid``, which it fills from
+    this envelope — ``status`` is per-tick state, not identity. It has to be
+    supplied: the enclosure profile declares the property, ``status/wifi``
+    reports the interface up, and the envelope's own default is ``None``, so
+    leaving it unset publishes a declaration a consumer waits on forever.
+    """
+    return PanelEnvelopeTick(
+        wifi_ssid=str(config["panel_config"].get("wifi_ssid", DEFAULT_WIFI_SSID)),
+    )
 
 
 def _evse_tick_inputs(

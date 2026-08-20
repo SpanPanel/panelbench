@@ -110,7 +110,6 @@
   "energy.ebus.device.circuit::kitchen Lights  connection/feeds-device-id",
   "energy.ebus.device.circuit::kitchen Lights  connection/feeds-device-status",
   "energy.ebus.device.circuit::kitchen Lights  connection/feeds-device-type",
-  "energy.ebus.device.distribution-enclosure::Span Panel  status/wifi-ssid",
   "energy.ebus.device.lugs::Downstream lugs  connection/count",
   "energy.ebus.device.lugs::Downstream lugs  connection/fed-by-device-id",
   "energy.ebus.device.lugs::Downstream lugs  connection/fed-by-device-status",
