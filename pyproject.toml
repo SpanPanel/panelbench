@@ -129,17 +129,29 @@ module = "timezonefinder"
 ignore_missing_imports = true
 
 [tool.uv.sources]
-# No `ebus-panel-sim` override. This pointed at SpanPanel/distribution-enclosure-simulator
-# `spanpanel/main` because PyPI 0.4.0 still published grid/grid-forming-entity as the class
-# name "BESS" rather than a device id, and the override's own instruction was to drop it
-# rather than bump the rev once that landed upstream. It landed: our PR #22 is in v0.4.1,
-# v0.5.0 and v0.5.1, so the released wheel now carries the fix this repo forked for.
+# `ebus-panel-sim` points at SpanPanel/distribution-enclosure-simulator, pinned by commit.
 #
-# The fork still exists and still carries one commit upstream has not taken
-# (`data-model-version` overridable per manifest). Nothing here reads it — the only
-# `data-model-version` strings in this repo are the published topic name in the golden
-# conformance report, which every device emits at the "1.0" default. Depending on the fork
-# to get a feature no test exercises is how a temporary override becomes permanent.
+# The fork is upstream `main` plus exactly the commits that have an OPEN PR upstream, and
+# nothing else — the four sign-frame fixes and the docs that go with them
+# (electrification-bus/distribution-enclosure-simulator#39) and the `ebus-sdk` cap bump
+# (#40, with #41 stacked to release it). It carries no feature of our own: the one commit it
+# used to carry that upstream had never seen (`data-model-version` overridable per manifest)
+# was dropped precisely so this override can expire.
+#
+# Two things it buys, and both go away when those PRs land:
+#
+# 1. The sign fixes. PyPI 0.5.1 publishes three of the four `power-flows` terms in the meter
+#    frame rather than the enclosure's, and the BESS meter as the exact inverse of
+#    `power-flows/battery`. This repo's captures are the evidence base the consumer library
+#    derives its sign convention from, so producing them from the unfixed emitter would have
+#    our producer contradict our consumer.
+# 2. ebus-sdk 0.21. The published 0.5.1 declares `ebus-sdk<0.21`, which pins every consumer
+#    of it below the current SDK regardless of what they want.
+#
+# **Drop this override when #39 and #40 merge and a release follows** — do not bump the rev
+# to pick up anything else. Depending on a fork for something no PR is chasing is how a
+# temporary override becomes permanent, which is what happened to the last one.
+ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "d38a7165b" }
 
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a
 # TYPE_CHECKING import. mypy under --strict still complains about the forward ref when

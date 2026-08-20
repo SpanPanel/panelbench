@@ -53,8 +53,7 @@ _REPO = pathlib.Path(__file__).resolve().parent.parent.parent
 _CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
 
 _NODE = "power-flows"
-_TERMS = ("grid", "pv", "battery")
-_TOTAL = "site"
+_TERMS = ("grid", "pv", "battery", "site")
 
 _TOLERANCE = 1e-6
 """Absolute watts the balance may miss by.
@@ -106,27 +105,38 @@ async def test_something_publishes_power_flows(flows: dict[str, dict[str, float]
 async def test_every_publisher_carries_all_four_terms(flows: dict[str, dict[str, float]]) -> None:
     """A balance missing a term is not a balance, and would silently pass as one."""
     for device_id, values in flows.items():
-        missing = {*_TERMS, _TOTAL} - set(values)
+        missing = set(_TERMS) - set(values)
         assert not missing, f"{device_id} publishes {_NODE} without {sorted(missing)}"
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_the_four_flows_are_a_node_balance(flows: dict[str, dict[str, float]]) -> None:
-    """`grid + pv + battery == site`, for every device that publishes the node.
+async def test_the_four_flows_sum_to_zero(flows: dict[str, dict[str, float]]) -> None:
+    """`grid + pv + battery + site == 0`, for every device that publishes the node.
 
-    Iterated rather than asserted against the panel alone: a second enclosure on
-    the tree would have to balance too, and nothing here needs to know which
+    Sum to **zero**, not "three sum to the fourth". All four are published in one
+    reference direction — positive when power flows *into* the metered thing, per
+    the default `capabilities/meter.md` 0.2 establishes — so the terms entering
+    the node and the term leaving it cancel. `site` is not a total, it is the
+    fourth flow.
+
+    Getting this backwards is not hypothetical: an earlier version of this test
+    asserted `grid + pv + battery == site`, which is the *old* frame. It passed
+    against an emitter publishing three terms in the meter frame and failed
+    against the one that had been fixed — the precise inverse of its purpose.
+    The residual it reported was `-2 x site`, which is the signature named below.
+
+    Iterated over every publisher rather than the panel alone: a second enclosure
+    on the tree would have to balance too, and nothing here needs to know which
     device types can carry the capability to check that.
     """
     for device_id, values in flows.items():
         terms = {name: values[name] for name in _TERMS}
-        total = values[_TOTAL]
-        residual = sum(terms.values()) - total
+        residual = sum(terms.values())
 
         assert abs(residual) <= _TOLERANCE, (
-            f"{device_id} {_NODE} does not balance: "
+            f"{device_id} {_NODE} does not sum to zero: "
             + " + ".join(f"{name}={value}" for name, value in terms.items())
-            + f" = {sum(terms.values())}, but {_TOTAL}={total} (off by {residual}).\n"
-            f"A residual near 2 x one term is that term published in its own device's "
-            f"frame instead of the enclosure's; near 2 x {_TOTAL} is the whole set inverted."
+            + f" = {residual}.\n"
+            f"A residual near 2 x one term is that term published in its own device's frame "
+            f"instead of the enclosure's; near 2 x site is the whole set inverted."
         )
