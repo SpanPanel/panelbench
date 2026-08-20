@@ -52,7 +52,7 @@ dependencies = [
     # the last one sent, which is invisible to `RecordingTransport` (last-wins per topic,
     # like a broker's retained store) and therefore to the fidelity captures.
     "ebus-sdk==0.20.1",
-    "ebus-panel-sim==0.5.1",
+    "ebus-panel-sim==0.6.0",
     "paho-mqtt>=2.0.0",
 ]
 
@@ -129,27 +129,23 @@ module = "timezonefinder"
 ignore_missing_imports = true
 
 [tool.uv.sources]
-# `ebus-panel-sim` points at SpanPanel/distribution-enclosure-simulator, pinned by commit.
+# No `ebus-panel-sim` override, and the reason it is gone is worth keeping.
 #
-# The fork is upstream `main` at 0.5.2 plus exactly the commits of the one PR still open
-# upstream -- the four sign-frame fixes and the `AGENTS.md` rule that goes with them
-# (electrification-bus/distribution-enclosure-simulator#39). Nothing of our own.
+# It pointed at SpanPanel/distribution-enclosure-simulator while four sign-frame fixes were
+# unmerged upstream: the released emitter published three of the four `power-flows` terms in
+# the meter frame rather than the enclosure's, so they did not sum to zero, and the BESS
+# meter as the exact inverse of `power-flows/battery`. This repository's captures are the
+# evidence base the consumer library derives its sign convention from, so producing them
+# from that emitter would have had our producer contradict our consumer.
 #
-# It exists for one reason. PyPI publishes three of the four `power-flows` terms in the meter
-# frame rather than the enclosure's, so they do not sum to zero, and the BESS meter as the
-# exact inverse of `power-flows/battery`. This repository's captures are the evidence base
-# the consumer library derives its sign convention from, so producing them from the unfixed
-# emitter would have our producer contradict our consumer.
-# `tests/conformance/test_power_flow_balance.py` fails against the released wheel and passes
-# against this pin, which is the whole of the argument.
+# Upstream merged them (#39), re-vendored the spec catalogs so the emitter no longer
+# contradicts a catalog it ships (#43), and released 0.6.0 (#44). The pin above carries all
+# of it, so the override has nothing left to do.
 #
-# The `ebus-sdk<0.21` cap was the *second* reason and is gone: our #40 merged and shipped in
-# 0.5.2, so the released wheel no longer pins consumers below the current SDK.
-#
-# **Drop this override when #39 merges and a release follows** -- do not bump the rev to pick
-# up anything else. Depending on a fork for something no PR is chasing is how a temporary
-# override becomes permanent, which is what happened to the last one.
-ebus-panel-sim = { git = "https://github.com/SpanPanel/distribution-enclosure-simulator.git", rev = "e0f0e2c" }
+# **An override here does not reach the add-on image.** `Dockerfile` runs `pip install .`,
+# and `[tool.uv.sources]` is a uv table pip does not read — so while the override existed,
+# local runs and CI got the fork and the shipped image got the PyPI wheel. Any future
+# override has that hole; a plain pin does not, which is the other reason to prefer one.
 
 # CloneRuntime is defined in runtime.py, but setter_handlers references it through a
 # TYPE_CHECKING import. mypy under --strict still complains about the forward ref when
