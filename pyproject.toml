@@ -60,7 +60,7 @@ dependencies = [
     # `RecordingTransport` (last-wins per topic, like a broker's retained store) and
     # therefore to the fidelity captures.
     "ebus-sdk==0.21.0",
-    "ebus-panel-sim==0.6.0",
+    "ebus-panel-sim==0.6.1",
     "paho-mqtt>=2.0.0",
 ]
 
