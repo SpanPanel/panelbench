@@ -21,8 +21,14 @@ def test_loads_vendored_catalogs_keyed_by_capability_type() -> None:
     catalogs = load_catalogs(VENDORED)
     assert "energy.ebus.capability.soc" in catalogs
     soc = catalogs["energy.ebus.capability.soc"]
-    assert soc.version == "0.1"
+    # Version pinned so a re-vendor is a deliberate edit here rather than a silent
+    # one; `.ebus-spec.json` carries the same number and provenance holds the two
+    # together. 0.1 -> 0.2 arrived with the spec 4085c68 re-vendor.
+    assert soc.version == "0.2"
     assert soc.properties["soc"].unit == "%"
+    # The abstract token, not a concrete unit: the spec requires a publisher to
+    # substitute one, which is what `test_no_profile_property_inherits_an_abstract_unit`
+    # above checks the profiles actually do.
     assert soc.properties["soe"].unit == "energy"
 
 

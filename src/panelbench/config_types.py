@@ -35,6 +35,7 @@ class PanelConfig(TypedDict):
     service_voltage_v: NotRequired[float]  # service voltage (default 240.0)
     line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
+    wifi_ssid: NotRequired[str]  # SSID published on status/wifi-ssid (default DEFAULT_WIFI_SSID)
 
 
 class CyclingPattern(TypedDict, total=False):
@@ -111,13 +112,16 @@ class BESSConfigYAML(TypedDict, total=False):
     product_name: str
     model: str
     part_number: str  # The SKU, published as ``info/part-number``.
-    # Model designation for the MID this BESS brings with it, when known. Distinct
-    # from the battery's own ``model``: they are separate devices in v1.0.
     # Whether this battery forms a premises-wiring island. The spec makes the MID
     # child mandatory for one that does, and its absence the signal for one that does
     # not, so this is what decides whether a MID is published.
     grid_forming: bool
+    # Identity for the MID this BESS brings with it, when known. Distinct from the
+    # battery's own values: they are separate devices in v1.0, each with its own
+    # row in a consumer's device registry.
     mid_product_name: str
+    mid_firmware_version: str
+    mid_hardware_version: str
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
