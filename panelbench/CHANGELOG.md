@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.1 — 2026-08-23
+
+### Fixed
+
+- The sidebar entry now reads **SPAN PanelBench** instead of "SPAN Simulator".
+- This listing named the wrong integration version. It said v2.0.4 or later, which is a flat-schema release that cannot read anything this app publishes. What
+  `2.x` needs is `span-panel-api` v3.0.1, which the SpanPanel/span integration carries from v2.1.0b13 onward; the current stable v2.0.8 reads the flat schema
+  only. The firmware this emulates, `r202633+`, is stated too.
+
 ## 2.1.0 — 2026-08-23
 
 The first 2.x version the Supervisor offers. The `2.0.0` image has been on the registry since the repository split, but the add-on's version string never
