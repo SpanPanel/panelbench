@@ -127,7 +127,7 @@ System, light, or dark theme via the header selector.
 
 | Option | Default | Description |
 | ------ | ------- | ----------- |
-| `config_file` | `span_simulator/default_config.yaml` | Simulation config (relative to `/config`) |
+| `config_file` | `panelbench/default_config.yaml` | Simulation config (relative to `/config`) |
 | `tick_interval` | `1.0` | Seconds between simulation updates |
 | `log_level` | `INFO` | Logging verbosity |
 | `advertise_address` | (auto-detected) | IP to advertise via mDNS (leave blank for auto) |
@@ -136,7 +136,7 @@ System, light, or dark theme via the header selector.
 
 ## Custom configs
 
-Place simulation config YAML files in `/config/span_simulator/` and
+Place simulation config YAML files in `/config/panelbench/` and
 set the `config_file` option to the filename. The config controls panel
 size, circuit names, solar/battery presence, and load profiles. Or
 simply clone your real panel from the dashboard — no manual config

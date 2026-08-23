@@ -177,9 +177,13 @@ def test_pv_metadata_includes_inverter_type() -> None:
     # spelling and rejects the manifest without it.
     assert pv.metadata["nominal-power-w"] == "7000.0"
     assert pv.metadata["relative-position"] == "UPSTREAM"
-    # Hybrid PV → panel becomes islandable.
+    # A hybrid inverter used to make the panel islandable on its own. It no longer
+    # does, and this profile is why the inference was wrong: there is no BESS here, so
+    # there is no grid-forming source to island with. Islandability follows the
+    # battery now, and the assertion is kept rather than deleted because "hybrid PV
+    # alone is not an island" is the specific claim that changed.
     panel = manifest.of_class("panel")[0]
-    assert panel.metadata["islandable"] == "true"
+    assert panel.metadata["islandable"] == "false"
 
 
 def test_evse_metadata_includes_physics_keys() -> None:
