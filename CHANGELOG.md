@@ -41,10 +41,9 @@ No wire change. Both fixes are text a user reads before anything else, and both 
 - **The sidebar entry reads `SPAN PanelBench`, not `SPAN Simulator`.** `panel_title` is add-on metadata the Supervisor applies from the *installed* version, so
   unlike the store README this could not reach an existing install without a version bump — which is the whole reason this is a release rather than a text edit.
 - **The App Store listing named a compatibility floor that cannot read `2.x`.** It claimed "SpanPanel/span integration version v2.0.4 or later", which shipped
-  in April against the flat schema. The real floor is integration `v2.1.0`, which is not published yet — that is the line carrying `span-panel-api` v3.0.1,
-  the parser for the parent/child tree. Every earlier release, the current stable `v2.0.8` included, reads the flat schema only and cannot read anything this
-  publishes, so the old line pointed users at a version guaranteed not to work. Stated as the integration version a user actually installs, with the library
-  named as the mechanism rather than as the figure to match — collapsing the two packages into one number is how the old line went wrong. The listing also
+  in April against the flat schema. The real floor is integration `v2.1.0`. Every earlier release reads the flat schema only and cannot read anything this
+  publishes, so the old line pointed users at a version guaranteed not to work. Stated as the integration version a user actually installs and nothing else:
+  the listing names one number to compare against, because collapsing two packages into one figure is how the old line went wrong in the first place. It also
   states the firmware this emulates, `r202633+`, which it had never mentioned despite that being the premise.
 
 ## 2.1.0 — the MID follows the battery, and the two generation signals agree
