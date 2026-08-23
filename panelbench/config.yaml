@@ -1,6 +1,6 @@
 name: "SPAN PanelBench"
 description: "Simulates a SPAN electrical panel for testing and upgrade modeling"
-version: "2.1.0"
+version: "2.1.1"
 slug: "panelbench"
 url: "https://github.com/SpanPanel/panelbench"
 image: "ghcr.io/spanpanel/panelbench/{arch}"
@@ -14,7 +14,7 @@ discovery:
 ingress: true
 ingress_port: 18080
 panel_icon: "mdi:flash"
-panel_title: "SPAN Simulator"
+panel_title: "SPAN PanelBench"
 watchdog: "http://[HOST]:[PORT:18080]/"
 map:
   - type: config
