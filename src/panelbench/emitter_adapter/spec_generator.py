@@ -214,8 +214,9 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
     ``grid-forming-entity`` and ``islanding-state`` live — the successors to the
     flat schema's ``dominant-power-source``.
 
-    Gated on a BESS *and* an islandable enclosure, because a MID that cannot island
-    has nothing to be the authority over.
+    Gated on a BESS that forms a premises-wiring island, because a MID that cannot
+    island has nothing to be the authority over. See ``_bess_is_grid_forming`` for
+    why the battery decides that and not the PV inverter.
 
     Placement is not set here. ``wire/mapping/mid.yaml`` declares it
     ``child-of-parent`` with ``parent_entity_class: bess``, so the graph builder
@@ -229,7 +230,7 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
     config actually knows rather than inventing identity for a synthesized device.
     """
     bess_cfg = profile.get("bess") or {}
-    if not bess_cfg.get("enabled") or not _islandable(profile):
+    if not bess_cfg.get("enabled") or not _bess_is_grid_forming(profile):
         return None
 
     metadata = {"vendor-name": str(bess_cfg.get("vendor", "Span"))}
@@ -348,18 +349,58 @@ def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     return instances
 
 
-def _islandable(profile: SimulationConfig) -> bool:
-    """A panel can island when a hybrid PV inverter is configured (or any config
-    explicitly sets ``islandable: true`` on panel_config)."""
+def _bess_is_grid_forming(profile: SimulationConfig) -> bool:
+    """Whether the battery forms a premises-wiring island — which is what a MID means.
+
+    `devices/bess.md` classifies on the capability set rather than on any declared
+    type: "a MID `grid` child means premises-segment backup ... neither means no
+    backup", and "a premises-wiring grid-forming BESS publisher MUST include a MID
+    child device". So the MID follows the *battery*, and this is the property that
+    decides whether one exists.
+
+    It used to be decided by the PV inverter. Those agree for a hybrid-inverter site,
+    which is why the MID appeared at all, and they diverge for the two cases that
+    matter most: a grid-forming BESS with AC-coupled PV, and a grid-forming BESS with
+    no PV whatsoever -- the canonical residential backup product, which published a
+    battery and no MID at all. A hybrid inverter implies a grid-forming BESS; the
+    converse does not hold, and reading only the converse is what left the spec's
+    MUST unmet.
+
+    Resolution order, most explicit first:
+
+    1. ``bess.grid_forming`` — says the thing directly.
+    2. ``panel_config.islandable`` — the flat schema's panel-level boolean, which v1.0
+       retires in favour of MID presence. Honoured so existing clones keep working,
+       and not written by anything new.
+    3. A hybrid PV inverter, declared or from the producer template — the pre-BESS
+       inference. Narrower than the rule above, kept because clones on disk rely on it.
+    """
+    bess_cfg = profile.get("bess") or {}
+    if "grid_forming" in bess_cfg:
+        return bool(bess_cfg["grid_forming"])
+
     panel_cfg = profile["panel_config"]
     if "islandable" in panel_cfg:
         return bool(panel_cfg["islandable"])
+
     pv_cfg = profile.get("pv") or {}
     if pv_cfg.get("enabled"):
         declared = normalise_inverter_type(str(pv_cfg.get("inverter_type", "")))
         if declared == HYBRID:
             return True
     return template_is_hybrid(_first_producer_template(profile))
+
+
+def _islandable(profile: SimulationConfig) -> bool:
+    """Whether this enclosure participates in a premises-wiring island.
+
+    Identical to the battery being grid-forming, because that battery is what forms
+    the island. Kept as a separate name because the *panel* metadata key is about the
+    enclosure and the MID gate is about the BESS; they coincide today and would not if
+    a standalone MID ever appeared (see `bess.md`, "an architecturally valid
+    alternative ... is not yet present in commercial products").
+    """
+    return _bess_is_grid_forming(profile)
 
 
 def _first_producer_template(profile: SimulationConfig) -> CircuitTemplateExtended | None:

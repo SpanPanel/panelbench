@@ -32,7 +32,7 @@ EXPOSE 18883 8081 18080
 LABEL io.hass.name="SPAN PanelBench" \
       io.hass.description="Simulates a SPAN electrical panel for testing and upgrade modeling" \
       io.hass.type="addon" \
-      io.hass.version="2.0.0" \
+      io.hass.version="2.1.0" \
       io.hass.arch="aarch64|amd64"
 
 CMD ["/run.sh"]

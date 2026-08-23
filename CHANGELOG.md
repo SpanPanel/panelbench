@@ -1,9 +1,61 @@
 # Changelog
 
+## 2.1.0 — the MID follows the battery, and the two generation signals agree
+
+The first release the Supervisor will actually offer. `build-addon.yaml` has pushed an image for every `main` commit since the split, so `2.0.0` and `latest`
+have been live on `ghcr.io/spanpanel/panelbench/{arch}` the whole time — but the Supervisor decides "update available" by comparing `config.yaml`'s `version`
+against the installed one, and that string sat at `2.0.0` for fifty commits. Anyone already on `2.0.0` was never offered any of them. Bumping the version is
+what publishes them.
+
+The minor bump also marks a change in what this produces on the wire. A consumer that captured a `2.0.0` tree and compares it against a `2.1.0` one will see
+differences, none of them a bug fix to the consumer's side.
+
+### Fixed
+
+- **`dataModelVersion` is published on the REST schema endpoint.** It was absent, so a consumer dispatching on the REST signal — which is what the migration
+  guide's "Schema-generation detection" says to do, because the parser must exist before the first SUBSCRIBE — selected the *flat* parser for a parent/child
+  tree. It did not fail: it read every value against the wrong vocabulary and reported a clean connection. The MQTT half of the same signal was already
+  published, so the two transports disagreed and nothing looked.
+- **The MID follows the grid-forming BESS, not the PV inverter.** `devices/bess.md` makes MID presence the classifier for premises-segment backup and requires
+  a grid-forming BESS publisher to include a MID child. The gate read the PV inverter's type instead. The two agree for a hybrid-inverter site, which is why a
+  MID appeared at all, and diverge for the cases the spec cares most about: a grid-forming battery with AC-coupled PV, and a grid-forming battery with no PV —
+  the canonical residential backup product, which published no MID at all. `bess.grid_forming` states it outright now; `panel_config.islandable` and a hybrid
+  PV inverter still work as legacy signals, so configs written before the key keep their MID.
+- **EVSE identity is the Drive's serial, not its position.** Charger node ids were positional slots, so a consumer keyed on them would re-key every charger
+  when one was added or removed. Serials are lowercased to satisfy the Homie topic-id rule.
+- **The four `power-flows` terms sum to zero.** The emitter published three of them in the meter's reference frame rather than the enclosure's, so a consumer
+  adding them up got a residual of twice `site` instead of nothing. `site` is the fourth flow under one reference direction, not a total of the other three.
+  This repository's captures are the evidence base the consumer library derives its sign convention from, so a producer that contradicted it was the more
+  expensive of the two things to leave wrong. Fixed upstream and carried by the `ebus-panel-sim` pin below; `tests/conformance/test_power_flow_balance.py`
+  asserts the identity on every device that publishes the node, so it cannot regress silently.
+- **Declared identity is valued rather than left empty.** Eleven properties were declared and never given a value, which reaches a user as an entity stuck on
+  "unknown" rather than as an entity they notice is missing. The MID went from a device-registry row with a blank model and no firmware to 8 of 8 documented
+  properties, PV to 4 of 5, and every shipped circuit template now carries the device identity `r202633` documents. `status/wifi-ssid` is valued too, with a
+  fallback for a config that names no SSID. Six gaps remain and none are ours to invent: the four lugs `connection/*` and circuit `connection/count` are the
+  upstream issue filed as DES #30, and the PV serial is deliberately still unvalued because setting it would move the PV device id and stop `simupgrade`
+  rehearsing an upgrade.
+- **`connection/count` is no longer declared at all**, so it can no longer be declared-but-unvalued.
+
+### Changed
+
+- **Circuits default to `upstream-of-lugs`.** The old default put every circuit past the feedthrough, which made the feedthrough sum equal the whole panel and
+  the two lugs devices publish byte-identical meters — indistinguishable, so a mapping that swapped them read the same either way.
+- **Spec catalogs re-vendored, and the pins moved with them.** `spec/catalogs` re-synced byte-for-byte from the specification, framework `0.7` -> `0.9` and
+  `power-flows` `0.2` -> `0.3`. The `power-flows` correction qualifies its own negation table — the `grid` row holds only where the service lugs are the
+  utility connection point, which an upstream DER or an enclosure chain breaks — and this repository publishes nothing that moves under it, so the catalog's
+  byte diff is the version string. The golden report gains 68 omissions, all `meter/shared-with-device-ids` and `switch/shared-with-device-ids`, with zero
+  change to divergences, extensions, matches or violations: newer catalogs describing more surface, not the emitter regressing against any of it.
+- **Dependencies are plain pins on published wheels again.** `ebus-panel-sim` `0.5.1` -> `0.6.1` and `ebus-sdk` `0.20.1` -> `0.22.0`, and the
+  `[tool.uv.sources]` fork override that carried the sign fixes while they were unmerged is gone. That override had a hole worth recording: the add-on
+  `Dockerfile` runs `pip install .`, and `[tool.uv.sources]` is a uv table `pip` does not read, so local runs and CI got the fork while the shipped image got
+  the unfixed PyPI wheel. `0.22.0` is the newest SDK `ebus-panel-sim` 0.6.1 allows, its declared range being `>=0.20.1,<0.23`; nothing here reaches what
+  `0.23.x` adds, which is a producer-side `DeviceTreeBuilder` API the emitter has not adopted.
+
 ## 2.0.0 — parent/child eBus schema, in its own repository
 
-Not yet published: no image is built for this repository, because no SPAN firmware publishes the v1.0 tree. The version is `2.0.0` because the wire format this
-produces is incompatible with everything the `1.x` line published, not because a release is imminent.
+Published as an image but never as a version: `build-addon.yaml` pushed `2.0.0` and `latest` from the first `main` commit onward, and the version string then
+stayed put, so the Supervisor had nothing to compare against and offered no update. See `2.1.0`. The version is `2.0.0` because the wire format this produces
+is incompatible with everything the `1.x` line published, not because a release was imminent — no SPAN firmware publishes the v1.0 tree yet.
 
 ### Changed
 
