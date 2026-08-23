@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.1.0 — 2026-08-23
+
+The first 2.x version the Supervisor offers. The `2.0.0` image has been on the registry since the repository split, but the add-on's version string never
+moved, so no installed add-on was told there was anything to update to. If you are coming from `1.0.12`, everything in `2.0.0` arrives with this one.
+
+**This is a breaking change to what the add-on publishes.** `2.x` emits the parent/child eBus tree (v1.0 schema), which is incompatible with the flat schema
+every `1.x` version published. A consumer built against `1.x` topics will not read it. The flat simulator keeps its own name, repository and slug, so an
+install of *that* add-on is untouched.
+
+### Added
+
+- The panel publishes a Microgrid Interconnect Device whenever the battery forms a premises-wiring island. It used to be gated on the PV inverter's type, so
+  the common case — a grid-forming battery with no solar — published no MID at all, leaving nothing to read islanding state from.
+- Device cards fill in. The MID, PV, the panel's Wi-Fi SSID and every shipped circuit template now carry the identity values they had only been declaring, so
+  they resolve instead of sitting on "unknown".
+
+### Fixed
+
+- The add-on image starts. `ebus-panel-sim` was declared in the dev dependency group while the app imports it at module scope, and the image builds with
+  `pip install .`, which installs no groups — so the container came up and immediately failed on the import.
+- Power flow figures add up. Three of the four `power-flows` terms were published in the wrong reference frame, so anything summing them saw twice the site
+  value instead of zero.
+- EV chargers keep their identity across a change. Charger ids were positional, so adding or removing one re-keyed every other charger.
+
+Full detail, including the wire-level differences a consumer will see between `2.0.0` and `2.1.0`, is in the repository's `CHANGELOG.md`.
+
 ## 1.0.12 — 2026-07-30
 
 ### Emitter & Homie Schema
