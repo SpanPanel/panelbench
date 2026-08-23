@@ -16,9 +16,11 @@ islanding state from.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+import yaml
 
 from panelbench.emitter_adapter.spec_generator import build_manifest
 
@@ -67,6 +69,26 @@ def test_a_grid_forming_battery_beside_ac_coupled_pv_publishes_a_mid() -> None:
     assert _has_mid(profile)
 
 
+def test_no_battery_means_no_mid() -> None:
+    """The other half of the invariant, and the limit on the new default.
+
+    A MID belongs to a BESS -- it is the battery's islanding authority, published as
+    its child. Defaulting an *undeclared* battery to grid-forming widens which
+    batteries get one; it must not conjure one where there is no battery to parent it
+    to. Checked in both shapes a config can take: no `bess` key at all, and one that
+    is present but disabled.
+    """
+    no_key = cast(
+        "SimulationConfig",
+        {
+            "panel_config": {"serial_number": "sim-40t-001", "total_tabs": 40, "main_size": 200},
+            "circuits": [],
+        },
+    )
+    assert not _has_mid(no_key)
+    assert not _has_mid(_profile(bess={"enabled": False}))
+
+
 def test_a_grid_following_battery_publishes_no_mid() -> None:
     """Absence is a signal too.
 
@@ -77,14 +99,25 @@ def test_a_grid_following_battery_publishes_no_mid() -> None:
     assert not _has_mid(_profile(bess={"grid_forming": False}))
 
 
-def test_an_undeclared_battery_is_not_assumed_to_form_an_island() -> None:
-    """Defaulting to grid-forming would fabricate a capability.
+def test_an_undeclared_battery_publishes_a_mid() -> None:
+    """A battery implies a MID. Reversed deliberately; the old default was wrong here.
 
-    Not every battery backs the premises up. With nothing declared and no legacy
-    signal, the honest answer is the one that claims less -- a config that wants a MID
-    says so.
+    The earlier rule claimed less on purpose: with nothing declared, assume nothing.
+    That reads well and fails in practice, because the configs that declare nothing
+    are the overwhelming majority -- everything the flat simulator ever wrote, every
+    clone taken before `grid_forming` existed, and two of this repository's own
+    shipped defaults. All of them have a battery and none of them said so, so the
+    honest-looking default silently produced the one thing a consumer cannot work
+    around: no MID, and therefore nothing publishing islanding state, with no error
+    to explain it.
+
+    Claiming less is only honest when the claim is actually uncertain. A commissioned
+    BESS in a SPAN enclosure forms a premises island; that is what the product is. A
+    site where it does not still says so, with `grid_forming: false`, which is a
+    statement someone makes knowingly rather than one thousands of existing configs
+    make by omission.
     """
-    assert not _has_mid(_profile())
+    assert _has_mid(_profile())
 
 
 @pytest.mark.parametrize(
@@ -137,3 +170,28 @@ def test_the_explicit_key_overrides_a_legacy_signal() -> None:
     )
 
     assert not _has_mid(profile)
+
+
+def test_every_shipped_config_with_a_battery_publishes_a_mid() -> None:
+    """The invariant, checked against the files we actually ship.
+
+    `default_MAIN_16` and `default_MAIN_32` both enabled a battery and published no
+    MID, so a fresh install of either -- no stale config anywhere, nothing upgraded --
+    showed a battery with no islanding state. The unit tests above all passed while
+    that was true, because every one of them builds its own profile. This one reads
+    the configs off disk, which is the only way that gap was ever going to be caught.
+    """
+    config_dir = Path(__file__).resolve().parents[2] / "configs"
+    shipped = sorted(config_dir.glob("*.yaml"))
+    assert shipped, f"no configs found under {config_dir}"
+
+    missing = []
+    for path in shipped:
+        profile = cast("SimulationConfig", yaml.safe_load(path.read_text()))
+        bess = profile.get("bess") or {}
+        if not bess.get("enabled"):
+            continue
+        if not _has_mid(profile):
+            missing.append(path.name)
+
+    assert not missing, f"configs enable a BESS but publish no MID: {missing}"

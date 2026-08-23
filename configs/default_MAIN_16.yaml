@@ -33,8 +33,22 @@ bess:
   # rather than one a user notices is missing. Synthetic, so they attest the mapping
   # and not what real firmware sends.
   #
-  # No mid_* keys here: this panel is not islandable, so it stands up no MID for them
-  # to describe. Adding them would be inert rather than harmless.
+  # The MID's own identity, not the battery's. This panel used to stand up no MID at
+  # all -- the comment here said it "is not islandable", which was never a property of
+  # the panel so much as of what the old gate happened to read. A commissioned battery
+  # forms a premises island, so this panel publishes a MID like any other, and these
+  # three are the device-registry row a consumer builds for it. Unvalued, that row
+  # shows a blank model and no firmware. `serial-number` is absent on purpose: the
+  # generator derives it as `<bess serial>-mid`, the resolvable link between the two
+  # halves of one unit.
+  #
+  # `grid_forming` is deliberately NOT set here. It defaults to true for a
+  # commissioned battery, and leaving it unstated is what keeps
+  # test_every_shipped_config_with_a_battery_publishes_a_mid exercising that default
+  # rather than a value typed beside it.
+  mid_product_name: SPAN MID
+  mid_firmware_version: sim-mid/v0.1.0
+  mid_hardware_version: rev1
   vendor: Span
   product_name: SPAN Battery
   part_number: SPN-BESS-001

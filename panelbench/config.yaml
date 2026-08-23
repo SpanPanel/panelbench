@@ -1,6 +1,6 @@
 name: "SPAN PanelBench"
 description: "Simulates a SPAN electrical panel for testing and upgrade modeling"
-version: "2.1.1"
+version: "2.2.0"
 slug: "panelbench"
 url: "https://github.com/SpanPanel/panelbench"
 image: "ghcr.io/spanpanel/panelbench/{arch}"

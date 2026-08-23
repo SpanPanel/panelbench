@@ -27,10 +27,8 @@ from panelbench.emitter_adapter.instance_ids import (
     stable_circuit_uuid,
 )
 from panelbench.inverter import (
-    HYBRID,
     normalise_inverter_type,
     template_inverter_type,
-    template_is_hybrid,
 )
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 
@@ -359,23 +357,42 @@ def _bess_is_grid_forming(profile: SimulationConfig) -> bool:
     decides whether one exists.
 
     It used to be decided by the PV inverter. Those agree for a hybrid-inverter site,
-    which is why the MID appeared at all, and they diverge for the two cases that
-    matter most: a grid-forming BESS with AC-coupled PV, and a grid-forming BESS with
-    no PV whatsoever -- the canonical residential backup product, which published a
-    battery and no MID at all. A hybrid inverter implies a grid-forming BESS; the
-    converse does not hold, and reading only the converse is what left the spec's
-    MUST unmet.
+    which is why the MID appeared at all, and they diverge for the cases that matter
+    most: a grid-forming BESS with AC-coupled PV, and a grid-forming BESS with no PV
+    whatsoever -- the canonical residential backup product, which published a battery
+    and no MID at all.
 
-    Resolution order, most explicit first:
+    A commissioned battery now DEFAULTS to grid-forming. The previous default claimed
+    less with nothing declared, which reads as the careful choice and was not: the
+    configs that declare nothing are the overwhelming majority -- everything the flat
+    simulator wrote, every clone taken before the key existed, and two of this
+    repository's own shipped defaults -- so the cautious default silently withheld the
+    MID from almost every real config, and a consumer had no islanding state and no
+    error explaining why. Claiming less is only honest when the claim is uncertain;
+    a commissioned BESS in a SPAN enclosure forms a premises island.
 
-    1. ``bess.grid_forming`` — says the thing directly.
+    Resolution order:
+
+    0. No commissioned battery, no island. Nothing else is consulted, because there is
+       no grid-forming source for the other answers to be about -- a panel that
+       inherited ``islandable: true`` and has no BESS is claiming a capability it
+       cannot have. This also keeps the widened default from reaching the *panel*
+       metadata key, which unlike the MID gate has no battery check of its own.
+    1. ``bess.grid_forming`` — says the thing directly, in both directions. A
+       grid-following battery still says so and still publishes no MID.
     2. ``panel_config.islandable`` — the flat schema's panel-level boolean, which v1.0
-       retires in favour of MID presence. Honoured so existing clones keep working,
-       and not written by anything new.
-    3. A hybrid PV inverter, declared or from the producer template — the pre-BESS
-       inference. Narrower than the rule above, kept because clones on disk rely on it.
+       retires in favour of MID presence. Honoured so an existing clone that set it
+       false keeps meaning what it said, and not written by anything new.
+    3. Otherwise the battery forms an island.
+
+    The hybrid-PV inference this used to end on is gone. It could only ever answer
+    "yes", which the default now covers, and answering "no" for a non-hybrid inverter
+    is exactly the reading that made a battery beside AC-coupled solar lose its MID.
     """
     bess_cfg = profile.get("bess") or {}
+    if not bess_cfg.get("enabled"):
+        return False
+
     if "grid_forming" in bess_cfg:
         return bool(bess_cfg["grid_forming"])
 
@@ -383,12 +400,7 @@ def _bess_is_grid_forming(profile: SimulationConfig) -> bool:
     if "islandable" in panel_cfg:
         return bool(panel_cfg["islandable"])
 
-    pv_cfg = profile.get("pv") or {}
-    if pv_cfg.get("enabled"):
-        declared = normalise_inverter_type(str(pv_cfg.get("inverter_type", "")))
-        if declared == HYBRID:
-            return True
-    return template_is_hybrid(_first_producer_template(profile))
+    return True
 
 
 def _islandable(profile: SimulationConfig) -> bool:
