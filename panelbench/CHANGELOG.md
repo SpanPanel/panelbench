@@ -1,14 +1,31 @@
 # Changelog
 
+## 2.2.0 — 2026-08-23
+
+### Fixed
+
+- **A panel with a battery now always shows a Microgrid Interconnect Device.** Previously the MID appeared only where the config explicitly declared the battery
+  grid-forming, or happened to carry an older islandable flag. Most configs declare neither — including the 16 and 32 tab defaults shipped with this app — so a
+  battery commonly showed up with no islanding state and nothing to explain the gap. A battery that genuinely does not back the premises up can still say so with
+  `grid_forming: false` under `bess:`. A panel with no battery still shows no MID.
+
+### Changed
+
+- **Configs now live in `/config/panelbench/`, not `/config/span_simulator/`.** That directory was shared with the flat SPAN Panel Simulator app, and whichever
+  app created a file first decided what the other one loaded — which is how an upgraded install ended up running flat-era configs that publish no MID.
+
+  **Your existing panels are not moved.** They remain in `/config/span_simulator/` and this app no longer reads them. Copy any you want to keep into
+  `/config/panelbench/`, and check the copy declares `grid_forming` under `bess:` — configs written by the flat simulator predate that key. The app log lists the
+  old path on every start while files remain there. Nothing is migrated automatically because a file at the old path may have been written by either app, and
+  copying the wrong one back is what this change exists to stop.
+
 ## 2.1.1 — 2026-08-23
 
 ### Fixed
 
 - The sidebar entry now reads **SPAN PanelBench** instead of "SPAN Simulator".
 - This listing named the wrong integration version. It said v2.0.4 or later, which is a flat-schema release that cannot read anything this app publishes. The
-  real floor is SpanPanel/span **v2.1.0**, not published yet and currently in beta — the line carrying `span-panel-api` v3.0.1, which is what parses the
-  parent/child tree. Every earlier release, the current stable v2.0.8 included, reads the flat schema only. The firmware this emulates, `r202633+`, is stated
-  too.
+  real floor is SpanPanel/span **v2.1.0**; every earlier release reads the flat schema only. The firmware this emulates, `r202633+`, is stated too.
 
 ## 2.1.0 — 2026-08-23
 

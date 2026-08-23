@@ -29,9 +29,21 @@ export CERT_DIR="/data/certs"
 export BROKER_USERNAME="span"
 export BROKER_PASSWORD="sim-password"
 
-# Ensure config directory exists and seed any missing configs from the image
-CONFIG_DIR="/config/span_simulator"
+# PanelBench owns this directory outright. It used to be /config/span_simulator,
+# which the flat SPAN Panel Simulator add-on also writes to and still does -- the
+# slug changed in the rename and the config path did not. Two add-ons publishing
+# incompatible schemas shared one config store, and because seeding only ever
+# creates a file that is missing, whichever add-on got there first decided what
+# the other one loaded, permanently. A host that had run the flat simulator handed
+# PanelBench a flat-era default_MAIN_40.yaml with no `grid_forming` and no
+# `islandable`, so the BESS published no MID and nothing said why.
+LEGACY_CONFIG_DIR="/config/span_simulator"
+CONFIG_DIR="/config/panelbench"
 mkdir -p "${CONFIG_DIR}"
+
+# Seed the shipped defaults, still only where a file is missing, so an edited
+# config is never overwritten. The difference is that this directory starts empty
+# on an upgrade, so the shipped defaults actually land.
 for src in /app/configs/*.yaml /app/configs/*.yml; do
     [ -f "${src}" ] || continue
     dest="${CONFIG_DIR}/$(basename "${src}")"
@@ -40,6 +52,22 @@ for src in /app/configs/*.yaml /app/configs/*.yml; do
         echo "Seeded config: $(basename "${src}")"
     fi
 done
+
+# Nothing is migrated from the old directory. A file there may have been written
+# by either add-on and nothing distinguishes them, so copying would reintroduce
+# exactly the defect this removes. Say where the old panels are instead of
+# leaving them to be discovered.
+if [ -d "${LEGACY_CONFIG_DIR}" ]; then
+    # `set -e` plus `pipefail` would abort the whole start-up if find tripped on a
+    # permission, so a failure here means "nothing to report", not "die".
+    legacy_count=$(find "${LEGACY_CONFIG_DIR}" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | wc -l | tr -d ' ') || legacy_count=0
+    if [ "${legacy_count}" != "0" ]; then
+        echo "NOTE: ${legacy_count} config(s) remain in ${LEGACY_CONFIG_DIR}, which PanelBench no longer reads."
+        echo "NOTE: PanelBench now uses ${CONFIG_DIR}. Copy a panel across by hand if you want it back,"
+        echo "NOTE: but check it declares 'grid_forming' under 'bess:' -- configs written by the flat"
+        echo "NOTE: simulator predate that key, and without it a battery publishes no MID."
+    fi
+fi
 
 mkdir -p "${CERT_DIR}"
 

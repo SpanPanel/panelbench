@@ -275,7 +275,7 @@ docker build -f panelbench/Dockerfile \
 mkdir -p .local/addon-test
 cat > .local/addon-test/options.json <<'EOF'
 {
-  "config_file": "span_simulator/default_config.yaml",
+  "config_file": "panelbench/default_config.yaml",
   "tick_interval": 1.0,
   "log_level": "INFO",
   "advertise_address": "",
@@ -285,7 +285,7 @@ EOF
 
 docker run --rm \
   -p 18883:18883 -p 8081:8081 -p 18080:18080 \
-  -v $(pwd)/configs:/config/span_simulator \
+  -v $(pwd)/configs:/config/panelbench \
   -v $(pwd)/.local/addon-test:/data \
   panelbench:local
 ```

@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.2.0 — a battery implies a MID, and PanelBench owns its config directory
+
+Two defects with one symptom: a panel with a battery and no MID, and so nothing publishing islanding state. Reported against the add-on, where both were reachable
+at once.
+
+### Changed
+
+- **A commissioned battery now defaults to grid-forming.** The gate used to claim less when nothing was declared, on the reasoning that not every battery backs the
+  premises up. That reads as the careful choice and was not: the configs that declare nothing are the overwhelming majority — everything the flat simulator ever
+  wrote, every clone taken before `grid_forming` existed, and two of this repository's own shipped defaults — so the cautious default withheld the MID from
+  almost every real config and left a consumer with no islanding state and no error explaining why. A site whose battery is grid-following still says so with
+  `grid_forming: false`, which is a statement someone makes knowingly rather than one thousands of existing configs make by omission.
+- **The hybrid-PV inference is gone.** It could only ever answer "yes", which the default now covers, and its "no" for a non-hybrid inverter is what took the MID
+  away from a grid-forming battery beside AC-coupled solar — an ordinary installation.
+- **No battery, no island.** Islandability now requires an enabled BESS before anything else is consulted, so a panel that inherited `islandable: true` with no
+  BESS stops claiming a capability it cannot have. This also keeps the widened default away from the *panel* `islandable` metadata key, which unlike the MID gate
+  has no battery check of its own.
+
+### Fixed
+
+- **`default_MAIN_16` and `default_MAIN_32` published no MID.** Both enable a battery, and a fresh install of either — nothing stale, nothing upgraded — showed a
+  battery with no islanding state. Every unit test around the gate passed while this was true, because each one builds its own profile; the invariant is now
+  asserted against the configs actually on disk. Both also gain the `mid_*` identity keys, so the device-registry row a consumer builds is not a blank model with
+  no firmware.
+- **PanelBench no longer shares a config directory with the flat simulator.** Both add-ons used `/config/span_simulator`: the slug changed in the rename and the
+  path did not. Because seeding only ever creates a file that is missing, whichever add-on ran first decided what the other one loaded, permanently — a host that
+  had run the flat simulator handed PanelBench a flat-era `default_MAIN_40.yaml` with no `grid_forming` and no `islandable`, and the battery published no MID.
+  The directory is now `/config/panelbench`.
+
+  Nothing is migrated. A file at the old path may have been written by either add-on and nothing distinguishes them, so copying would reintroduce the defect this
+  removes. Start-up says where the old configs are and what to check before copying one back, rather than leaving them to be discovered.
+
 ## 2.1.1 — the store listing and the sidebar say what this is
 
 No wire change. Both fixes are text a user reads before anything else, and both were left over from the flat line.
@@ -9,10 +41,9 @@ No wire change. Both fixes are text a user reads before anything else, and both 
 - **The sidebar entry reads `SPAN PanelBench`, not `SPAN Simulator`.** `panel_title` is add-on metadata the Supervisor applies from the *installed* version, so
   unlike the store README this could not reach an existing install without a version bump — which is the whole reason this is a release rather than a text edit.
 - **The App Store listing named a compatibility floor that cannot read `2.x`.** It claimed "SpanPanel/span integration version v2.0.4 or later", which shipped
-  in April against the flat schema. The real floor is integration `v2.1.0`, which is not published yet — that is the line carrying `span-panel-api` v3.0.1,
-  the parser for the parent/child tree. Every earlier release, the current stable `v2.0.8` included, reads the flat schema only and cannot read anything this
-  publishes, so the old line pointed users at a version guaranteed not to work. Stated as the integration version a user actually installs, with the library
-  named as the mechanism rather than as the figure to match — collapsing the two packages into one number is how the old line went wrong. The listing also
+  in April against the flat schema. The real floor is integration `v2.1.0`. Every earlier release reads the flat schema only and cannot read anything this
+  publishes, so the old line pointed users at a version guaranteed not to work. Stated as the integration version a user actually installs and nothing else:
+  the listing names one number to compare against, because collapsing two packages into one figure is how the old line went wrong in the first place. It also
   states the firmware this emulates, `r202633+`, which it had never mentioned despite that being the premise.
 
 ## 2.1.0 — the MID follows the battery, and the two generation signals agree
