@@ -5,9 +5,10 @@
 ### Fixed
 
 - The sidebar entry now reads **SPAN PanelBench** instead of "SPAN Simulator".
-- This listing named the wrong integration version. It said v2.0.4 or later, which is a flat-schema release that cannot read anything this app publishes. What
-  `2.x` needs is `span-panel-api` v3.0.1, which the SpanPanel/span integration carries from v2.1.0b13 onward; the current stable v2.0.8 reads the flat schema
-  only. The firmware this emulates, `r202633+`, is stated too.
+- This listing named the wrong integration version. It said v2.0.4 or later, which is a flat-schema release that cannot read anything this app publishes. The
+  real floor is SpanPanel/span **v2.1.0**, not published yet and currently in beta — the line carrying `span-panel-api` v3.0.1, which is what parses the
+  parent/child tree. Every earlier release, the current stable v2.0.8 included, reads the flat schema only. The firmware this emulates, `r202633+`, is stated
+  too.
 
 ## 2.1.0 — 2026-08-23
 
