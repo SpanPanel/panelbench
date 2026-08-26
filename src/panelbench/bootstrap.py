@@ -4,6 +4,12 @@ Each simulated panel gets its own ``BootstrapHttpServer`` bound to a
 unique port, matching real SPAN hardware where each panel is a separate
 device on a different IP.
 
+The same endpoints are served twice, as hardware serves them: in plaintext
+on the bootstrap port, and over TLS on a second port using the panel's own
+certificate.  The split is what a client's pinning flow needs — it reads
+the CA in plaintext because it has nothing to trust yet, then sends the
+registration passphrase over the TLS port under that anchor.
+
 Endpoints:
   GET  /api/v2/status           -> panel identity (serialNumber, firmwareVersion)
   POST /api/v2/auth/register    -> JWT + MQTT credentials (camelCase fields)
@@ -16,6 +22,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import secrets
+import ssl
 import time
 from typing import TYPE_CHECKING
 
@@ -24,6 +31,7 @@ from aiohttp import web
 from panelbench.const import (
     DEFAULT_BROKER_PASSWORD,
     DEFAULT_BROKER_USERNAME,
+    DEFAULT_HTTPS_PORT,
     MQTTS_PORT,
     PATH_CA_CERT,
     PATH_HOMIE_SCHEMA,
@@ -55,6 +63,7 @@ class BootstrapHttpServer:
         broker_host: str = "localhost",
         host: str = "0.0.0.0",
         port: int = 443,
+        https_port: int = DEFAULT_HTTPS_PORT,
     ) -> None:
         self._serial = serial
         self._firmware = firmware
@@ -64,6 +73,7 @@ class BootstrapHttpServer:
         self._broker_host = broker_host
         self._host = host
         self._port = port
+        self._https_port = https_port
 
         self._homie_schema = schema.raw_json
         self._app = web.Application()
@@ -148,17 +158,46 @@ class BootstrapHttpServer:
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def _server_ssl_context(self) -> ssl.SSLContext:
+        """Build the TLS context for the HTTPS listener.
+
+        Uses the same bundle whose CA is handed out by
+        ``/api/v2/certificate/ca``, so a client that pins what it fetched
+        there can validate what it connects to here.  A bundle whose leaf
+        did not chain to that CA would be a simulator that cannot be pinned.
+        """
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self._certs.server_cert_path, self._certs.server_key_path)
+        return context
+
     async def start(self) -> None:
-        """Start the HTTP server."""
+        """Start the plaintext and TLS listeners for this panel.
+
+        Both serve the same application. A failure to bind either one stops
+        the server rather than leaving a half-started one behind, because the
+        listener that did bind would otherwise hold its port against the
+        caller's retry on the next port pair.
+        """
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, self._host, self._port)
-        await site.start()
+        try:
+            await web.TCPSite(self._runner, self._host, self._port).start()
+            await web.TCPSite(
+                self._runner,
+                self._host,
+                self._https_port,
+                ssl_context=self._server_ssl_context(),
+            ).start()
+        except (OSError, ssl.SSLError):
+            await self.stop()
+            raise
         _LOGGER.info(
-            "Bootstrap HTTP server for %s listening on %s:%d",
+            "Bootstrap server for %s listening on %s:%d (http) and %s:%d (https)",
             self._serial,
             self._host,
             self._port,
+            self._host,
+            self._https_port,
         )
 
     async def stop(self) -> None:

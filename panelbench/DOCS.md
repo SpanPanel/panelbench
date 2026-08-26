@@ -132,7 +132,7 @@ System, light, or dark theme via the header selector.
 | `log_level` | `INFO` | Logging verbosity |
 | `advertise_address` | (auto-detected) | IP to advertise via mDNS (leave blank for auto) |
 | `dashboard_enabled` | `true` | Enable the web dashboard |
-| `base_http_port` | `8081` | Base port for per-panel HTTP servers (first panel uses this port, second uses port+1, etc.) |
+| `base_http_port` | `8081` | Base port for per-panel HTTP servers (first panel uses this port, second uses port+1, etc.). Each panel also serves the same API over TLS 1000 ports above its HTTP one |
 
 ## Custom configs
 

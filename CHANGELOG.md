@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.3.0 — panels serve TLS, and say where
+
+A simulated panel published a CA it never used. `/api/v2/certificate/ca` handed out a certificate authority, the bootstrap server listened in plaintext and
+nothing else listened at all, so the anchor pointed at a door that did not exist.
+
+That was invisible until the integration started pinning before it registers. Its flow fetches the CA over the plaintext port, then refuses to trust it unless
+it validates the certificate the panel actually serves — a check with no way past, because the next thing it sends is the panel passphrase. Against a
+simulator with no TLS listener the check could only fail, so setup dead-ended on `ca_leaf_mismatch` no matter what the user typed. Hardware serves both; the
+simulator now does too.
+
+### Added
+
+- **Every panel serves its REST API over TLS as well as plaintext**, on a port 1000 above its bootstrap one (8081 -> 9081), using the same certificate bundle
+  whose CA `/api/v2/certificate/ca` publishes. Both listeners share one application, so the two ports cannot answer differently. A bind failure on either now
+  stops the server rather than leaving the half that bound holding its port — the caller's response to `EADDRINUSE` is to retry on the next pair, which a
+  surviving listener would defeat.
+- **Discovery publishes both ports.** Supervisor records carry `https_port` beside `port`, and mDNS carries an `httpsPort` TXT record beside `httpPort`. The
+  ports are allocated per panel and reallocated across restarts, so this process is the only party that knows the answer; publishing it is what keeps the
+  integration from asking a user to go read a number out of an add-on log. Neither is emitted for a panel on the standard ports, which is what hardware in
+  that position advertises.
+- **The dashboard shows the pair** (`:8081/9081`) next to each running panel, for adding a panel to Home Assistant by hand — that path has no discovery record
+  to read and is asked for both numbers.
+
 ## 2.2.0 — a battery implies a MID, and PanelBench owns its config directory
 
 Two defects with one symptom: a panel with a battery and no MID, and so nothing publishing islanding state. Reported against the add-on, where both were reachable

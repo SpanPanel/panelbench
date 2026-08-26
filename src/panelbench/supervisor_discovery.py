@@ -14,6 +14,8 @@ import socket
 
 import aiohttp
 
+from panelbench.const import DEFAULT_HTTPS_PORT
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -85,11 +87,19 @@ class SupervisorDiscovery:
         finally:
             await session.close()
 
-    async def register_panel(self, serial: str, port: int) -> None:
+    async def register_panel(
+        self, serial: str, port: int, *, https_port: int = DEFAULT_HTTPS_PORT
+    ) -> None:
         """Register a panel with the Supervisor Discovery API.
 
         The host is always the container hostname — HA Core resolves it
         via Docker DNS.  No-ops if not in add-on mode.
+
+        ``https_port`` is published beside the bootstrap port because a
+        simulated panel serves TLS on a port only this process knows.  The
+        integration pins the CA it fetches in plaintext and then checks it
+        against the certificate served on the TLS port; told both ports, it
+        can do that without asking a human which one moved where.
         """
         if not self._token:
             return
@@ -100,6 +110,7 @@ class SupervisorDiscovery:
             "config": {
                 "host": host,
                 "port": port,
+                "https_port": https_port,
                 "serial": serial,
             },
         }
