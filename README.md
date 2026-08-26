@@ -70,8 +70,12 @@ The steps below are what will apply once `r202633+` firmware ships and this is r
 5. The `span-panel` integration discovers running panels automatically via the Supervisor Discovery API (default configs excluded)
 6. Open the web dashboard via **Open Web UI** to configure panels
 
-The App runs the simulator in a container with its own Mosquitto broker. No real SPAN hardware is needed. Each panel runs on its own HTTP port (starting from
-`base_http_port`, default 8081) and the dashboard shows the port next to each running panel's serial number.
+The App runs the simulator in a container with its own Mosquitto broker. No real SPAN hardware is needed. Each panel runs on its own pair of ports: a bootstrap
+HTTP port (starting from `base_http_port`, default 8081) and a TLS port 1000 above it (9081), serving the same API. The dashboard shows both next to each
+running panel's serial number, and discovery publishes both, so a panel added from a discovery notification needs neither.
+
+The pair mirrors hardware, and the integration needs both: it fetches the panel's CA over the plaintext port — it has nothing to trust yet at that point — and
+then refuses to pin it unless it validates the certificate served on the TLS port.
 
 ## Quick Start (macOS standalone)
 
@@ -102,7 +106,9 @@ Home Assistant's zeroconf auto-discovers **one panel per IP address** (default c
 HA and can be configured normally. Additional panels on the same host need to be added manually — use the port shown in the dashboard panel list:
 
 1. In HA, go to **Settings > Devices & Services > Add Integration**
-2. Search for **Span Panel** and enter the host IP and port (e.g. `192.168.1.50` port `8082`)
+2. Search for **Span Panel** and enter the host IP and bootstrap HTTP port (e.g. `192.168.1.50` port `8082`)
+3. Because the port is not 80, the integration asks which port the panel serves TLS on — that is the second number in the dashboard's port pair (`9082` for
+   the panel above)
 
 Each panel has a unique serial number, so there is no conflict between the auto-discovered panel and manually added ones.
 
@@ -261,7 +267,7 @@ All variables can also be passed as CLI arguments (`--help` for full list).
 | `CONFIG_NAME`       | `default_config.yaml` | Specific config file to load            |
 | `TICK_INTERVAL`     | `1.0`                 | Seconds between simulation ticks        |
 | `LOG_LEVEL`         | `INFO`                | `DEBUG`, `INFO`, `WARNING`, `ERROR`     |
-| `HTTP_PORT`         | `8081`                | Bootstrap HTTP server port              |
+| `HTTP_PORT`         | `8081`                | Bootstrap HTTP server port (TLS on +1000) |
 | `DASHBOARD_PORT`    | `18080`               | Dashboard web UI port                   |
 | `BROKER_HOST`       | `localhost`           | MQTT broker hostname                    |
 | `BROKER_PORT`       | `18883`               | MQTTS broker port                       |

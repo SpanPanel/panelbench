@@ -59,6 +59,28 @@ async def test_register_panel_posts_to_supervisor(discovery: SupervisorDiscovery
     mock_session.post.assert_called_once()
 
 
+async def test_register_panel_publishes_both_ports(discovery: SupervisorDiscovery):
+    """The discovery record carries the TLS port beside the bootstrap one.
+
+    The integration fetches the CA over the bootstrap port and then checks it
+    against the certificate served on the TLS port. Publishing both is what
+    lets it do that without asking a human for a number only this process knows.
+    """
+    mock_session = _mock_session(200, {"uuid": "disc-uuid-123"})
+    with (
+        patch("aiohttp.ClientSession", return_value=mock_session),
+        patch(
+            "panelbench.supervisor_discovery._container_hostname",
+            return_value="f8c38f2b-panelbench",
+        ),
+    ):
+        await discovery.register_panel("sim-001", 8081, https_port=9081)
+
+    config = mock_session.post.call_args.kwargs["json"]["config"]
+    assert config["port"] == 8081
+    assert config["https_port"] == 9081
+
+
 async def test_unregister_panel_deletes_from_supervisor(discovery: SupervisorDiscovery):
     """unregister_panel DELETEs /discovery/{uuid}."""
     discovery._entries["sim-001"] = "disc-uuid-123"

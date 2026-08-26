@@ -21,6 +21,8 @@ from threading import Lock
 from zeroconf import IPVersion, ServiceBrowser, ServiceInfo, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import AsyncZeroconf
 
+from panelbench.const import DEFAULT_HTTPS_PORT
+
 _LOGGER = logging.getLogger(__name__)
 
 # mDNS service types the integration listens for (manifest.json)
@@ -83,7 +85,13 @@ class PanelAdvertiser:
         _LOGGER.info("mDNS advertiser stopped")
 
     async def register_panel(
-        self, serial: str, firmware: str, *, model: str = "MAIN_32", port: int = 80
+        self,
+        serial: str,
+        firmware: str,
+        *,
+        model: str = "MAIN_32",
+        port: int = 80,
+        https_port: int = DEFAULT_HTTPS_PORT,
     ) -> None:
         """Advertise a panel on the local network.
 
@@ -113,6 +121,13 @@ class PanelAdvertiser:
         # the HA integration discovers the correct HTTP bootstrap address
         if port != 80:
             ebus_properties["httpPort"] = str(port)
+
+        # And httpsPort beside it: a panel on a moved HTTP port has a moved TLS
+        # port too, and the client needs it to check that the CA it just fetched
+        # signs what the panel actually serves. Without this the client has to
+        # ask a human for a number only the simulator knows.
+        if https_port != DEFAULT_HTTPS_PORT:
+            ebus_properties["httpsPort"] = str(https_port)
 
         # _span._tcp properties
         span_properties: dict[str, str] = {

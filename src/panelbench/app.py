@@ -30,6 +30,7 @@ from panelbench.const import (
     DEFAULT_FIRMWARE_VERSION,
     DEFAULT_TICK_INTERVAL_S,
     MQTTS_PORT,
+    https_port_for,
 )
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.discovery import PanelAdvertiser, PanelBrowser
@@ -343,18 +344,26 @@ class SimulatorApp:
         self._panels[config_path] = panel
         self._serial_to_panel[serial] = panel
 
-        # Create per-panel bootstrap HTTP server with port allocation
+        # Create per-panel bootstrap server (plaintext + TLS) with port allocation.
+        # Bound outside the closure: the bundle is known to exist here, and a
+        # nested read of the attribute would not be.
+        certs = self._certs
+
+        def _build(http_port: int) -> BootstrapHttpServer:
+            return BootstrapHttpServer(
+                serial,
+                self._firmware,
+                certs,
+                panel_schema,
+                broker_username=self._broker_username,
+                broker_password=self._broker_password,
+                broker_host=self._broker_host,
+                port=http_port,
+                https_port=https_port_for(http_port),
+            )
+
         port = self._allocate_port()
-        server = BootstrapHttpServer(
-            serial,
-            self._firmware,
-            self._certs,
-            panel_schema,
-            broker_username=self._broker_username,
-            broker_password=self._broker_password,
-            broker_host=self._broker_host,
-            port=port,
-        )
+        server = _build(port)
         max_port_retries = 20
         for _attempt in range(max_port_retries):
             try:
@@ -363,19 +372,12 @@ class SimulatorApp:
             except OSError as exc:
                 if exc.errno != errno.EADDRINUSE:
                     raise
+                # Either half of the pair may be the one in use; both move
+                # together, so the next allocation is a clean pair.
                 _LOGGER.warning("Port %d in use for panel %s, trying next port", port, serial)
                 self._release_port(port)
                 port = self._allocate_port()
-                server = BootstrapHttpServer(
-                    serial,
-                    self._firmware,
-                    self._certs,
-                    panel_schema,
-                    broker_username=self._broker_username,
-                    broker_password=self._broker_password,
-                    broker_host=self._broker_host,
-                    port=port,
-                )
+                server = _build(port)
         else:
             raise OSError(
                 f"Could not find an available port for panel {serial} "
@@ -388,12 +390,18 @@ class SimulatorApp:
         # Register with mDNS advertiser
         if self._advertiser is not None:
             await self._advertiser.register_panel(
-                serial, self._firmware, model=panel_model, port=port
+                serial,
+                self._firmware,
+                model=panel_model,
+                port=port,
+                https_port=https_port_for(port),
             )
 
         # Register with Supervisor Discovery
         if self._supervisor_discovery is not None and self._supervisor_discovery.is_available:
-            await self._supervisor_discovery.register_panel(serial, port)
+            await self._supervisor_discovery.register_panel(
+                serial, port, https_port=https_port_for(port)
+            )
 
         _LOGGER.info("Registered panel %s from %s on port %d", serial, config_path.name, port)
         return panel

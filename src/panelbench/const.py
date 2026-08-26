@@ -11,6 +11,26 @@ WSS_PORT = 19002
 DEFAULT_BASE_HTTP_PORT = 8081
 DASHBOARD_PORT = 18080
 
+# The port a panel serves its REST API on over TLS when nothing has moved it,
+# matching hardware. Simulated panels sit on non-standard HTTP ports so they can
+# share a host, and their TLS port is derived from it by a fixed offset rather
+# than allocated separately: a client that has been told one port can then be
+# told the other by the same discovery record, with no second pool to keep in
+# step.
+DEFAULT_HTTPS_PORT = 443
+HTTPS_PORT_OFFSET = 1000
+
+
+def https_port_for(http_port: int) -> int:
+    """Return the TLS port a panel serves on given its bootstrap HTTP port.
+
+    One definition, because three parties need the same answer: the panel that
+    binds the listener, the discovery records that publish it, and the dashboard
+    that shows it to somebody adding a panel by hand.
+    """
+    return http_port + HTTPS_PORT_OFFSET
+
+
 # Default simulation parameters
 DEFAULT_TICK_INTERVAL_S = 1.0
 DEFAULT_LOG_LEVEL = "INFO"

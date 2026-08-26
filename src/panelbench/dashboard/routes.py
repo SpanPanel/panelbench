@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+from panelbench.const import https_port_for
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
     APP_KEY_PENDING_CLONES,
@@ -153,6 +154,12 @@ def _all_panels(request: web.Request) -> list[dict[str, object]]:
             "active": fname == active_file,
             "is_default": fname.startswith("default_"),
             "port": port_map.get(running_map.get(fname, ""), 0),
+            # Shown beside the HTTP port because adding a panel by hand asks
+            # for both: the bootstrap port to reach it, and the TLS port the
+            # client checks the panel's certificate on.
+            "https_port": https_port_for(port_map[running_map[fname]])
+            if fname in running_map and running_map[fname] in port_map
+            else 0,
             "error": errors.get(fname, ""),
         }
         for fname in configs
