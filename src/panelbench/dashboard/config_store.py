@@ -26,6 +26,7 @@ from panelbench.dashboard.presets import (
     get_evse_tuples,
     get_preset,
 )
+from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.solar import compute_solar_curve
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
@@ -52,6 +53,18 @@ class EntityView:
     overrides: dict[str, Any] = field(default_factory=dict)
     recorder_entity: str | None = None
     user_modified: bool = False
+
+    never_backup: bool = False
+
+    @property
+    def relay_locked(self) -> bool:
+        """Whether this circuit's relay is locked and so carries no user command.
+
+        Derived rather than stored, from the one predicate the manifest is built
+        with, so the dot the dashboard offers and the `$settable` the panel
+        publishes cannot disagree.
+        """
+        return relay_locked(self.relay_behavior)
 
 
 def _detect_entity_type(template: dict[str, Any]) -> str:
@@ -348,6 +361,7 @@ class ConfigStore:
             overrides=dict(overrides),
             recorder_entity=template.get("recorder_entity"),
             user_modified=bool(template.get("user_modified")),
+            never_backup=bool(template.get("never_backup")),
         )
 
     def list_entities(self) -> list[EntityView]:

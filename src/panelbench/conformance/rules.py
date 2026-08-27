@@ -25,6 +25,45 @@ _FORMAT_REQUIRED_DATATYPES = frozenset({"enum", "color"})
 _EBUS_CAPABILITY_PREFIX = "energy.ebus.capability."
 _NUMERIC_DATATYPES = frozenset({"integer", "float"})
 
+# Catalog properties whose Settable column is a *condition* rather than a `yes`, so a
+# conformant publisher omits `$settable` on the instances where the condition is false.
+#
+# `capabilities/switch.md:28` is the only such row in the vendored set: `relay`'s Settable
+# column reads "when `relay-controllable`", and the same line adds "Settable when
+# `relay-controllable = true`", which `capabilities/switch.md:29` defines as the relay
+# being openable "by command or automatic shed". A circuit commissioned permanently on is
+# locked, so a publisher that declared `relay` settable there would be advertising a
+# command it must reject. `ebus-sdk` models the same idea as a declaration flag —
+# `ebus_sdk/declaration.py:107`, `conditionally_settable`, materialized NOT settable so
+# `$description` stays truthful and no `/set` subscription is left open.
+#
+# The catalog JSON cannot carry this: `switch.json` declares `"settable": true` flat, with
+# the condition only in its prose `description`. Parsing prose would be worse than a table,
+# and the vendored catalogs are byte copies that must not be edited (AGENTS.md), so the
+# condition is restated here with its citation. `test_relay_is_still_conditionally_settable`
+# fails if a re-vendor drops the clause this entry rests on.
+#
+# `load-shed/priority` is deliberately absent. Its Settable column reads plain `yes`
+# (`capabilities/load-shed.md:26`) and the per-circuit lock is not the spec's: what the
+# spec grants there is publisher-level conformance latitude — "a publisher that cannot
+# accept writes to `priority` ... advertises it read-only (`$settable: false`) ...
+# declining to be writable is a permitted deviation" (`capabilities/load-shed.md:28`). A
+# permitted deviation is what O4 exists to record, so a never-backup circuit's read-only
+# `priority` should keep producing a row. Only the eBus schema migration guide makes that
+# lock per-circuit, and guide-only behaviour does not get spec treatment here.
+#
+# Keyed by (capability type, property id), which is how the checker sees a property.
+_CONDITIONALLY_SETTABLE: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("energy.ebus.capability.switch", "relay"),
+    }
+)
+
+
+def _is_conditionally_settable(catalog: Catalog, prop_id: str) -> bool:
+    """Whether the catalog's `settable` for this property is conditional per instance."""
+    return (catalog.capability, prop_id) in _CONDITIONALLY_SETTABLE
+
 
 class Severity(enum.Enum):
     VIOLATION = "violation"
@@ -207,7 +246,23 @@ def _observe_property(
             )
         )
 
-    if prop.settable != catalog_prop.settable:
+    # A conditionally-settable property narrowed to not-settable is the condition being
+    # false on this instance, not a divergence: `capabilities/switch.md:28` makes `relay`
+    # settable "when `relay-controllable`", so a panel with a locked circuit MUST publish
+    # the mix. Reporting it would put a row on every faithful clone of a real panel for
+    # behaviour the specification requires, which is how a report teaches people to stop
+    # reading it. Direction matters — declaring a property settable that the catalog does
+    # not is still a divergence, and so is dropping `$settable` from an unconditionally
+    # settable one. See `_CONDITIONALLY_SETTABLE` for why `load-shed/priority` is not here.
+    #
+    # No row of any kind, so the property counts as a match: with the catalog's own
+    # condition honoured, the declaration and the catalog agree.
+    narrowed_by_condition = (
+        catalog_prop.settable
+        and not prop.settable
+        and _is_conditionally_settable(catalog, prop.id)
+    )
+    if prop.settable != catalog_prop.settable and not narrowed_by_condition:
         findings.append(
             _observation(
                 "O4",

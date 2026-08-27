@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.4.0 — the two commissioning locks a real panel publishes
+
+`ebus-panel-sim` 0.8.0 finishes what 0.7.0 started: a SPAN panel commissions circuits with two independent locks, and both are published only as the *absence*
+of a Homie `$settable` attribute. A relay-locked circuit offers no relay command; a never-backup circuit offers no shed-priority change. Neither has a value of
+its own on the wire, so anything that read values alone reproduced neither — which is exactly how a clone of a real panel ended up offering controls the panel
+it was cloned from does not.
+
+### Changed
+
+- **Locked circuits no longer advertise a relay command**: the three the shipped 40-space default commissions `non-controllable` now publish `switch/relay`
+  without `$settable`, report `switch/relay-requester: CONFIGURATION` at rest instead of `NONE`, and accept no `/set`, which is what real firmware has always
+  published.
+- **The dashboard refuses a relay toggle on a locked circuit** and no longer offers a clickable status dot for one, where it used to answer `{"ok": true}` and
+  zero the circuit's power behind a published tree saying the relay is closed and not commandable.
+- **The dashboard refuses a shed-priority change on a never-backup circuit** and disables the control in the edit form, because such a circuit is commissioned
+  permanently `OFF_GRID` and saving another value produced a config the panel could not start from.
+- **The conformance report no longer flags a locked relay as a divergence**, since the specification makes `switch/relay` settable "when `relay-controllable`"
+  and every faithful clone of a real panel was publishing a row per locked circuit for behaviour the specification requires.
+- **A property the catalog marks settable unconditionally still diverges** when it is published read-only, so the narrowing is scoped to the one condition the
+  specification states.
+
+### Added
+
+- **Cloning a panel reproduces its never-backup circuits**: a captured circuit whose `load-shed/priority` carries no `$settable` clones to `never_backup: true`
+  and the clone publishes the same absence, mirroring the relay lock clones already carried.
+- **A source panel that locks the priority at anything but `OFF_GRID` is contradicting itself**, so the clone keeps the published priority, drops the lock, and
+  logs why rather than writing a config that cannot start.
+
+### Fixed
+
+- **The conformance report describes what the simulator actually publishes again**: it had credited every circuit and both lugs devices with a
+  `connection/count` property the emitter stopped declaring in 0.6.0, which went unnoticed for two releases because the property never carried a value and so
+  was invisible to the topic-set comparison that guards the capture.
+
 ## 2.3.0 — panels serve TLS, and say where
 
 A simulated panel published a CA it never used. `/api/v2/certificate/ca` handed out a certificate authority, the bootstrap server listened in plaintext and

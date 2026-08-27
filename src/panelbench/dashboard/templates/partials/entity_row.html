@@ -5,7 +5,16 @@
          onchange="if(window.toggleCircuitOverlay){window.toggleCircuitOverlay('{{ entity.id }}', this.checked)}"
          title="Overlay on modeling charts">
   {% endif %}
+  {#- The toggle class is what the runtime-controls click handler binds to, so a locked
+      circuit renders the dot without it: the relay it would command carries no $settable
+      on the wire, and POST /entities/<id>/relay refuses it. Leaving the dot clickable
+      would flip it optimistically against a 409. -#}
+  {% if entity.relay_locked %}
+  <span class="circuit-status" data-cid="{{ entity.id }}"
+        title="Relay locked ({{ entity.relay_behavior }}) — not commandable"></span>
+  {% else %}
   <span class="circuit-status circuit-status-toggle" data-cid="{{ entity.id }}" title="Toggle relay"></span>
+  {% endif %}
   <span class="badge badge-{{ entity.entity_type }}">{{ entity.entity_type|upper }}</span>
   {% if entity.recorder_entity %}
   <span class="badge badge-data-source {{ 'badge-override' if entity.user_modified else 'badge-replay' }}"

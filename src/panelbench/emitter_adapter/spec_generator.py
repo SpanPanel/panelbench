@@ -47,12 +47,31 @@ if TYPE_CHECKING:
 _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-on"})
 
 
-def _normalise_relay_behavior(raw: str) -> str:
+def normalise_relay_behavior(raw: str) -> str:
     """Coerce ``controllable`` / ``non_controllable`` / ``always_on`` (any
     underscore-vs-dash form) to the dashed Homie convention; default to
     ``controllable`` when unrecognised."""
     candidate = raw.lower().replace("_", "-")
     return candidate if candidate in _VALID_RELAY_BEHAVIORS else "controllable"
+
+
+def relay_locked(relay_behavior: str) -> bool:
+    """Whether a circuit declaring this ``relay_behavior`` has a locked relay.
+
+    The producer-side mirror of ``ebus_panel_sim.manifest_physics.relay_locked``,
+    which is what actually decides the published tree: both non-controllable
+    spellings are one commissioning flag on the hardware this models, and SPAN
+    publishes ``relay-controllable = !always-on``. A locked relay carries no
+    ``$settable`` on ``switch/relay``, accepts no ``/set``, is never load-shed,
+    and reports ``relay-requester = CONFIGURATION`` at rest
+    (``capabilities/switch.md:28-29``).
+
+    Here so that anything offering the user a relay command asks the same
+    question the emitter asks before publishing the offer. Takes the config's
+    own ``relay_behavior`` spelling rather than manifest metadata, because the
+    callers that need it hold a config, not a built manifest.
+    """
+    return normalise_relay_behavior(relay_behavior) != "controllable"
 
 
 def build_manifest(profile: SimulationConfig) -> DeviceManifest:
@@ -131,16 +150,18 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             relay_behavior_raw = "controllable"
             priority = "NICE_TO_HAVE"
             breaker_rating = 20.0
+            never_backup = False
         else:
             relay_behavior_raw = str(template.get("relay_behavior", "controllable"))
             priority = str(template.get("priority", "NICE_TO_HAVE")).upper()
+            never_backup = bool(template.get("never_backup", False))
             # ``breaker_rating_a`` is the producer-side legacy key; the typed
             # ``breaker_rating`` (no units suffix) is the canonical YAML field.
             # Read both so manifests built from older clones still work.
             breaker_rating = float(
                 template.get("breaker_rating_a") or template.get("breaker_rating", 20),
             )
-        relay_behavior = _normalise_relay_behavior(relay_behavior_raw)
+        relay_behavior = normalise_relay_behavior(relay_behavior_raw)
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
@@ -167,6 +188,16 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     "placement": str(c.get("placement", "upstream-of-lugs")),
                     "always-on": "true" if relay_behavior == "always-on" else "false",
                     "pcs-priority": str(c.get("pcs_priority", idx)),
+                    # The second commissioning lock, independent of the relay one:
+                    # `load-shed/priority` publishes with `$settable = !never-backup`, so
+                    # a locked circuit offers a consumer no way to re-prioritise it. Set
+                    # only when true — `manifest_physics.never_backup` reads an absent key
+                    # as unlocked, and the emitter rejects the key on any circuit whose
+                    # `default-priority` is not `OFF_GRID`, so writing a blanket "false"
+                    # would add a key to every manifest that changes nothing. Contrast
+                    # `always-on` above, which the relay predicate ORs and so must always
+                    # be written.
+                    **({"never-backup": "true"} if never_backup else {}),
                 },
             ),
         )

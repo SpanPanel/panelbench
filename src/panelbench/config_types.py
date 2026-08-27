@@ -205,6 +205,12 @@ class CircuitTemplateExtended(CircuitTemplate, total=False):
     breaker_rating_a: float  # Legacy alias for breaker_rating, used by older clones.
     recorder_entity: str  # HA entity ID for recorder replay (e.g. "sensor.span_panel_..._power")
     user_modified: bool  # True when user has edited profile → use synthetic instead of replay
+    # Installer commissioning lock: this circuit receives no backup power, so it is
+    # permanently `OFF_GRID` and `load-shed/priority` publishes without `$settable`.
+    # Independent of `relay_behavior`'s lock and of `priority`'s value — `NEVER` is an
+    # ordinary settable value meaning "never shed", not this. The emitter rejects the
+    # pair when `priority` is anything but `OFF_GRID`.
+    never_backup: bool
 
 
 class CircuitDefinition(TypedDict):

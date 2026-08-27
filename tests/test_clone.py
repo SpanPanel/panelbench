@@ -41,13 +41,28 @@ def _device(
     *,
     parent: str | None = None,
     children: list[str] | None = None,
+    settable: dict[str, set[str]] | None = None,
 ) -> DiscoveredDevice:
-    """Build a DiscoveredDevice from a {capability: {property: value}} map."""
+    """Build a DiscoveredDevice from a {capability: {property: value}} map.
+
+    `settable` names the properties whose declaration carries `$settable`, as
+    `{capability: {property, ...}}`. It is part of the published shape, not decoration:
+    Homie 5 defaults the attribute to false, so a panel commissions a per-circuit lock
+    by omitting it — which is the only thing `never-backup` puts on the wire.
+    """
     device = DiscoveredDevice(device_id)
+    settable = settable or {}
     nodes = {
         cap: {
             "name": cap,
-            "properties": {prop: {"name": prop, "datatype": "string"} for prop in props},
+            "properties": {
+                prop: (
+                    {"name": prop, "datatype": "string", "settable": True}
+                    if prop in settable.get(cap, set())
+                    else {"name": prop, "datatype": "string"}
+                )
+                for prop in props
+            },
         }
         for cap, props in capabilities.items()
     }
@@ -81,6 +96,7 @@ def _circuit(
     exported: str = "0.0",
     managed: str = "true",
     controllable: str = "true",
+    never_backup: bool = False,
     feeds: tuple[str, str] | None = None,
 ) -> DiscoveredDevice:
     """A circuit device.
@@ -113,7 +129,15 @@ def _circuit(
             "feeds-device-status": "OK",
             "count": "1",
         }
-    return _device(device_id, TYPE_CIRCUIT, caps, parent=_SERIAL)
+    # What a real panel declares: `switch/relay` settable exactly when the relay is
+    # controllable, `load-shed/priority` settable exactly when the circuit is not
+    # commissioned never-backup. The two locks are independent by construction.
+    declared_settable: dict[str, set[str]] = {}
+    if controllable == "true":
+        declared_settable["switch"] = {"relay"}
+    if not never_backup:
+        declared_settable["load-shed"] = {"priority"}
+    return _device(device_id, TYPE_CIRCUIT, caps, parent=_SERIAL, settable=declared_settable)
 
 
 def _base_devices() -> dict[str, DiscoveredDevice]:

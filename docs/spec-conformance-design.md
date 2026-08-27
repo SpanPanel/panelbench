@@ -90,9 +90,9 @@ is unenforceable.
 Both feeds are a few lines each and share every rule. A live-broker mode is deliberately not built: it drags credentials and a running broker into CI, is
 non-deterministic, and welds the tool to one transport — which is the opposite of the property that makes the core reusable.
 
-**Enforced boundary:** `model.py` and `rules.py` import nothing from `panelbench` and nothing MQTT-related. A test asserts this. That constraint is
-what would let the core be offered upstream later as a publisher-side conformance checker, which is a category the specification's own `tools/` does not
-currently have — all four scripts there are author-side.
+**Enforced boundary:** `model.py` and `rules.py` import nothing from `panelbench` and nothing MQTT-related. A test asserts this. That constraint is what would
+let the core be offered upstream later as a publisher-side conformance checker, which is a category the specification's own `tools/` does not currently have —
+all four scripts there are author-side.
 
 ## The conformance floor
 
@@ -159,21 +159,33 @@ stated in the finding text so nobody later "fixes" it by relaxing it.
 
 ### Observations — reported, never fatal
 
-| #   | Observation                                                                       | Bucket     |
-| --- | --------------------------------------------------------------------------------- | ---------- |
-| O1  | A node `$type` matching `energy.ebus.capability.*` names no registered capability | Divergence |
-| O2  | A published `datatype` differs from the catalog's                                 | Divergence |
-| O3  | `$unit` differs from the catalog's concrete unit                                  | Divergence |
-| O4  | `$settable` differs from the catalog or overlay                                   | Divergence |
-| O5  | `$unit` present on a non-numeric datatype                                         | Divergence |
-| O6  | A published property id absent from its capability's catalog                      | Extension  |
-| O7  | A node whose `$type` is not an `energy.ebus.capability.*` at all                  | Extension  |
-| O8  | A capability the profile names but the device does not publish                    | Omission   |
-| O9  | A catalog property the device does not publish                                    | Omission   |
+| #   | Observation                                                                                                     | Bucket     |
+| --- | --------------------------------------------------------------------------------------------------------------- | ---------- |
+| O1  | A node `$type` matching `energy.ebus.capability.*` names no registered capability                               | Divergence |
+| O2  | A published `datatype` differs from the catalog's                                                               | Divergence |
+| O3  | `$unit` differs from the catalog's concrete unit                                                                | Divergence |
+| O4  | `$settable` differs from the catalog or overlay, except a conditionally-settable property narrowed to read-only | Divergence |
+| O5  | `$unit` present on a non-numeric datatype                                                                       | Divergence |
+| O6  | A published property id absent from its capability's catalog                                                    | Extension  |
+| O7  | A node whose `$type` is not an `energy.ebus.capability.*` at all                                                | Extension  |
+| O8  | A capability the profile names but the device does not publish                                                  | Omission   |
+| O9  | A catalog property the device does not publish                                                                  | Omission   |
 
 O1 is deliberately not an error: the spec's own tool treats an unregistered capability type as an advisory note, and matching upstream's severity matters more
 than our intuition about it. O2 likewise — principle 10 permits "a wider or differently-partitioned datatype", which is broad enough that almost any divergence
 is legal so long as it is self-described.
+
+O4 carries one exception, because the catalog's `settable` field cannot express everything the specification's Settable column says. `capabilities/switch.md`
+gives `relay` a Settable of "when `relay-controllable`", and `relay-controllable` is per circuit, so a panel with a locked circuit is _required_ to publish a
+mix: `$settable` present on the controllable circuits and absent on the locked ones. The vendored `switch.json` flattens that to `"settable": true` and keeps
+the condition in prose, so comparing against the field alone puts a divergence row on every faithful clone of a real panel — noise that teaches people to stop
+reading the report. `rules._CONDITIONALLY_SETTABLE` names the conditional properties, with the citation, and O4 skips only the one direction the condition can
+explain: a property the catalog marks settable, published read-only. Declaring a read-only property settable still diverges, and so does dropping `$settable`
+from an unconditionally settable property.
+
+`load-shed/priority` is deliberately not in that set even though this producer can lock it per circuit. Its Settable column reads plain `yes`; what the spec
+grants is publisher-level latitude ("declining to be writable is a permitted deviation"), and a permitted deviation is exactly what a divergence row is for. The
+per-circuit version of that lock rests on the migration guide, which does not outrank the specification.
 
 O8 and O9 exist to make coverage visible, not to complain. A consumer author wants to know which catalog surface this producer actually implements; that is a
 fact about the producer, not a defect. They are counted in the summary and listed only under `--verbose`, since a full BESS tree omits a great many optional

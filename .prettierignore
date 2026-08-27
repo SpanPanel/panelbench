@@ -7,6 +7,14 @@ build/
 .ruff_cache/
 .pytest_cache/
 
+# Byte-vendored from the eBus emitter as the fidelity reference. PROVENANCE.md makes
+# byte-identity with upstream's own files the property that gives them their value, and
+# `test_vendored_reference_matches_upstream` asserts it, so a formatter run here breaks the
+# comparison and turns every re-sync into a merge conflict. `pyproject.toml` already excludes
+# the directory from ruff for the same reason; Prettier was the half nobody had covered, and
+# `scripts/fix-markdown.sh` rewrote PROVENANCE.md on its next run.
+tests/fidelity/fixtures/upstream/
+
 # Match .gitignore: unpublished planning docs
 **/roadmap/
 panelbench/docs/2026-03-*-*.md

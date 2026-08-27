@@ -813,9 +813,33 @@ def _persist_config_live_bess(request: web.Request) -> None:
 
 
 async def handle_put_entity(request: web.Request) -> web.Response:
+    """Save a circuit's edited fields.
+
+    A priority change is refused on a never-backup circuit, for the same reason
+    `handle_set_relay` refuses a locked relay: this panel publishes
+    `load-shed/priority` without `$settable` there, so no consumer is offered the
+    write and the dashboard must not offer it either. The commissioning lock also
+    *is* permanently `OFF_GRID` — the emitter rejects a manifest that says
+    otherwise at construction — so accepting the edit would produce a config that
+    cannot start the panel.
+    """
     entity_id = request.match_info["id"]
     data = await request.post()
-    _store(request).update_entity(entity_id, dict(data))
+    store = _store(request)
+    if "priority" in data:
+        try:
+            entity = store.get_entity(entity_id)
+        except KeyError:
+            raise web.HTTPNotFound(text=f"Entity not found: {entity_id}") from None
+        if entity.never_backup and str(data["priority"]) != entity.priority:
+            raise web.HTTPConflict(
+                text=(
+                    f"{entity.name} is commissioned never-backup, so it is permanently "
+                    f"{entity.priority} and publishes load-shed/priority without "
+                    "$settable. Clear never_backup to re-prioritise it."
+                )
+            )
+    store.update_entity(entity_id, dict(data))
     # Push priority change to the running engine immediately
     if "priority" in data:
         _ctx(request).set_circuit_priority(entity_id, str(data["priority"]))
@@ -1256,12 +1280,44 @@ async def handle_set_grid_islandable(request: web.Request) -> web.Response:
 
 
 async def handle_set_relay(request: web.Request) -> web.Response:
-    """Toggle a circuit relay (OPEN/CLOSED)."""
+    """Toggle a circuit relay (OPEN/CLOSED).
+
+    Refused on a circuit whose relay is locked, because this panel publishes that
+    the command cannot be issued. A locked circuit carries no ``$settable`` on
+    ``switch/relay``, holds ``relay-controllable = false``, and reports
+    ``relay-requester = CONFIGURATION`` at rest; the emitter's ``RelayResolver``
+    will not open it for a ``/set`` or for a load-shed either.
+
+    This override never reached the emitter. It is producer-side —
+    ``engine.set_dynamic_overrides`` lands in ``circuit._apply_state_overrides``,
+    where an ``OPEN`` relay zeroes the circuit's power — so opening a locked
+    circuit here published a tree saying the relay is closed and not commandable
+    beside a circuit suddenly drawing nothing, for no stated reason, while this
+    endpoint answered ``{"ok": true}`` for a command the same tree says cannot be
+    issued. Refusing is the honest half: the dashboard may still drive the
+    producer, but not past a lock the panel advertises.
+
+    409 rather than 400: the request is well-formed and would be valid on another
+    circuit; what refuses it is this circuit's commissioning state.
+    """
     entity_id = request.match_info["id"]
     data = await request.json()
     relay_state = str(data.get("relay_state", "CLOSED"))
     if relay_state not in ("OPEN", "CLOSED"):
         raise web.HTTPBadRequest(text="relay_state must be OPEN or CLOSED")
+    try:
+        entity = _store(request).get_entity(entity_id)
+    except KeyError:
+        raise web.HTTPNotFound(text=f"Entity not found: {entity_id}") from None
+    if entity.relay_locked:
+        raise web.HTTPConflict(
+            text=(
+                f"{entity.name} has a locked relay (relay_behavior="
+                f"{entity.relay_behavior!r}), so it publishes switch/relay without "
+                "$settable and relay-controllable=false. Set relay_behavior to "
+                "'controllable' to command it."
+            )
+        )
     ctx = _ctx(request)
     ctx.set_circuit_relay(entity_id, relay_state)
     return web.json_response({"ok": True, "relay_state": relay_state})
