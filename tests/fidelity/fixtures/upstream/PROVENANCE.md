@@ -10,8 +10,8 @@ spec-faithful producer publishes from a given config.
 | `run_forty_tab_minimal.py` | `examples/run_forty_tab_minimal.py` |
 
 - **Repository:** `electrification-bus/distribution-enclosure-simulator`
-- **Commit:** `8735c24c09d0d16c2eacac7c7664cff49af2248c` (v0.5.1)
-- **Examples last changed at:** `3aaddb45f16eb1d6ea2562011a82120eccf1ea3a`
+- **Commit:** `171bb94f0960ccd2f62282c83ec203017bd6aa7f` (tagged `v0.8.0`, whose annotated tag object is `ed67c849`)
+- **Examples last changed at:** `8d6c34ac9453781d9171d0941e91d84caa39be9f`
 
 ## Why vendored rather than imported
 
@@ -46,6 +46,13 @@ Copy both files again, update the commit above, then run the parity test. A
 changed gap set is the point — it means the reference moved, and the baseline in
 `../parity_baseline.json` needs deliberate review rather than a blind refresh.
 
+Record the **commit**, not the tag object: upstream's release tags are annotated, so
+`git rev-parse v0.8.0` hands back the tag's own SHA and not the commit it points at.
+Use `git rev-parse v0.8.0^{commit}`. The v0.5.1 line this replaced recorded
+`8735c24c`, which is that release's tag object rather than its commit `b561d069` —
+an id that resolves to something real, and so reads as correct, while naming the
+wrong kind of object.
+
 The v0.3.3 → v0.5.1 re-sync moved `run_forty_tab_minimal.py` only, and only its
 annotations: `Literal["self-consumption", "backup-only"]` became the `ChargeMode`
 alias the emitter now exports from its root, which is the same type spelled once.
@@ -53,3 +60,18 @@ alias the emitter now exports from its root, which is the same type spelled once
 reviewed and left unchanged — it still matches, which is the expected result for
 a reference whose published surface did not move, and is the evidence that it
 did not.
+
+The v0.5.1 → v0.8.0 re-sync moved both files, and this time the reference's
+published surface moved with them. `forty_tab_minimal.yaml` gains a `pool_pump`
+template commissioned `never-backup: true` at tab 3, and
+`run_forty_tab_minimal.py` writes the matching manifest key — so the reference
+now publishes a circuit whose `load-shed/priority` carries no `$settable`, which
+is the second commissioning lock 0.8.0 introduced. The `solar` template is
+unchanged and still reads `priority: NEVER` on a non-controllable relay: 0.8.0
+fixed how that combination is *interpreted* (`NEVER` is an ordinary settable
+value, not the lock), not the example that expresses it.
+
+Both parity baselines were reviewed and left unchanged. They still match — the
+new circuit is published identically by both producers, `$settable` absence
+included — which is the evidence that panelbench picked up the new key rather
+than that nothing was compared.
