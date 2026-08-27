@@ -32,3 +32,41 @@ replace scattered inline logic and must not be eroded.
 - New energy behaviors (e.g. demand response, rate optimization) must be added inside the energy package, not grafted onto the engine.
 
 **Test discipline:** Tests drive BESS behavior through `BESSConfig` (charge_mode, charge_hours, discharge_hours), not by injecting state into `PowerInputs`.
+
+## eBus / Homie Questions: Check the Specification First
+
+This repository is an eBus **publisher**. Any question about what it must put on the
+wire — topic layout, capability nodes, property names, enum domains, `$settable` /
+`$format` / `$description` attributes, requester attribution, shed and islanding
+behavior — is answered by the published specification, not from memory and not from a
+migration guide.
+
+**Source:** <https://github.com/electrification-bus/specification>
+(local clone: `~/projects/ebus/specification`; `capabilities/`, `devices/`,
+`data-models/`, `integration-guides/`, `registries/`)
+
+**This repo already pins the spec.** `.ebus-spec.json` records `synced_commit` and the
+per-capability versions in `implements`. Cite against that commit, not against whatever
+your local clone happens to be on — `git -C ~/projects/ebus/specification log -1 <synced_commit>`
+first, and if the clone is behind or ahead, say which commit you read.
+
+**Rules:**
+
+- Quote the relevant spec file with a `path:line` citation before asserting what the
+  wire does. A claim about eBus behavior without a citation is a guess.
+- The published specification **outranks** `~/projects/ebus/docs/ebus-schema-migration-guide.md`
+  wherever the two disagree. The guide describes a flat-to-v1.0 mapping and has been
+  wrong in practice; the spec is normative.
+- Behavior that only the migration guide warrants belongs behind a vendor/variant gate,
+  never in a shared code path that a spec-conformant consumer also reads.
+- The vendored catalogs under `spec/catalogs/` are byte copies of the specification's
+  `capabilities/` at `synced_commit`. Treat them as read-only — a SPAN divergence is
+  carried in the profile overlay, never as an edit to a vendored catalog, so the byte
+  comparison stays a valid check.
+- Bumping `synced_commit` is its own change: re-vendor, re-verify the byte comparison,
+  and update the `implements` pins in the same commit.
+- Note that `.ebus-spec.json`'s free-text `notes` field has drifted — it still points at
+  `src/panelbench/ebus_emitter/wire/catalogs/`, a path that no longer exists on `main`.
+  Trust the pinned fields (`synced_commit`, `implements`) and the tree, not that prose.
+- If the spec is silent or self-contradictory, say so explicitly and open an issue
+  upstream rather than inventing a rule.
