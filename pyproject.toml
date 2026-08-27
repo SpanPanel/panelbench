@@ -46,7 +46,7 @@ dependencies = [
     # `pformat` are both still absent from `homie.py` and the logger is still NOTSET at
     # import, so the filter remains a guard rather than a live need.
     #
-    # 0.22.0, which is the ceiling `ebus-panel-sim` 0.6.1 allows: it declares
+    # 0.22.0, which is the ceiling `ebus-panel-sim` 0.8.0 allows: it declares
     # `ebus-sdk<0.23,>=0.20.1`, so 0.23.x is out of range until the emitter widens it. That
     # costs nothing here. Everything 0.21.0 through 0.23.1 adds is the producer-side
     # declarative tree API — `DeviceSpec`, `DeviceTreeBuilder`, `build_from_declarations` and
@@ -63,7 +63,7 @@ dependencies = [
     # `RecordingTransport` (last-wins per topic, like a broker's retained store) and
     # therefore to the fidelity captures.
     "ebus-sdk==0.22.0",
-    "ebus-panel-sim==0.6.1",
+    "ebus-panel-sim==0.8.0",
     "paho-mqtt>=2.0.0",
 ]
 

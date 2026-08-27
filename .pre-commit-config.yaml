@@ -37,8 +37,8 @@ repos:
           # released versions from PyPI rather than a git ref: `ebus-panel-sim` used to
           # track the fork's moving `spanpanel/main` branch, so this hook could resolve a
           # different build on two consecutive runs with nothing in the repo changing.
-          - ebus-panel-sim==0.5.1
-          - ebus-sdk==0.20.1
+          - ebus-panel-sim==0.8.0
+          - ebus-sdk==0.22.0
           - aiomqtt>=2.0.0
           - aiohttp>=3.9.0
           - aiohttp-jinja2>=1.6
