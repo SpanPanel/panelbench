@@ -437,6 +437,31 @@ def _bool_prop(
     return raw.lower() == "true"
 
 
+def _is_settable(
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    capability: str,
+    prop: str,
+) -> bool:
+    """Whether the panel declared this property settable, from its ``$description``.
+
+    A declaration question, not a value one — the other helpers here read published
+    values, and settability is never published as one. Homie 5 defaults ``$settable``
+    to false, so an absent attribute and an explicit ``false`` are the same claim, and
+    firmware publishes the absence.
+
+    A device with no description at all reads as settable, so a capture that lost the
+    declarations does not silently commission every circuit's lock.
+    """
+    device = devices.get(device_id)
+    if device is None or not device.description:
+        return True
+    declaration = device.get_node_properties(capability).get(prop)
+    if not isinstance(declaration, dict):
+        return True
+    return declaration.get("settable") is True
+
+
 def _spaces_prop(
     devices: Mapping[str, DiscoveredDevice],
     device_id: str,
@@ -586,6 +611,32 @@ def _translate_circuit(
     if relay_controllable is None:
         relay_controllable = True
 
+    # The second commissioning lock, and the mirror of the relay one above. `never-backup`
+    # has no published value of its own: the eBus schema migration guide maps it onto
+    # exactly one thing, `load-shed/priority`'s Homie `$settable`, "published with
+    # `$settable = !never-backup`", and describes the result as "locked-priority circuits
+    # (commissioned permanently `OFF_GRID`) appear as `priority = OFF_GRID, $settable =
+    # false`". So the absence of the attribute IS the lock, and a clone that read only the
+    # value would reproduce a circuit any consumer could re-prioritise.
+    #
+    # Deliberately not derived from `priority == "NEVER"`. `NEVER` is an ordinary settable
+    # value meaning "never shed"; a production capture publishes two `NEVER` circuits with
+    # `$settable = true`, which no value-derived flag can produce.
+    never_backup = not _is_settable(devices, node_uuid, "load-shed", "priority")
+    if never_backup and priority != "OFF_GRID":
+        # The panel contradicted itself: a circuit commissioned never-backup *is*
+        # permanently OFF_GRID, and the emitter rejects the pair at construction rather
+        # than silently rewriting either half. Keep the published priority, drop the lock,
+        # and say so — a clone that cannot start is a worse answer than a clone missing
+        # one lock from a panel that was already inconsistent.
+        _LOGGER.warning(
+            "Circuit %s declares load-shed/priority read-only but publishes priority=%s, "
+            "not OFF_GRID; cloning without never_backup",
+            node_uuid,
+            priority,
+        )
+        never_backup = False
+
     # Multi-position means split-phase, which is how 240 V presents on this panel.
     voltage = 240.0 if len(tabs) > 1 else 120.0
 
@@ -643,6 +694,12 @@ def _translate_circuit(
         "priority": priority,
         "breaker_rating": breaker_rating,
     }
+
+    # Written only when set. It is a commissioning lock a producer opts into, and
+    # `manifest_physics.never_backup` reads an absent key as unlocked, so a `false` here
+    # would add a line to every cloned template to say nothing.
+    if never_backup:
+        template["never_backup"] = True
 
     if device_role == "evse":
         template["device_type"] = "evse"

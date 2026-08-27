@@ -225,14 +225,33 @@ circuit_templates:
       power_variation: 0.3
     relay_behavior: "controllable"
     priority: "NEVER"
+  pool_pump:
+    energy_profile:
+      mode: "consumer"
+      power_range: [0.0, 1500.0]
+      typical_power: 1200.0
+      power_variation: 0.1
+    relay_behavior: "controllable"
+    priority: "OFF_GRID"
+    # Commissioned to receive no backup power, so the shed priority is locked:
+    # `load-shed/priority` publishes with no `$settable` and the panel accepts no
+    # `/set` for it. A locked circuit *is* permanently `OFF_GRID`, so `priority` must
+    # say so — any other value is rejected when the panel starts rather than silently
+    # rewritten. Independent of `relay_behavior`, and not the same thing as
+    # `priority: "NEVER"`, which is an ordinary settable value meaning "never shed".
+    never_backup: true
 
 circuits:
   - id: "kitchen_outlets"
     name: "Kitchen Outlets"
     template: "kitchen"
     tabs: [1, 3]
+  - id: "pool_pump"
+    name: "Pool Pump"
+    template: "pool_pump"
+    tabs: [5]
 
-unmapped_tabs: [2, 4, 5, 6, 7, 8]
+unmapped_tabs: [2, 4, 6, 7, 8]
 
 simulation_params:
   update_interval: 5

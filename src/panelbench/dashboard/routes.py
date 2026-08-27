@@ -813,9 +813,33 @@ def _persist_config_live_bess(request: web.Request) -> None:
 
 
 async def handle_put_entity(request: web.Request) -> web.Response:
+    """Save a circuit's edited fields.
+
+    A priority change is refused on a never-backup circuit, for the same reason
+    `handle_set_relay` refuses a locked relay: this panel publishes
+    `load-shed/priority` without `$settable` there, so no consumer is offered the
+    write and the dashboard must not offer it either. The commissioning lock also
+    *is* permanently `OFF_GRID` — the emitter rejects a manifest that says
+    otherwise at construction — so accepting the edit would produce a config that
+    cannot start the panel.
+    """
     entity_id = request.match_info["id"]
     data = await request.post()
-    _store(request).update_entity(entity_id, dict(data))
+    store = _store(request)
+    if "priority" in data:
+        try:
+            entity = store.get_entity(entity_id)
+        except KeyError:
+            raise web.HTTPNotFound(text=f"Entity not found: {entity_id}") from None
+        if entity.never_backup and str(data["priority"]) != entity.priority:
+            raise web.HTTPConflict(
+                text=(
+                    f"{entity.name} is commissioned never-backup, so it is permanently "
+                    f"{entity.priority} and publishes load-shed/priority without "
+                    "$settable. Clear never_backup to re-prioritise it."
+                )
+            )
+    store.update_entity(entity_id, dict(data))
     # Push priority change to the running engine immediately
     if "priority" in data:
         _ctx(request).set_circuit_priority(entity_id, str(data["priority"]))

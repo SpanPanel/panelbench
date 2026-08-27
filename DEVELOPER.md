@@ -338,6 +338,11 @@ circuit_templates: # Reusable template definitions
       initial_produced_energy_wh: float # Seed produced energy (from clone)
     relay_behavior: str # "controllable" | "non_controllable"
     priority: str # "NEVER" | "SOC_THRESHOLD" | "OFF_GRID"
+    never_backup: bool # Commissioning lock: no backup power, so permanently OFF_GRID
+                       # and load-shed/priority publishes without $settable. Requires
+                       # priority: OFF_GRID; the emitter rejects any other pairing.
+                       # Independent of relay_behavior, and NOT priority == "NEVER",
+                       # which is an ordinary settable value meaning "never shed".
     device_type: str # "circuit" | "evse" | "pv" (default: "circuit")
     breaker_rating: int # Amps (derived from power_range if not set)
 

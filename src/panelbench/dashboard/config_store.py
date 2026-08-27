@@ -54,6 +54,8 @@ class EntityView:
     recorder_entity: str | None = None
     user_modified: bool = False
 
+    never_backup: bool = False
+
     @property
     def relay_locked(self) -> bool:
         """Whether this circuit's relay is locked and so carries no user command.
@@ -359,6 +361,7 @@ class ConfigStore:
             overrides=dict(overrides),
             recorder_entity=template.get("recorder_entity"),
             user_modified=bool(template.get("user_modified")),
+            never_backup=bool(template.get("never_backup")),
         )
 
     def list_entities(self) -> list[EntityView]:
