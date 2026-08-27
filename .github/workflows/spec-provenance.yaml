@@ -13,7 +13,11 @@ on:
     branches: [main]
     paths:
       - ".ebus-spec.json"
-      - "src/panelbench/ebus_emitter/wire/catalogs/**"
+      # Where the vendored catalogs actually are. This filter named
+      # `src/panelbench/ebus_emitter/wire/catalogs/**` until 2026-08-26 — a path the
+      # de-vendoring had already deleted — so no catalog edit could match it and the
+      # read-only guarantee in the header above was not enforced on any pull request.
+      - "spec/catalogs/**"
       - "scripts/check-spec-provenance.py"
       - ".github/workflows/spec-provenance.yaml"
   schedule:

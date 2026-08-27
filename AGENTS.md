@@ -65,8 +65,5 @@ first, and if the clone is behind or ahead, say which commit you read.
   comparison stays a valid check.
 - Bumping `synced_commit` is its own change: re-vendor, re-verify the byte comparison,
   and update the `implements` pins in the same commit.
-- Note that `.ebus-spec.json`'s free-text `notes` field has drifted — it still points at
-  `src/panelbench/ebus_emitter/wire/catalogs/`, a path that no longer exists on `main`.
-  Trust the pinned fields (`synced_commit`, `implements`) and the tree, not that prose.
 - If the spec is silent or self-contradictory, say so explicitly and open an issue
   upstream rather than inventing a rule.
