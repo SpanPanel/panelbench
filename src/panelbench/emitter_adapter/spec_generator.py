@@ -47,12 +47,31 @@ if TYPE_CHECKING:
 _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-on"})
 
 
-def _normalise_relay_behavior(raw: str) -> str:
+def normalise_relay_behavior(raw: str) -> str:
     """Coerce ``controllable`` / ``non_controllable`` / ``always_on`` (any
     underscore-vs-dash form) to the dashed Homie convention; default to
     ``controllable`` when unrecognised."""
     candidate = raw.lower().replace("_", "-")
     return candidate if candidate in _VALID_RELAY_BEHAVIORS else "controllable"
+
+
+def relay_locked(relay_behavior: str) -> bool:
+    """Whether a circuit declaring this ``relay_behavior`` has a locked relay.
+
+    The producer-side mirror of ``ebus_panel_sim.manifest_physics.relay_locked``,
+    which is what actually decides the published tree: both non-controllable
+    spellings are one commissioning flag on the hardware this models, and SPAN
+    publishes ``relay-controllable = !always-on``. A locked relay carries no
+    ``$settable`` on ``switch/relay``, accepts no ``/set``, is never load-shed,
+    and reports ``relay-requester = CONFIGURATION`` at rest
+    (``capabilities/switch.md:28-29``).
+
+    Here so that anything offering the user a relay command asks the same
+    question the emitter asks before publishing the offer. Takes the config's
+    own ``relay_behavior`` spelling rather than manifest metadata, because the
+    callers that need it hold a config, not a built manifest.
+    """
+    return normalise_relay_behavior(relay_behavior) != "controllable"
 
 
 def build_manifest(profile: SimulationConfig) -> DeviceManifest:
@@ -140,7 +159,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             breaker_rating = float(
                 template.get("breaker_rating_a") or template.get("breaker_rating", 20),
             )
-        relay_behavior = _normalise_relay_behavior(relay_behavior_raw)
+        relay_behavior = normalise_relay_behavior(relay_behavior_raw)
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
