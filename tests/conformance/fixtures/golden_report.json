@@ -1,9 +1,9 @@
 {
   "conformant": true,
   "counts": {
-    "divergence": 7,
+    "divergence": 4,
     "extension": 82,
-    "match": 530,
+    "match": 533,
     "omission": 1591,
     "violation": 0
   },
@@ -79,15 +79,6 @@
       "path": "2140a7e253ed54e3bc90a959081df615/info/spaces",
       "property": "spaces",
       "rule": "O6"
-    },
-    {
-      "bucket": "divergence",
-      "device": "2140a7e253ed54e3bc90a959081df615",
-      "message": "settable=False differs from catalog settable=True",
-      "node": "switch",
-      "path": "2140a7e253ed54e3bc90a959081df615/switch/relay",
-      "property": "relay",
-      "rule": "O4"
     },
     {
       "bucket": "extension",
@@ -252,15 +243,6 @@
       "rule": "O6"
     },
     {
-      "bucket": "divergence",
-      "device": "6fcb352679ad5bfb8c8a8eab06829b9f",
-      "message": "settable=False differs from catalog settable=True",
-      "node": "switch",
-      "path": "6fcb352679ad5bfb8c8a8eab06829b9f/switch/relay",
-      "property": "relay",
-      "rule": "O4"
-    },
-    {
       "bucket": "extension",
       "device": "770e2de52c33508a8a9ee8878064b46f",
       "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
@@ -367,15 +349,6 @@
       "path": "afe90839f2725e3e962fb05afa2b6d43/info/spaces",
       "property": "spaces",
       "rule": "O6"
-    },
-    {
-      "bucket": "divergence",
-      "device": "afe90839f2725e3e962fb05afa2b6d43",
-      "message": "settable=False differs from catalog settable=True",
-      "node": "switch",
-      "path": "afe90839f2725e3e962fb05afa2b6d43/switch/relay",
-      "property": "relay",
-      "rule": "O4"
     },
     {
       "bucket": "extension",
