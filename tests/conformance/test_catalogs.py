@@ -27,8 +27,9 @@ def test_loads_vendored_catalogs_keyed_by_capability_type() -> None:
     assert soc.version == "0.2"
     assert soc.properties["soc"].unit == "%"
     # The abstract token, not a concrete unit: the spec requires a publisher to
-    # substitute one, which is what `test_no_profile_property_inherits_an_abstract_unit`
-    # above checks the profiles actually do.
+    # substitute one, which is what
+    # `test_no_composed_profile_property_uses_an_unpublishable_unit` below checks the
+    # profiles actually do.
     assert soc.properties["soe"].unit == "energy"
 
 
@@ -39,9 +40,15 @@ def test_rejects_a_directory_with_no_catalogs(tmp_path: Path) -> None:
 
 # Catalog units that `ebus_sdk.Unit` does not model.
 #
-# NOT a defect and NOT a publishing risk: Homie's unit is free-form, the SDK accepts and
-# publishes a plain string verbatim, and `graph_builder._to_sdk_unit` passes an unmodelled
-# unit through as a string. `Unit` is a convenience vocabulary, not a constraint.
+# `graph_builder._to_sdk_unit` does NOT pass an unmodelled unit through as a string, as this
+# note used to say. It resolves by value, catches the `ValueError` and returns None, so the
+# unit is omitted from the wire entirely. Homie's unit is free-form and would have carried
+# the string happily; the SDK enum is the narrower party.
+#
+# Not a live publishing risk, but only because of what is in the set rather than because a
+# drop would be harmless. The single entry, `kA`, is `breaker/interrupting-rating`, which no
+# profile composes, so nothing reaches the wire missing a unit today. That makes the exact
+# assertion below the thing keeping this true, not a formality.
 #
 # Tracked anyway because the set is a useful signal in both directions: a new entry after a
 # re-vendor is worth a look (typo, or a genuinely new unit), and a shrinking one means an
@@ -81,12 +88,20 @@ def test_abstract_tokens_and_sdk_unit_coverage_are_both_known() -> None:
 def test_no_composed_profile_property_uses_an_unpublishable_unit() -> None:
     """A composed property must not inherit an abstract unit token.
 
-    Belt to profile_loader's braces: the loader raises on a token at hydration time, and
-    this states the same requirement over the profile JSON directly, so the invariant is
-    visible here rather than only as loader behaviour.
+    Not the belt to profile_loader's braces this once claimed to be — it is the belt.
+    The loader does not reject a token: `_hydrate_property` resolves a light selection
+    with `sel.get("unit", catalog_def.get("unit"))` and inherits `energy` unexamined,
+    and nothing in `ebus_panel_sim` knows abstract units exist. Downstream,
+    `graph_builder._to_sdk_unit` cannot resolve `Unit("energy")` either, so it catches
+    the `ValueError` and returns None and the property publishes with no `$unit` at
+    all. Silent omission, not a loud failure, is what this test exists to prevent;
+    `conformance/rules.py` catches the same thing again on a captured wire.
 
-    Only ABSTRACT_UNITS makes a unit unpublishable. A unit the SDK enum does not model is
-    published verbatim as a string, so SDK_UNMODELLED_UNITS is not checked here.
+    Only ABSTRACT_UNITS is checked here, because only it is a spec violation — a
+    publisher MUST substitute a concrete unit. A unit the SDK merely does not model is
+    a different problem, tracked by SDK_UNMODELLED_UNITS above; it is dropped by that
+    same `_to_sdk_unit` path, which is why the guidance there is to leave such a
+    property uncomposed until the SDK gains the member.
     """
     import json
 
