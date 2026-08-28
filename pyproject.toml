@@ -62,7 +62,7 @@ dependencies = [
     # retained value whose payload is byte-identical to the last one sent — invisible to
     # `RecordingTransport` (last-wins per topic, like a broker's retained store) and
     # therefore to the fidelity captures.
-    "ebus-sdk==0.23.1",
+    "ebus-sdk==0.22.0",
     "ebus-panel-sim==0.8.0",
     "paho-mqtt>=2.0.0",
 ]
