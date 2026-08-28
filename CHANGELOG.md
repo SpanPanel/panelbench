@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.5.0 — a fixed certificate authority, so a firmware upgrade looks like one
+
+**The certificate authority is now shipped with the package rather than generated at startup**, and is identical to the one the simulator ships. The simulator
+emulates SPAN firmware before r202633 and PanelBench emulates r202633 and later, so stopping one and starting the other rehearses a firmware upgrade on a single
+panel — the hand-carried config brings the serial across, and the panel keeps its address and ports. Every install used to mint its own authority, so the swap
+presented a new trust anchor and read as a panel substitution to anything pinned to the old one. A firmware upgrade does not rotate a panel's certificate
+authority, and now neither does the swap.
+
+Its SHA-256, the value Home Assistant pins and displays, is `3cf8c14a78900b8736870c95adcc931cdcb3a51bc3029c96efafd0a4cb790d97`.
+
+**Coming from the simulator: upgrade the simulator to 1.1.0 first, then swap.** Replacing a generated authority with the shipped one raises one "SPAN Panel
+certificate authority changed" repair, and doing it at the simulator's own upgrade means the swap itself raises none — which is the point of the exercise.
+Swapping straight from an older simulator instead raises that one repair at the swap; it is expected, and the fingerprint it displays is the value above.
+
+The authority's private key is committed deliberately and is not a leaked secret. It signs nothing that chains to a real panel, which mints its own authority in
+firmware and is pinned per config entry, and a real panel ever reporting the fingerprint above would be conclusive evidence of tampering.
+
+### Fixed
+
+- **A changed advertised address or container hostname now re-signs only the server certificate**, where it used to regenerate the certificate authority along
+  with it and present a pinned consumer with a trust anchor that had rotated for no reason.
+- **A server certificate signed by a superseded authority is detected by signature rather than by issuer name**, which is the only way to tell two of these
+  authorities apart: every authority PanelBench ever generated carries the same subject and none carries a key identifier.
+- **An expired or nearly expired server certificate is re-signed at startup** instead of being served until a handshake fails against an anchor that never
+  changed — a failure a pinned consumer correctly reports as retryable and then retries forever.
+- **A corrupt or unreadable server certificate is replaced rather than raised out of startup**, where it previously put the add-on into a restart loop.
+- **An advertised address that is not an IP address is ignored with a warning** instead of aborting certificate generation.
+- **Certificate files are written atomically**, so a container killed mid-write cannot leave a truncated certificate behind.
+- **The authority's private key is no longer written into the certificate directory**, and one left there by an earlier build is removed; nothing reads it, and
+  it was world-readable in a directory that survives upgrades.
+
 ## 2.4.0 — the two commissioning locks a real panel publishes
 
 `ebus-panel-sim` 0.8.0 finishes what 0.7.0 started: a SPAN panel commissions circuits with two independent locks, and both are published only as the *absence*
