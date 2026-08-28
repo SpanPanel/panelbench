@@ -5,6 +5,14 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 1
+    ignore:
+      # `ebus-panel-sim` 0.8.0 declares `ebus-sdk<0.23,>=0.20.1`, so anything from
+      # 0.23 up makes `pip install .` unresolvable and breaks the add-on image
+      # build — which is the only job that installs from `pyproject.toml`, so lint
+      # passes and the failure lands on `main` after the merge. Lift this when the
+      # emitter widens its own range, not before.
+      - dependency-name: "ebus-sdk"
+        versions: [">=0.23"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
