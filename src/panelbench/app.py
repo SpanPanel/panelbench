@@ -797,7 +797,9 @@ class SimulatorApp:
         # 3b. Initialise Supervisor Discovery (add-on mode).
         from panelbench.supervisor_discovery import SupervisorDiscovery
 
-        self._supervisor_discovery = SupervisorDiscovery()
+        self._supervisor_discovery = SupervisorDiscovery(
+            advertise_address=self._advertise_address,
+        )
         if self._supervisor_discovery.is_available:
             await self._supervisor_discovery.cleanup_stale()
             _LOGGER.info("Supervisor Discovery: available (add-on mode)")
