@@ -47,9 +47,10 @@ def _payload(body: object) -> dict[str, object]:
 class SupervisorDiscovery:
     """Manages Supervisor Discovery entries for simulated panels."""
 
-    def __init__(self) -> None:
+    def __init__(self, advertise_address: str | None = None) -> None:
         self._token = os.environ.get("SUPERVISOR_TOKEN")
         self._entries: dict[str, str] = {}  # serial -> discovery UUID
+        self._advertise_address = advertise_address
 
     @property
     def is_available(self) -> bool:
@@ -106,8 +107,20 @@ class SupervisorDiscovery:
     ) -> None:
         """Register a panel with the Supervisor Discovery API.
 
-        The host is always the container hostname — HA Core resolves it
-        via Docker DNS.  No-ops if not in add-on mode.
+        The host is the advertised address when one is configured, and the
+        container hostname only when none is.  Both are reachable from HA
+        Core, but only the address is in the certificate this panel serves,
+        and the hostname is what a consumer cannot verify us by: under
+        ``host_network: true`` it is a per-add-on alias for the host rather
+        than a name the leaf was issued for.
+
+        It also has to be the address because ``async_step_hassio`` rewrites
+        an existing entry's host to whatever is registered here.  A panel
+        someone added by IP is silently re-pointed at this alias, which then
+        fails hostname verification -- and the alias changes when the panel
+        moves between add-ons, where the address does not.
+
+        No-ops if not in add-on mode.
 
         ``https_port`` is published beside the bootstrap port because a
         simulated panel serves TLS on a port only this process knows.  The
@@ -118,7 +131,7 @@ class SupervisorDiscovery:
         if not self._token:
             return
 
-        host = _container_hostname()
+        host = self._advertise_address or _container_hostname()
         payload = {
             "service": _SERVICE_NAME,
             "config": {

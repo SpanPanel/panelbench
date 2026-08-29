@@ -19,6 +19,14 @@ def discovery() -> SupervisorDiscovery:
 
 
 @pytest.fixture
+def discovery_with_address() -> SupervisorDiscovery:
+    """Add-on mode with an advertised address configured."""
+    d = SupervisorDiscovery(advertise_address="192.168.65.19")
+    d._token = "test-token"
+    return d
+
+
+@pytest.fixture
 def discovery_no_token() -> SupervisorDiscovery:
     """Discovery client without token (standalone mode)."""
     d = SupervisorDiscovery()
@@ -79,6 +87,50 @@ async def test_register_panel_publishes_both_ports(discovery: SupervisorDiscover
     config = mock_session.post.call_args.kwargs["json"]["config"]
     assert config["port"] == 8081
     assert config["https_port"] == 9081
+
+
+async def test_the_advertised_address_is_registered_as_the_host(
+    discovery_with_address: SupervisorDiscovery,
+):
+    """The host is the address the leaf names, not the container alias.
+
+    `async_step_hassio` rewrites an existing entry's host to whatever is
+    registered here, so registering the alias silently re-points a panel that
+    someone added by IP at a name the certificate does not cover.
+    """
+    mock_session = _mock_session(200, {"result": "ok", "data": {"uuid": "disc-uuid-123"}})
+    with (
+        patch("aiohttp.ClientSession", return_value=mock_session),
+        patch(
+            "panelbench.supervisor_discovery._container_hostname",
+            return_value="f8c38f2b-panelbench",
+        ),
+    ):
+        await discovery_with_address.register_panel("sim-001", 8081)
+
+    config = mock_session.post.call_args.kwargs["json"]["config"]
+    assert config["host"] == "192.168.65.19"
+    assert config["host"] != "f8c38f2b-panelbench"
+
+
+async def test_the_container_hostname_is_the_fallback(discovery: SupervisorDiscovery):
+    """With no address configured there is nothing else to publish.
+
+    Docker DNS still resolves it, so a panel with no advertised address stays
+    discoverable rather than registering a host of ``None``.
+    """
+    mock_session = _mock_session(200, {"result": "ok", "data": {"uuid": "disc-uuid-123"}})
+    with (
+        patch("aiohttp.ClientSession", return_value=mock_session),
+        patch(
+            "panelbench.supervisor_discovery._container_hostname",
+            return_value="f8c38f2b-panelbench",
+        ),
+    ):
+        await discovery.register_panel("sim-001", 8081)
+
+    config = mock_session.post.call_args.kwargs["json"]["config"]
+    assert config["host"] == "f8c38f2b-panelbench"
 
 
 async def test_unregister_panel_deletes_from_supervisor(discovery: SupervisorDiscovery):
