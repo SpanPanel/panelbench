@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.2 — discovery hands over an address, not an internal alias
+
+### Fixed
+
+- **Discovery now gives Home Assistant the panel's address rather than an internal add-on hostname**, which Home Assistant writes over the address on a panel
+  you already added and which no certificate names, so a panel added by IP stopped verifying.
+
 ## 2.5.1 — the address a client can actually verify us by
 
 An existing install corrects itself on the next start: a stored certificate that names the wrong address is already treated as unfit and re-signed, so nothing
