@@ -272,7 +272,10 @@ async def start_clone(
     ``start`` or ``stop``."""
     manifest = build_manifest(engine.config)
 
-    uuid_to_circuit_id = {stable_circuit_uuid(c["id"]): c["id"] for c in engine.config["circuits"]}
+    panel_id = engine.config["panel_config"]["serial_number"]
+    uuid_to_circuit_id = {
+        stable_circuit_uuid(panel_id, c["id"]): c["id"] for c in engine.config["circuits"]
+    }
 
     # The emitter registers internal default /set handlers from the empty
     # SetterRegistry — no producer-side wiring required.
@@ -431,6 +434,10 @@ def _feeds_for_device_type(config: SimulationConfig, device_type: str) -> list[s
     circuits = config.get("circuits")
     if not isinstance(templates, dict) or not isinstance(circuits, list):
         return []
+    # Read from the config being walked, not from a serial handed in beside it: a
+    # feed id must be the id the *owner* of these circuits publishes, and taking
+    # both from one mapping is what makes that true by construction.
+    panel_id = config["panel_config"]["serial_number"]
     feeds: list[str] = []
     for item in circuits:
         if not isinstance(item, dict):
@@ -442,5 +449,5 @@ def _feeds_for_device_type(config: SimulationConfig, device_type: str) -> list[s
         if isinstance(template, dict) and template.get("device_type") == device_type:
             circuit_id = item.get("id")
             if circuit_id is not None:
-                feeds.append(stable_circuit_uuid(str(circuit_id)))
+                feeds.append(stable_circuit_uuid(panel_id, str(circuit_id)))
     return feeds

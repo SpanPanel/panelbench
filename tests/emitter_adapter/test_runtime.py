@@ -100,8 +100,8 @@ def test_evse_tick_inputs_include_each_evse_feed() -> None:
         ],
     }
     circuit_powers = {
-        stable_circuit_uuid("span_drive_garage"): 7200.0,
-        stable_circuit_uuid("span_drive_driveway"): 3600.0,
+        stable_circuit_uuid("abc", "span_drive_garage"): 7200.0,
+        stable_circuit_uuid("abc", "span_drive_driveway"): 3600.0,
     }
     # Keys must equal the manifest's EVSE device ids: the emitter looks its EVSE
     # physics up by instance id, so a disagreement here is a KeyError, not a

@@ -482,6 +482,9 @@ ebus/5/{serial}/{node}/{property}
 | `evse-0`          | EV charger: status, lock state, advertised current                     |
 | `power-flows`     | Aggregated: PV, battery, grid, site power                              |
 
+`{circuit-uuid}` is a UUID v5 over `{panel-serial}/{circuit-id}`. It is scoped to the panel because the shipped configs reuse circuit ids such as
+`solar_inverter` across panel sizes, and two panels in one add-on publish to one broker.
+
 ### Settable Properties
 
 Control circuits by publishing to `/set` topics:

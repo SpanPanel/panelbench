@@ -6,6 +6,13 @@ import yaml
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.spec_generator import build_manifest
 
+_SERIAL = "sim-40t-001"
+"""The serial `default_MAIN_40.yaml` declares.
+
+Named because circuit device ids are scoped to their panel, so it is now an input
+to a feed id and not only the prefix of the proxied ids below.
+"""
+
 
 def _profile() -> dict:
     """Load the default_MAIN_40 clone profile fixture."""
@@ -33,15 +40,16 @@ def test_build_manifest_derives_pv_and_evse_from_device_type_templates() -> None
 
     pv = manifest.of_class("pv")[0]
     assert pv.instance_id == "sim-40t-001-pv-1"
-    assert pv.metadata["feed"] == stable_circuit_uuid("solar_inverter")
+    assert pv.metadata["feed"] == stable_circuit_uuid(_SERIAL, "solar_inverter")
     assert pv.metadata["relative-position"] == "IN_PANEL"
 
     evse = manifest.of_class("evse")[0]
     assert evse.instance_id == "sim-40t-001-sim-evse-sim-40t-001"
-    assert evse.metadata["feed"] == stable_circuit_uuid("span_drive_garage")
+    assert evse.metadata["feed"] == stable_circuit_uuid(_SERIAL, "span_drive_garage")
     assert len(manifest.of_class("evse")) == 2
     assert manifest.of_class("evse")[1].instance_id == "sim-40t-001-sim-evse-sim-40t-001-2"
     assert manifest.of_class("evse")[1].metadata["feed"] == stable_circuit_uuid(
+        _SERIAL,
         "span_drive_driveway",
     )
 

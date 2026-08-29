@@ -2,7 +2,9 @@
 
 Circuit UUIDs were lifted from publisher.py so the simulator's derivation matches
 what the legacy publisher produced: UUID v5 with a fixed namespace, so the same
-circuit_id always yields the same UUID across restarts.
+circuit always yields the same UUID across restarts. The name hashed is
+``<panel-serial>/<circuit-id>`` rather than the circuit id alone — see
+`stable_circuit_uuid`.
 
 The rest of the device ids live here for a different reason. They follow the
 migration guide's Device ID Stability table, because **a Home Assistant entity's
@@ -13,7 +15,7 @@ axis that decides whether a user's history survives.
 
     Panel         <panel-serial>
     Lugs          <panel-serial>-lugs-{up,dn}
-    Circuit       <circuit-uuid>
+    Circuit       <circuit-uuid>   (uuid5 of <panel-serial>/<circuit-id>)
     BESS/PV/EVSE  <proxier-id>-<identifier>   (proxied; proxier is the panel)
     MID           <bess-id>-mid
 
@@ -40,9 +42,31 @@ if TYPE_CHECKING:
 _CIRCUIT_NAMESPACE = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 
 
-def stable_circuit_uuid(circuit_id: str) -> str:
-    """Return a deterministic dashless UUID for a circuit identifier."""
-    return str(uuid.uuid5(_CIRCUIT_NAMESPACE, circuit_id)).replace("-", "")
+def stable_circuit_uuid(panel_id: str, circuit_id: str) -> str:
+    """Deterministic dashless UUID for a circuit, scoped to the panel that owns it.
+
+    Every other id here is already panel-scoped, because every other device is named
+    relative to its proxier. A circuit's was not: it hashed the YAML `id` alone, and
+    those ids are shared vocabulary across the shipped configs — `MAIN_32.yaml` and
+    `MAIN_40.yaml` both have a `solar_inverter` and an `oven`. One panel per broker
+    makes that harmless, which is why it survived; two panels in one add-on publish
+    to one broker, and the two `solar_inverter`s then claim the same device id and
+    the same `ebus/5/<uuid>/...` topics. Both panels write every tick, so each
+    circuit's readings alternate between two unrelated loads and a consumer sees
+    energy counters that fall as often as they rise.
+
+    Hashing `<panel-serial>/<circuit-id>` scopes the id to its owner the way the
+    `<proxier>-<identifier>` forms do. The separator is `/` and not `-` because a
+    panel serial may itself contain `-`, and any separator the serial can contain
+    admits two different (panel, circuit) pairs hashing the same name.
+
+    Real firmware cannot hit the collision — a panel has its own broker — so this is
+    an emulator-only defect. The derivation is nonetheless shared byte-for-byte with
+    the flat simulator, which publishes the same circuit ids for the same config: the
+    firmware-upgrade rehearsal stops one and starts the other on one panel, and a
+    circuit whose id changed at the swap strands its Home Assistant history.
+    """
+    return str(uuid.uuid5(_CIRCUIT_NAMESPACE, f"{panel_id}/{circuit_id}")).replace("-", "")
 
 
 def lugs_device_ids(panel_id: str) -> tuple[str, str]:

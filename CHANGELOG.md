@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.3 — two simulated panels no longer publish over each other
+
+**A simulated panel already added to Home Assistant has to be removed and re-added**, because its circuits get new device ids and so its circuit entities get
+new unique ids.
+
+### Fixed
+
+- **Two simulated panels running in one add-on no longer collide on their circuits' topics**, where circuit device ids were derived from the circuit id alone
+  and the shipped configs reuse ids such as `solar_inverter` across panel sizes, so each panel's readings overwrote the other's every tick.
+
 ## 2.5.2 — discovery hands over an address, not an internal alias
 
 ### Fixed
