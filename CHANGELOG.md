@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5.1 — the address a client can actually verify us by
+
+An existing install corrects itself on the next start: a stored certificate that names the wrong address is already treated as unfit and re-signed, so nothing
+needs clearing by hand.
+
+### Fixed
+
+- **The certificate SAN and the mDNS advertisement now carry this host's own address rather than its upstream router's**, which under `host_network: true` left
+  no address a client could reach the panel at and verify the certificate against.
+- **Supervisor discovery entries are now removed when the add-on stops**, where the registration's identifier was silently discarded and stale entries
+  accumulated across restarts.
+- **The add-on image builds again**, where a dependency bump had pinned a version of the eBus SDK that the emitter's own requirements exclude, leaving the
+  two unsatisfiable together.
+
 ## 2.5.0 — a fixed certificate authority, so a firmware upgrade looks like one
 
 **The certificate authority is now shipped with the package rather than generated at startup**, and is identical to the one the simulator ships. The simulator
