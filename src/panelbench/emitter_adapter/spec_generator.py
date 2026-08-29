@@ -141,6 +141,7 @@ def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
 
 def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     templates = profile.get("circuit_templates") or {}
+    panel_id = profile["panel_config"]["serial_number"]
     instances: list[DeviceInstance] = []
     for idx, c in enumerate(profile.get("circuits") or [], start=1):
         tabs = c.get("tabs") or [0]
@@ -165,7 +166,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
-                instance_id=stable_circuit_uuid(c["id"]),
+                instance_id=stable_circuit_uuid(panel_id, c["id"]),
                 display_name=c.get("name", c["id"]),
                 metadata={
                     "tab-numbers": ",".join(str(int(t)) for t in tabs if t),
@@ -331,18 +332,18 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
 
 def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     evse_cfg = profile.get("evse") or {}
+    panel_id = profile["panel_config"]["serial_number"]
     feed_circuits = _circuits_for_device_type(profile, "evse")
     explicit_feed = str(evse_cfg["feed"]) if "feed" in evse_cfg else None
     if explicit_feed:
         feeds = [explicit_feed]
     else:
-        feeds = [stable_circuit_uuid(circuit["id"]) for circuit in feed_circuits]
+        feeds = [stable_circuit_uuid(panel_id, circuit["id"]) for circuit in feed_circuits]
     if not feeds and evse_cfg.get("enabled"):
         feeds = [""]
     if not feeds:
         return []
 
-    panel_id = profile["panel_config"]["serial_number"]
     base_metadata = {
         "vendor-name": str(evse_cfg.get("vendor", "SPAN")),
         "model": str(evse_cfg.get("product", "SPAN Drive")),
@@ -465,7 +466,7 @@ def _feed_circuit_id(profile: SimulationConfig, device_type: str) -> str | None:
     circuit = _first_circuit_for_device_type(profile, device_type)
     if circuit is None:
         return None
-    return stable_circuit_uuid(circuit["id"])
+    return stable_circuit_uuid(profile["panel_config"]["serial_number"], circuit["id"])
 
 
 def _first_circuit_for_device_type(

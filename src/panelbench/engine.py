@@ -931,11 +931,12 @@ class DynamicSimulationEngine:
         # Apply the v0.3.0 sign convention: producers (PV) report negative
         # power; consumers report positive. SimulatedCircuit stores magnitudes
         # only; the energy_mode tells direction.
+        panel_id = self.serial_number
         circuit_powers: dict[str, float] = {}
         for cid, circuit in self._circuits.items():
             mag = circuit.instant_power_w
             signed = -mag if circuit.energy_mode == "producer" else mag
-            circuit_powers[stable_circuit_uuid(cid)] = signed
+            circuit_powers[stable_circuit_uuid(panel_id, cid)] = signed
 
         return {
             "current_time": current_time,

@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 import pytest
 from ebus_sdk import DiscoveredDevice
 
-from panelbench.clone import translate_scraped_panel, write_clone_config
+from panelbench.clone import make_clone_serial, translate_scraped_panel, write_clone_config
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.wire_capture import RecordingTransport, as_capture
@@ -38,6 +38,12 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.asyncio
 
 _SERIAL = "sim-locks-0001"
+_CLONE_SERIAL = make_clone_serial(_SERIAL)
+"""The serial the *clone* runs under, and so the panel that owns the published circuits.
+
+A circuit device id is scoped to its owning panel, and the panel doing the publishing
+here is the copy, not the original that was scraped.
+"""
 TYPE_PANEL = "energy.ebus.device.distribution-enclosure"
 TYPE_CIRCUIT = "energy.ebus.device.circuit"
 
@@ -184,9 +190,10 @@ async def _clone_and_publish(tmp_path: Path) -> dict[str, dict[str, str]]:
 
 def _declared(capture: dict[str, dict[str, str]], space: str) -> dict[str, object]:
     """The `$description` the cloned circuit at this breaker position published."""
-    # `clone._translate_circuit` names a cloned circuit `circuit_<space>`, and the
-    # emitter derives its Homie device id from that name.
-    document = json.loads(capture[stable_circuit_uuid(f"circuit_{space}")]["$description"])
+    # `clone._translate_circuit` names a cloned circuit `circuit_<space>`, and its
+    # Homie device id is derived from that name scoped to the panel that owns it.
+    device_id = stable_circuit_uuid(_CLONE_SERIAL, f"circuit_{space}")
+    document = json.loads(capture[device_id]["$description"])
     assert isinstance(document, dict), f"$description is not an object: {document!r}"
     return document
 
@@ -226,7 +233,7 @@ async def test_the_clone_reproduces_both_commissioning_locks(tmp_path: Path, spa
     capture = await _clone_and_publish(tmp_path)
     _name, priority, relay_controllable, never_backup = _SOURCE_CIRCUITS[space]
     document = _declared(capture, space)
-    values = capture[stable_circuit_uuid(f"circuit_{space}")]
+    values = capture[stable_circuit_uuid(_CLONE_SERIAL, f"circuit_{space}")]
 
     assert _settable(document, "switch", "relay") is relay_controllable
     assert values["switch/relay-controllable"] == ("true" if relay_controllable else "false")
