@@ -109,9 +109,9 @@ The specification requires a publisher to substitute a real unit wherever a cata
 the specification's prose and in a constant inside the specification repo's own tooling — neither of which a downstream copies. The catalogs we vendor contain
 the token but carry no machine-readable marker saying it is special: `"unit": "energy"` and `"unit": "V"` are the same shape.
 
-So we hand-carry it, in exactly one place: `ABSTRACT_UNITS` in `src/panelbench/conformance/catalogs.py`. It is a single constant with a comment citing
-the upstream source, both mechanisms that enforce the rule read from it, and a test fails on a re-vendor that introduces a unit it does not account for. If
-upstream ever ships this as data, that constant should be deleted in favour of it.
+So we hand-carry it, in exactly one place: `ABSTRACT_UNITS` in `src/panelbench/conformance/catalogs.py`. It is a single constant with a comment citing the
+upstream source, both mechanisms that enforce the rule read from it, and a test fails on a re-vendor that introduces a unit it does not account for. If upstream
+ever ships this as data, that constant should be deleted in favour of it.
 
 Worth knowing when reading the code: this is deliberate, minimal duplication of upstream knowledge, not an oversight. It is the cost of vendoring, and it is
 bounded to one line and one test rather than spread through the emitter.
@@ -199,10 +199,10 @@ it.
 
 ### The wire capture, and why it is a second fixture
 
-`golden_tree.json` holds `$description` documents, because conformance is a question about what a device *declares*. That is not enough to exercise a **consumer**:
-a parser fed only descriptions can be asked whether it understands the shape of a panel, never whether it builds the right snapshot from one — which is the part
-that reaches a user. `golden_wire.json` holds the whole retained surface instead: descriptions, `$state`, and every property value, keyed the way a consumer
-receives them.
+`golden_tree.json` holds `$description` documents, because conformance is a question about what a device _declares_. That is not enough to exercise a
+**consumer**: a parser fed only descriptions can be asked whether it understands the shape of a panel, never whether it builds the right snapshot from one —
+which is the part that reaches a user. `golden_wire.json` holds the whole retained surface instead: descriptions, `$state`, and every property value, keyed the
+way a consumer receives them.
 
 ```bash
 # Recapture. No broker needed — the emitter is assembled with the MQTT client substituted.
@@ -214,12 +214,12 @@ emitter inside the script would make it a second copy of that wiring, free to dr
 than it appears to.
 
 **Its values are not reproducible and nothing asserts them.** The config carries `noise_factor` and the clock advances, so power and current differ every run.
-`test_wire_capture.py` compares *shape* — which devices, which topics — so a property added, removed or renamed fails it while a different wattage does not. That
-is the opposite policy to `golden_report.json`, deliberately: a conformance profile must not drift silently, and a fixture full of noisy floats cannot be held to
-byte equality without producing failures nobody can act on.
+`test_wire_capture.py` compares _shape_ — which devices, which topics — so a property added, removed or renamed fails it while a different wattage does not.
+That is the opposite policy to `golden_report.json`, deliberately: a conformance profile must not drift silently, and a fixture full of noisy floats cannot be
+held to byte equality without producing failures nobody can act on.
 
-`span-panel-api-schema-1` vendors this capture and drives its parser end to end from it, which is the point of publishing it as an artifact rather than keeping it
-internal.
+`span-panel-api-schema-1` vendors this capture and drives its parser end to end from it, which is the point of publishing it as an artifact rather than keeping
+it internal.
 
 ### If you are changing the emitter
 
@@ -338,11 +338,12 @@ circuit_templates: # Reusable template definitions
       initial_produced_energy_wh: float # Seed produced energy (from clone)
     relay_behavior: str # "controllable" | "non_controllable"
     priority: str # "NEVER" | "SOC_THRESHOLD" | "OFF_GRID"
-    never_backup: bool # Commissioning lock: no backup power, so permanently OFF_GRID
-                       # and load-shed/priority publishes without $settable. Requires
-                       # priority: OFF_GRID; the emitter rejects any other pairing.
-                       # Independent of relay_behavior, and NOT priority == "NEVER",
-                       # which is an ordinary settable value meaning "never shed".
+    never_backup:
+      bool # Commissioning lock: no backup power, so permanently OFF_GRID
+      # and load-shed/priority publishes without $settable. Requires
+      # priority: OFF_GRID; the emitter rejects any other pairing.
+      # Independent of relay_behavior, and NOT priority == "NEVER",
+      # which is an ordinary settable value meaning "never shed".
     device_type: str # "circuit" | "evse" | "pv" (default: "circuit")
     breaker_rating: int # Amps (derived from power_range if not set)
 
@@ -609,8 +610,8 @@ Only changed property values are republished each tick. Unchanged values are not
 
 ### Directory naming matters
 
-The `panelbench/` directory **must** match the `slug` field in `config.yaml`. The HA Supervisor uses the directory name to identify the add-on —
-renaming it will break discovery. If you need to change the slug, update both the directory name and the `slug` field together.
+The `panelbench/` directory **must** match the `slug` field in `config.yaml`. The HA Supervisor uses the directory name to identify the add-on — renaming it
+will break discovery. If you need to change the slug, update both the directory name and the `slug` field together.
 
 ### Build pipeline
 

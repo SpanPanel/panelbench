@@ -6,8 +6,8 @@
 
 - **A panel with a battery now always shows a Microgrid Interconnect Device.** Previously the MID appeared only where the config explicitly declared the battery
   grid-forming, or happened to carry an older islandable flag. Most configs declare neither — including the 16 and 32 tab defaults shipped with this app — so a
-  battery commonly showed up with no islanding state and nothing to explain the gap. A battery that genuinely does not back the premises up can still say so with
-  `grid_forming: false` under `bess:`. A panel with no battery still shows no MID.
+  battery commonly showed up with no islanding state and nothing to explain the gap. A battery that genuinely does not back the premises up can still say so
+  with `grid_forming: false` under `bess:`. A panel with no battery still shows no MID.
 
 ### Changed
 
@@ -15,9 +15,9 @@
   app created a file first decided what the other one loaded — which is how an upgraded install ended up running flat-era configs that publish no MID.
 
   **Your existing panels are not moved.** They remain in `/config/span_simulator/` and this app no longer reads them. Copy any you want to keep into
-  `/config/panelbench/`, and check the copy declares `grid_forming` under `bess:` — configs written by the flat simulator predate that key. The app log lists the
-  old path on every start while files remain there. Nothing is migrated automatically because a file at the old path may have been written by either app, and
-  copying the wrong one back is what this change exists to stop.
+  `/config/panelbench/`, and check the copy declares `grid_forming` under `bess:` — configs written by the flat simulator predate that key. The app log lists
+  the old path on every start while files remain there. Nothing is migrated automatically because a file at the old path may have been written by either app,
+  and copying the wrong one back is what this change exists to stop.
 
 ## 2.1.1 — 2026-08-23
 
@@ -29,17 +29,17 @@
 
 ## 2.1.0 — 2026-08-23
 
-The first 2.x version the Supervisor offers. The `2.0.0` image has been on the registry since the repository split, but the add-on's version string never
-moved, so no installed add-on was told there was anything to update to. If you are coming from `1.0.12`, everything in `2.0.0` arrives with this one.
+The first 2.x version the Supervisor offers. The `2.0.0` image has been on the registry since the repository split, but the add-on's version string never moved,
+so no installed add-on was told there was anything to update to. If you are coming from `1.0.12`, everything in `2.0.0` arrives with this one.
 
 **This is a breaking change to what the add-on publishes.** `2.x` emits the parent/child eBus tree (v1.0 schema), which is incompatible with the flat schema
-every `1.x` version published. A consumer built against `1.x` topics will not read it. The flat simulator keeps its own name, repository and slug, so an
-install of *that* add-on is untouched.
+every `1.x` version published. A consumer built against `1.x` topics will not read it. The flat simulator keeps its own name, repository and slug, so an install
+of _that_ add-on is untouched.
 
 ### Added
 
-- The panel publishes a Microgrid Interconnect Device whenever the battery forms a premises-wiring island. It used to be gated on the PV inverter's type, so
-  the common case — a grid-forming battery with no solar — published no MID at all, leaving nothing to read islanding state from.
+- The panel publishes a Microgrid Interconnect Device whenever the battery forms a premises-wiring island. It used to be gated on the PV inverter's type, so the
+  common case — a grid-forming battery with no solar — published no MID at all, leaving nothing to read islanding state from.
 - Device cards fill in. The MID, PV, the panel's Wi-Fi SSID and every shipped circuit template now carry the identity values they had only been declaring, so
   they resolve instead of sitting on "unknown".
 
@@ -57,8 +57,8 @@ Full detail, including the wire-level differences a consumer will see between `2
 
 ### Emitter & Homie Schema
 
-- MQTT publishing and per-tick property emission now run through the external `ebus-emitter` package. The simulator builds a device manifest per panel and drives
-  the emitter each tick, replacing the built-in publisher
+- MQTT publishing and per-tick property emission now run through the external `ebus-emitter` package. The simulator builds a device manifest per panel and
+  drives the emitter each tick, replacing the built-in publisher
 - Published topics follow the emitter's live SPAN panel Homie 5 schema — flat node layout with topology and properties matching real hardware, so downstream
   consumers (span-panel-api, span-card) see the same structure a physical panel emits
 - Lugs node IDs renamed to `lugs-upstream` and `lugs-downstream` to match the emitter convention
@@ -75,8 +75,7 @@ Full detail, including the wire-level differences a consumer will see between `2
   the emitter's locked dependency set
 - Add-on image builds again. Two separate problems blocked it: a redundant `force-include` in `pyproject.toml` re-added the dashboard templates and static
   assets the package already shipped, writing each into the wheel twice (newer hatchling rejects the duplicate outright); and the add-on base image was still
-  Python 3.13 while the project now requires 3.14, so the wheel could not install even once it built. The base image moves to
-  `base-python:3.14-alpine3.23`
+  Python 3.13 while the project now requires 3.14, so the wheel could not install even once it built. The base image moves to `base-python:3.14-alpine3.23`
 - Stopping the simulator now clears each panel's retained MQTT topics on every stop path, not just Ctrl-C. `scripts/run-local.sh --stop`, Docker, and the Home
   Assistant supervisor all stop the process with SIGTERM, which was unhandled — the process died outright and its shutdown never ran, stranding a full retained
   topic tree on the broker with `$state` flipped to lost by the Last Will. A panel that was renamed or removed left those topics orphaned for good

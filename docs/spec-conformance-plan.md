@@ -7,8 +7,8 @@
 build on the small set of genuine eBus and Homie violations.
 
 **Architecture:** A new `conformance` package parses Homie 5 `$description` documents into a typed tree, compares that tree against the vendored capability
-catalogs and device profiles, and emits findings. The package imports nothing from `panelbench` and nothing MQTT-related, so the same rules run
-against an in-process device tree in unit tests and against a captured retained-topic dump from a live broker.
+catalogs and device profiles, and emits findings. The package imports nothing from `panelbench` and nothing MQTT-related, so the same rules run against an
+in-process device tree in unit tests and against a captured retained-topic dump from a live broker.
 
 **Tech Stack:** Python 3.14, dataclasses, `json` from the standard library, pytest. No new runtime dependencies.
 
@@ -18,10 +18,10 @@ explains why only four rules fail a build and why a stricter checker would be wr
 ## Global Constraints
 
 - Python floor is `>=3.14` (`pyproject.toml:9`); mypy runs `python_version = "3.14"`, ruff targets `py313`.
-- `uv run mypy --strict src/panelbench/` must pass. **No `Any`, no `# type: ignore`.** `json.loads` returns `Any` — bind it to a variable annotated
-  `object` and narrow with `isinstance`, as shown in Task 1.
-- `src/panelbench/conformance/` must import nothing from `panelbench` and nothing MQTT-related (`ebus_sdk`, `aiomqtt`, `paho`). Task 8 adds
-  the test that enforces this.
+- `uv run mypy --strict src/panelbench/` must pass. **No `Any`, no `# type: ignore`.** `json.loads` returns `Any` — bind it to a variable annotated `object` and
+  narrow with `isinstance`, as shown in Task 1.
+- `src/panelbench/conformance/` must import nothing from `panelbench` and nothing MQTT-related (`ebus_sdk`, `aiomqtt`, `paho`). Task 8 adds the test that
+  enforces this.
 - Every module starts with `from __future__ import annotations`, matching the existing codebase.
 - `uv run ruff check --fix src/ tests/` and `uv run ruff format src/ tests/` must be clean; pre-commit runs both plus `mypy --strict`.
 - Never edit a file under `ebus_emitter/wire/catalogs/` — they are byte-compared against the specification by `scripts/check-spec-provenance.py` and an edit
@@ -31,8 +31,8 @@ explains why only four rules fail a build and why a stricter checker would be wr
 
 ## File Structure
 
-| File                                                      | Responsibility                                           |
-| --------------------------------------------------------- | -------------------------------------------------------- |
+| File                                            | Responsibility                                           |
+| ----------------------------------------------- | -------------------------------------------------------- |
 | `src/panelbench/conformance/__init__.py`        | Public API re-exports                                    |
 | `src/panelbench/conformance/model.py`           | Parse `$description` documents into a typed tree         |
 | `src/panelbench/conformance/catalogs.py`        | Load vendored capability catalogs; the abstract-unit set |
@@ -40,7 +40,7 @@ explains why only four rules fail a build and why a stricter checker would be wr
 | `src/panelbench/conformance/rules.py`           | `Finding` type; violations V1–V4; observations O1–O9     |
 | `src/panelbench/conformance/report.py`          | Aggregate findings into a report; render text and JSON   |
 | `src/panelbench/conformance/feeds.py`           | `from_devices`, `from_capture`                           |
-| `scripts/check-conformance.py`                            | CLI, mirroring `scripts/check-spec-provenance.py`        |
+| `scripts/check-conformance.py`                  | CLI, mirroring `scripts/check-spec-provenance.py`        |
 
 Two separate notions of "profile" exist in this codebase. The eBus **device profile** (`wire/profiles/*.json`) says which capabilities a device type composes;
 it is loaded by `device_profiles.py`. The **conformance report** is our output; it lives in `report.py`. The names are deliberately unalike to stop them being
@@ -302,8 +302,7 @@ def build_tree(documents: dict[str, object]) -> HomieTree:
 
 - [ ] **Step 4: Run tests and type check**
 
-Run: `uv run pytest tests/conformance/test_model.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 3 passed, mypy reports no
-issues.
+Run: `uv run pytest tests/conformance/test_model.py -v && uv run mypy --strict src/panelbench/conformance/` Expected: 3 passed, mypy reports no issues.
 
 - [ ] **Step 5: Commit**
 
@@ -387,8 +386,7 @@ def test_every_vendored_unit_is_classified() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/conformance/test_catalogs.py -v` Expected: FAIL with
-`ModuleNotFoundError: No module named 'panelbench.conformance.catalogs'`
+Run: `uv run pytest tests/conformance/test_catalogs.py -v` Expected: FAIL with `ModuleNotFoundError: No module named 'panelbench.conformance.catalogs'`
 
 - [ ] **Step 3: Write the implementation**
 

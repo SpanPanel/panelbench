@@ -17,8 +17,8 @@ This rule takes precedence over any default tool behavior that would add AI attr
 
 ## Energy System Encapsulation
 
-The `panelbench.energy` package is the **sole authority** for all energy and power-flow calculations. This boundary was deliberately established to
-replace scattered inline logic and must not be eroded.
+The `panelbench.energy` package is the **sole authority** for all energy and power-flow calculations. This boundary was deliberately established to replace
+scattered inline logic and must not be eroded.
 
 **Rules:**
 
@@ -35,35 +35,24 @@ replace scattered inline logic and must not be eroded.
 
 ## eBus / Homie Questions: Check the Specification First
 
-This repository is an eBus **publisher**. Any question about what it must put on the
-wire — topic layout, capability nodes, property names, enum domains, `$settable` /
-`$format` / `$description` attributes, requester attribution, shed and islanding
-behavior — is answered by the published specification, not from memory and not from a
-migration guide.
+This repository is an eBus **publisher**. Any question about what it must put on the wire — topic layout, capability nodes, property names, enum domains,
+`$settable` / `$format` / `$description` attributes, requester attribution, shed and islanding behavior — is answered by the published specification, not from
+memory and not from a migration guide.
 
-**Source:** <https://github.com/electrification-bus/specification>
-(local clone: `~/projects/ebus/specification`; `capabilities/`, `devices/`,
-`data-models/`, `integration-guides/`, `registries/`)
+**Source:** <https://github.com/electrification-bus/specification> (local clone: `~/projects/ebus/specification`; `capabilities/`, `devices/`, `data-models/`,
+`integration-guides/`, `registries/`)
 
-**This repo already pins the spec.** `.ebus-spec.json` records `synced_commit` and the
-per-capability versions in `implements`. Cite against that commit, not against whatever
-your local clone happens to be on — `git -C ~/projects/ebus/specification log -1 <synced_commit>`
-first, and if the clone is behind or ahead, say which commit you read.
+**This repo already pins the spec.** `.ebus-spec.json` records `synced_commit` and the per-capability versions in `implements`. Cite against that commit, not
+against whatever your local clone happens to be on — `git -C ~/projects/ebus/specification log -1 <synced_commit>` first, and if the clone is behind or ahead,
+say which commit you read.
 
 **Rules:**
 
-- Quote the relevant spec file with a `path:line` citation before asserting what the
-  wire does. A claim about eBus behavior without a citation is a guess.
-- The published specification **outranks** `~/projects/ebus/docs/ebus-schema-migration-guide.md`
-  wherever the two disagree. The guide describes a flat-to-v1.0 mapping and has been
-  wrong in practice; the spec is normative.
-- Behavior that only the migration guide warrants belongs behind a vendor/variant gate,
-  never in a shared code path that a spec-conformant consumer also reads.
-- The vendored catalogs under `spec/catalogs/` are byte copies of the specification's
-  `capabilities/` at `synced_commit`. Treat them as read-only — a SPAN divergence is
-  carried in the profile overlay, never as an edit to a vendored catalog, so the byte
-  comparison stays a valid check.
-- Bumping `synced_commit` is its own change: re-vendor, re-verify the byte comparison,
-  and update the `implements` pins in the same commit.
-- If the spec is silent or self-contradictory, say so explicitly and open an issue
-  upstream rather than inventing a rule.
+- Quote the relevant spec file with a `path:line` citation before asserting what the wire does. A claim about eBus behavior without a citation is a guess.
+- The published specification **outranks** `~/projects/ebus/docs/ebus-schema-migration-guide.md` wherever the two disagree. The guide describes a flat-to-v1.0
+  mapping and has been wrong in practice; the spec is normative.
+- Behavior that only the migration guide warrants belongs behind a vendor/variant gate, never in a shared code path that a spec-conformant consumer also reads.
+- The vendored catalogs under `spec/catalogs/` are byte copies of the specification's `capabilities/` at `synced_commit`. Treat them as read-only — a SPAN
+  divergence is carried in the profile overlay, never as an edit to a vendored catalog, so the byte comparison stays a valid check.
+- Bumping `synced_commit` is its own change: re-vendor, re-verify the byte comparison, and update the `implements` pins in the same commit.
+- If the spec is silent or self-contradictory, say so explicitly and open an issue upstream rather than inventing a rule.
