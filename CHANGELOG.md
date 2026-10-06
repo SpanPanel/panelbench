@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Home Assistant's dominant power source control is now ignored while the panel's link to its battery is healthy**, as a SPAN panel ignores it.
+- **The battery's own power reading is now positive while discharging**, as SPAN firmware r202639 publishes it, unless the panel's firmware version names an
+  earlier release.
+- **A SPAN Drive's user charge limit is no longer published until a user sets one**, as on SPAN firmware r202639, unless the panel's firmware version names an
+  earlier release.
+- **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
+
 ## 2.5.3 — two simulated panels no longer publish over each other
 
 **A simulated panel already added to Home Assistant has to be removed and re-added**, because its circuits get new device ids and so its circuit entities get

@@ -34,7 +34,7 @@ declares a superset of the properties.
 
 Shrinking this file is not the goal — being right about each line is. Membership
 was audited against the specification and SPAN's r202633 topic reference, and
-what remains is there for three different reasons:
+what remains is there for four different reasons:
 
   `connection/feeds-device-*` on a mixed-load circuit is *correct* absence, not a
   gap. The catalog omits the triple "when mixed-load with no commissioned
@@ -61,6 +61,12 @@ what remains is there for three different reasons:
   sub-enclosure in any config to point at. Valuing them would mean modelling a
   topology this producer does not have, on firmware behaviour nobody has
   observed.
+
+  An EVSE's `config/user-max-charge-current` is *correct* absence too. SPAN
+  firmware r202639 leaves it unpublished until a user sets a limit, and the
+  emitter follows that for any firmware string naming no earlier release. The
+  `sim/v0.1.0` both producers read from this config names none, so these lines
+  leave only if the config comes to name an earlier release.
 
 `panel status/wifi-ssid` is the line that left. It was valued because the
 enclosure device model defines it (MAY), r202633 documents it as the MQTT
