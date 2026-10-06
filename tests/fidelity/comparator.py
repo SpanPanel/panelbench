@@ -27,8 +27,8 @@ differently, so an id-keyed diff reports every device as a mismatch and nothing
 useful. ``role_key`` aligns them instead. Most devices align by declared
 ``type`` and ``name``, and circuits also by the breaker spaces they occupy,
 because a SPAN panel gives two commissioned PV circuits the same name. A
-battery, its MID and an inverter align by where they hang, because SPAN
-firmware names them after their own device ids.
+battery, its MID, an inverter and a SPAN Drive align by where they hang,
+because SPAN firmware names such devices after their own device ids.
 
 Neither producer can read the other's input any more — upstream's input is a
 panel definition and PanelBench's is a behaviour config — so each cell gives
@@ -164,8 +164,8 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
     """A device's declared ``type::name``.
 
     Stable across producers for the devices both name the same way: the panel, its
-    lugs, an EVSE, and a circuit, whose name is the one a user gave it. Not for a
-    battery, its MID or an inverter, which SPAN firmware names after their own
+    lugs, and a circuit, whose name is the one a user gave it. Not for a battery,
+    its MID, an inverter or a SPAN Drive, which SPAN firmware names after their own
     device ids (``role_key``).
 
     Falls back to the raw id when a device published no parsable
@@ -182,7 +182,7 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
     return f"{parsed.get('type', '?')}::{parsed.get('name', device_id)}"
 
 
-_KEYED_BY_FEED = frozenset({"bess", "pv"})
+_KEYED_BY_FEED = frozenset({"bess", "evse", "pv"})
 """Device classes keyed by what they hang from rather than by name."""
 
 
@@ -205,6 +205,12 @@ def role_key(device_id: str, devices: dict[str, dict[str, str]]) -> str:
     battery upstream of the panel by the direction of the lugs it feeds, and a MID
     by its battery's key. A device whose place cannot be resolved is refused rather
     than keyed by its name, which would only reintroduce the misalignment quietly.
+
+    A SPAN Drive is keyed by the spaces of the circuit that feeds it, for the same
+    reason. Neither public capture has one, but upstream's capture keeps a Drive's
+    published name exactly as it keeps the others', so a firmware that names the
+    Drive after its id, as it does every other device it proxies, would misalign it
+    the same way.
 
     Every other device keeps its ``role_of``.
     """

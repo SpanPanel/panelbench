@@ -32,8 +32,8 @@ The example cell drives this: both producers publish the same panel, upstream's
 shipped definition, driven by upstream's ticks. Lines are keyed by
 ``comparator.role_key``: a circuit's carry the breaker spaces after the name, so
 the two commissioned PV circuits, which share a name, cannot hide behind each
-other, and the battery's, the MID's and each inverter's carry where the device
-hangs rather than its name.
+other, and the battery's, the MID's, each inverter's and each SPAN Drive's carry
+where the device hangs rather than its name.
 
 Shrinking this file is not the goal — being right about each line is. Membership
 was audited against the specification and SPAN's r202633 topic reference, and

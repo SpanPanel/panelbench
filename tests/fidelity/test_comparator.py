@@ -85,17 +85,22 @@ def test_any_other_repeated_role_is_refused() -> None:
         by_role({"a": lugs, "b": lugs})
 
 
-def test_an_inverter_aligns_by_the_circuit_feeding_it_whatever_it_is_named() -> None:
-    """SPAN firmware names an inverter after its own device id, which the two
-    producers derive differently, so only where it hangs can align it."""
+@pytest.mark.parametrize(
+    ("device_class", "simulator_name"), [("pv", "Solar"), ("evse", "SPAN Drive - Garage")]
+)
+def test_a_circuit_fed_device_aligns_by_its_circuit_whatever_it_is_named(
+    device_class: str, simulator_name: str
+) -> None:
+    """SPAN firmware names an inverter or a Drive after its own device id, which the
+    two producers derive differently, so only where it hangs can align it."""
     firmware = {
-        "c1": _feeding("29,31", "nt-0000-iq7"),
-        "nt-0000-iq7": _device("pv", "nt-0000-iq7"),
+        "c1": _feeding("29,31", "nt-0000-x"),
+        "nt-0000-x": _device(device_class, "nt-0000-x"),
     }
-    simulator = {"c1": _feeding("29,31", "sim-pv-1"), "sim-pv-1": _device("pv", "Solar")}
+    simulator = {"c1": _feeding("29,31", "sim-x"), "sim-x": _device(device_class, simulator_name)}
 
     assert set(by_role(firmware)) == set(by_role(simulator))
-    assert "energy.ebus.device.pv @29,31" in by_role(simulator)
+    assert f"energy.ebus.device.{device_class} @29,31" in by_role(simulator)
     assert compare(firmware, simulator).as_baseline() == ParityReport().as_baseline()
 
 
@@ -118,10 +123,17 @@ def test_a_battery_and_its_mid_align_by_the_lugs_the_battery_feeds() -> None:
     [
         {"pv": _device("pv", "Solar")},
         {"pv": _device("pv", "Solar"), "c1": _feeding("1", "pv"), "c2": _feeding("2", "pv")},
+        {"evse": _device("evse", "SPAN Drive - Garage")},
         {"mid": _device("mid", "Microgrid Interconnect Device", parent="missing")},
         {"mid": _device("mid", "Microgrid Interconnect Device")},
     ],
-    ids=["unfed inverter", "inverter fed twice", "mid of an absent battery", "mid of no battery"],
+    ids=[
+        "unfed inverter",
+        "inverter fed twice",
+        "unfed drive",
+        "mid of an absent battery",
+        "mid of no battery",
+    ],
 )
 def test_a_device_whose_place_cannot_be_resolved_is_refused(devices: Capture) -> None:
     """Never keyed by its name instead, which would bring back the misalignment quietly."""
