@@ -47,7 +47,7 @@ ENTITY_TYPE_DEFAULTS: dict[str, dict[str, Any]] = {
                 "efficiency": 0.85,
                 "nameplate_capacity_w": 5000.0,
             },
-            "relay_behavior": "non_controllable",
+            "relay_behavior": "non-controllable",
             "priority": "NEVER",
             "device_type": "pv",
             "breaker_rating": 30,

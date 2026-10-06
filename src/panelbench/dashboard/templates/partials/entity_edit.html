@@ -46,8 +46,13 @@
       <label>Relay Behavior:
         <select name="relay_behavior" {{ 'disabled' if e.commissioned_system }}>
           {% for r in relay_behaviors %}
-          <option value="{{ r }}" {{ 'selected' if r == e.relay_behavior }}>{{ r }}</option>
+          <option value="{{ r }}" {{ 'selected' if r == e.relay_behavior_option }}>{{ r }}</option>
           {% endfor %}
+          {#- Not offered as a choice, but kept: an unlisted current value would otherwise
+              leave the first option selected, and saving the form would change it. -#}
+          {% if e.relay_behavior_option not in relay_behaviors %}
+          <option value="{{ e.relay_behavior_option }}" selected>{{ e.relay_behavior_option }}</option>
+          {% endif %}
         </select>
       </label>
       {% endif %}

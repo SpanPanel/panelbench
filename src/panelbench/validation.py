@@ -97,7 +97,7 @@ def _validate_commissioned_system(template_name: str, template: Mapping[str, obj
         raise ValueError(f"{prefix}, which is permanently NEVER: set priority: NEVER")
     if not relay_locked(str(template["relay_behavior"])):
         raise ValueError(
-            f"{prefix}, which has a locked relay: set relay_behavior: non_controllable"
+            f"{prefix}, which has a locked relay: set relay_behavior: non-controllable"
         )
     if template.get("never_backup"):
         raise ValueError(

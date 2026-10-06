@@ -364,7 +364,7 @@ circuit_templates: # Reusable template definitions
       nameplate_capacity_w: float # PV nameplate rating in watts
       initial_consumed_energy_wh: float # Seed consumed energy (from clone)
       initial_produced_energy_wh: float # Seed produced energy (from clone)
-    relay_behavior: str # "controllable" | "non_controllable"
+    relay_behavior: str # "controllable" | "non-controllable" | "always-on" (underscore spellings are read the same)
     priority: str # "NEVER" | "SOC_THRESHOLD" | "OFF_GRID"
     never_backup:
       bool # Commissioning lock: no backup power, so permanently OFF_GRID
@@ -375,7 +375,7 @@ circuit_templates: # Reusable template definitions
     commissioned_system:
       str # "pv" | "backup": the circuit a SPAN panel adds for a commissioned
       # system. Locked relay and priority permanently NEVER, neither settable, so it
-      # requires priority: NEVER and relay_behavior: non_controllable, and a
+      # requires priority: NEVER and relay_behavior: non-controllable, and a
       # firmware_version naming release 202639 or later, or none. A clone sets it.
     device_type: str # "circuit" | "evse" | "pv" (default: "circuit")
     breaker_rating: int # Amps (derived from power_range if not set)

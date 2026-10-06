@@ -55,6 +55,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
 - **An imported config counts as unsaved until it is saved**, so switching panels asks before discarding it.
 - **The dashboard now fetches a read-only template's weather**, where a script error on its missing location search stopped it.
+- **The dashboard's relay control shows a locked relay however its config spells it**, where a circuit written `non-controllable`, as the shipped configs
+  write it, showed `controllable` and saving its form unlocked it.
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

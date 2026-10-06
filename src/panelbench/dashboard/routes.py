@@ -42,6 +42,7 @@ from panelbench.dashboard.presets import (
 )
 from panelbench.definition_export import definition_for_config_file, definition_text
 from panelbench.definition_import import config_from_definition_text, is_definition_text
+from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior
 from panelbench.ha_api.opower import (
     async_discover_opower,
     async_get_opower_cost,
@@ -79,7 +80,7 @@ PRIORITIES = [
     "SOC_THRESHOLD",
     "OFF_GRID",
 ]
-RELAY_BEHAVIORS = ["controllable", "non_controllable"]
+RELAY_BEHAVIORS = ["controllable", "non-controllable"]
 ENTITY_TYPES = ["circuit", "pv", "evse"]
 # Infrastructure types that should only appear once in a panel config.
 _SINGLETON_TYPES = {"pv"}
@@ -861,7 +862,9 @@ def _commissioned_relay_reason(entity: EntityView, system: str) -> str:
 
 def _refuse_commissioned_relay_change(entity: EntityView, relay_behavior: str) -> None:
     """Raise 409 when *relay_behavior* would change a commissioned-system circuit's."""
-    if entity.commissioned_system is None or relay_behavior == entity.relay_behavior:
+    if entity.commissioned_system is None or (
+        normalise_relay_behavior(relay_behavior) == entity.relay_behavior_option
+    ):
         return
     raise web.HTTPConflict(text=_commissioned_relay_reason(entity, entity.commissioned_system))
 

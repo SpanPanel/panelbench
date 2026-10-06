@@ -27,7 +27,7 @@ from panelbench.dashboard.presets import (
     get_evse_tuples,
     get_preset,
 )
-from panelbench.emitter_adapter.spec_generator import relay_locked
+from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior, relay_locked
 from panelbench.solar import compute_solar_curve
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
@@ -57,6 +57,16 @@ class EntityView:
 
     never_backup: bool = False
     commissioned_system: str | None = None
+
+    @property
+    def relay_behavior_option(self) -> str:
+        """``relay_behavior`` as the edit form spells it, whichever spelling the config uses.
+
+        The form selects the option equal to this, so a circuit written
+        ``non_controllable`` or ``always_on`` shows its own lock, not ``controllable``,
+        and saving the form leaves the relay as it was.
+        """
+        return normalise_relay_behavior(self.relay_behavior)
 
     @property
     def relay_locked(self) -> bool:

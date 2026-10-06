@@ -99,7 +99,7 @@ class CircuitTemplate(TypedDict):
     """Circuit template configuration."""
 
     energy_profile: EnergyProfileExtended
-    relay_behavior: str  # "controllable", "non_controllable"
+    relay_behavior: str  # "controllable", "non-controllable", "always-on"
     priority: str  # "MUST_HAVE", "NON_ESSENTIAL"
 
 
