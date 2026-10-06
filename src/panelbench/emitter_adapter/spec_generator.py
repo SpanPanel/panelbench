@@ -363,7 +363,8 @@ def _pv_metadata(
 
     *defaults* is the top-level ``pv`` section for the first inverter and empty for
     the others. Its declared inverter type wins over *inverter_template*'s, and its
-    nameplate over the circuit template's.
+    nameplate over the circuit template's. The firmware version is not read from
+    *defaults*: see ``_inverter_firmware``.
     """
     declared_inverter = defaults.get("inverter_type")
     inverter_type = (
@@ -380,11 +381,29 @@ def _pv_metadata(
         "inverter-type": inverter_type,
         "relative-position": relative_position,
     }
-    if "firmware_version" in defaults:
-        metadata["firmware-version"] = str(defaults["firmware_version"])
+    firmware = _inverter_firmware(profile, circuit)
+    if firmware is not None:
+        metadata["firmware-version"] = firmware
     if feed is not None:
         metadata["feed"] = feed
     return metadata
+
+
+def _inverter_firmware(
+    profile: SimulationConfig, circuit: CircuitDefinitionExtended | None
+) -> str | None:
+    """The firmware version of the inverter *circuit* feeds.
+
+    The circuit's own first, then the top-level ``pv`` section's for every inverter,
+    not only the first: a firmware version is not identity, and an inverter that
+    declares ``info/firmware-version`` without a value leaves a consumer's entity
+    waiting forever.
+    """
+    own = circuit.get("firmware_version") if circuit is not None else None
+    if own:
+        return str(own)
+    pv_cfg = profile.get("pv") or {}
+    return str(pv_cfg["firmware_version"]) if "firmware_version" in pv_cfg else None
 
 
 def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:

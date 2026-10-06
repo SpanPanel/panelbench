@@ -5,7 +5,8 @@ id it always had, as SPAN's CHANGELOG says a single-inverter panel keeps its id;
 flat-to-eBus upgrade rehearsal depends on it. A panel with two or more publishes one
 device per circuit from 202639, or with no release named, and the single aggregate
 device fed by the first PV circuit before 202639. A PV circuit's own identity wins
-over the top-level `pv` section, which describes the first inverter.
+over the top-level `pv` section, which describes the first inverter; its firmware
+version is not identity, so it is every inverter's default.
 """
 
 from __future__ import annotations
@@ -60,10 +61,10 @@ def _pvs(config: SimulationConfig) -> list[DeviceInstance]:
     return [i for i in build_manifest(config).instances if i.entity_class == "pv"]
 
 
-def _models(devices: Mapping[str, DiscoveredDevice]) -> list[str]:
-    """Every published PV device's `info/model`, sorted."""
+def _pv_info(devices: Mapping[str, DiscoveredDevice], property_id: str) -> list[str]:
+    """Every published PV device's `info/<property_id>`, sorted."""
     return sorted(
-        device.get_property("info", "model") or ""
+        device.get_property("info", property_id) or ""
         for device in devices.values()
         if (device.description or {}).get("type") == TYPE_PV
     )
@@ -124,7 +125,7 @@ async def test_an_earlier_panel_with_two_pv_circuits_starts_with_one_pv_device(
 
     devices = discovered_devices(await capture_retained(path))
 
-    assert _models(devices) == ["IQ8PLUS-72-2-US"]
+    assert _pv_info(devices, "model") == ["IQ8PLUS-72-2-US"]
 
 
 def test_a_pv_circuit_identity_wins_over_the_pv_section() -> None:
@@ -174,11 +175,56 @@ def test_only_the_identifier_is_slugged() -> None:
 async def test_a_clone_republishes_every_inverter(tmp_path: Path) -> None:
     source, clone = await _source_and_clone(tmp_path, _panel(CURRENT_FIRMWARE, two_inverters=True))
 
-    assert _models(clone) == _models(source) == ["IQ8PLUS-72-2-US", "SE3800H-US"]
+    assert (
+        _pv_info(clone, "model") == _pv_info(source, "model") == ["IQ8PLUS-72-2-US", "SE3800H-US"]
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_clone_keeps_a_single_inverter_identity(tmp_path: Path) -> None:
     source, clone = await _source_and_clone(tmp_path, _panel(CURRENT_FIRMWARE))
 
-    assert _models(clone) == _models(source) == ["IQ8PLUS-72-2-US"]
+    assert _pv_info(clone, "model") == _pv_info(source, "model") == ["IQ8PLUS-72-2-US"]
+
+
+def _pv_firmware(config: SimulationConfig) -> str:
+    pv_section = config.get("pv")
+    assert pv_section is not None
+    return pv_section["firmware_version"]
+
+
+def test_every_inverter_publishes_the_pv_section_firmware() -> None:
+    """A firmware version is not identity, so the `pv` section's is every inverter's."""
+    config = _panel(CURRENT_FIRMWARE, two_inverters=True)
+
+    firmware = [pv.metadata["firmware-version"] for pv in _pvs(config)]
+
+    assert firmware == [_pv_firmware(config)] * 2
+
+
+@pytest.mark.parametrize("two_inverters", [False, True])
+def test_a_pv_circuit_firmware_wins_over_the_pv_section(two_inverters: bool) -> None:
+    config = _panel(CURRENT_FIRMWARE, two_inverters=two_inverters)
+    last_inverter = "solar_garage" if two_inverters else "solar_inverter"
+    for circuit in config["circuits"]:
+        if circuit["id"] == last_inverter:
+            circuit["firmware_version"] = "inverter/v9.9.9"
+
+    pvs = _pvs(config)
+
+    assert pvs[-1].metadata["firmware-version"] == "inverter/v9.9.9"
+    if two_inverters:
+        assert pvs[0].metadata["firmware-version"] == _pv_firmware(config)
+
+
+@pytest.mark.asyncio
+async def test_a_clone_republishes_every_inverter_firmware(tmp_path: Path) -> None:
+    config = _panel(CURRENT_FIRMWARE, two_inverters=True)
+    garage = config["circuits"][-1]
+    assert garage["id"] == "solar_garage"
+    garage["firmware_version"] = "inverter/v9.9.9"
+
+    source, clone = await _source_and_clone(tmp_path, config)
+
+    expected = sorted([_pv_firmware(config), "inverter/v9.9.9"])
+    assert _pv_info(clone, "firmware-version") == _pv_info(source, "firmware-version") == expected

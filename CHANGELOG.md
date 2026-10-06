@@ -29,7 +29,7 @@
 - **A panel's HTTP status and mDNS advertisement now report the same firmware version it publishes over MQTT.**
 - **A cloned panel keeps the source panel's firmware version**, so a clone of a panel on a SPAN release before 202639 keeps that release's battery power sign
   and SPAN Drive charge limit.
-- **A cloned panel keeps its solar inverter's vendor, model and serial number.**
+- **A cloned panel keeps each solar inverter's vendor, model, serial number and firmware version.**
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

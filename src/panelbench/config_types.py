@@ -239,6 +239,9 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     serial_number: str
     model: str
     vendor: str
+    # Not identity, so the `pv` section's is every PV inverter's default, not only
+    # the first's.
+    firmware_version: str
 
 
 class TabSynchronization(TypedDict):

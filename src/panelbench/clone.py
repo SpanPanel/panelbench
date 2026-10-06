@@ -841,8 +841,8 @@ def _enrich_pv_template(
             ep["power_range"] = [-nameplate, 0.0]
             ep["typical_power"] = -nameplate * 0.6
 
-    # The inverter's identity belongs to the circuit that feeds it, so a clone of a
-    # panel with several inverters republishes each under its own name.
+    # The inverter's identity and firmware belong to the circuit that feeds it, so a
+    # clone of a panel with several inverters republishes each as it was.
     template_name = next((name for name, value in templates.items() if value is template), None)
     circuit = next((c for c in circuits if c.get("template") == template_name), None)
     if circuit is None:
@@ -851,6 +851,7 @@ def _enrich_pv_template(
         ("serial-number", "serial_number"),
         ("model", "model"),
         ("vendor-name", "vendor"),
+        ("firmware-version", "firmware_version"),
     ):
         value = _get_prop(devices, pv_node_id, "info", prop)
         if value:
