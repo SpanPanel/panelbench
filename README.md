@@ -112,18 +112,22 @@ rehearses an upgrade the same way: two configs for one panel, run one after the 
 [Firmware Version](#firmware-version)), so the upgrade rehearsed here is to SPAN release 202639.
 
 1. **Before.** Clone your panel from the dashboard while it still runs a release before 202639, or clone one of the shipped templates. A clone keeps its
-   source's `firmware_version`, so it publishes what that release publishes, and refreshing a panel's clone from the panel later never changes it.
+   source's `firmware_version`, so it publishes what that release publishes, and a panel clone's **Update eBus Energy** button, which refreshes its energy
+   readings from the panel, never changes it.
 2. **After.** Copy the first config's YAML to a second file in the same config directory, under a name that does not start with `default_` (that prefix marks a
    read-only template), and edit the copy's YAML:
    - Set `firmware_version` to a 202639 release, for example `spanos3/r202639/03`.
    - Release 202639 locks the circuits SPAN names "Commissioned PV System" and "Commissioned Backup System", which earlier releases left switchable. Give each
-     such circuit's template (a clone gives every circuit its own) `commissioned_system: pv` (or `backup`), `priority: NEVER` and
+     such circuit's template (a panel clone gives every circuit its own) `commissioned_system: pv` (or `backup`), `priority: NEVER` and
      `relay_behavior: non_controllable`. PanelBench refuses `commissioned_system` on a config naming an earlier release, so these keys belong only in this file.
    - On a panel with more than one inverter, mark every other inverter's circuit too. Before 202639 only one inverter's circuit named its inverter, so the clone
-     holds a single PV circuit and modelled the others as loads. Give each other inverter's circuit template `device_type: pv` and
-     `energy_profile.mode: producer`, and give the circuit itself, under `circuits`, its inverter's `vendor`, `model` and `serial_number`.
+     holds a single PV circuit and modelled the others as loads. Such a circuit's template is still the load's: switched to `mode: producer` alone, it would
+     produce no more than the load's `power_range` allows and keep the load's shape. Give each other inverter's circuit a PV template instead. Either copy the
+     first PV circuit's template under a new name and point the circuit's `template` at it, or set its own template's `device_type: pv`,
+     `energy_profile.mode: producer`, `energy_profile.nameplate_capacity_w` to the inverter's rating and a producer `power_range` such as `[-7600.0, 0.0]`. Then
+     give the circuit itself, under `circuits`, its inverter's `vendor`, `model` and `serial_number`.
 
-   Change nothing else. The serial number, circuits and tabs are what make the two configs one panel, so they stay as they are.
+   Leave everything else as it is. The serial number, circuits and tabs are what make the two configs one panel.
 
 3. Start the first instance with `CONFIG_NAME=<before>.yaml ./scripts/run-local.sh` and add the panel to Home Assistant.
 4. Stop the first instance and start the second: `./scripts/run-local.sh --stop` from another terminal (or Ctrl+C in the first), then
@@ -131,9 +135,8 @@ rehearses an upgrade the same way: two configs for one panel, run one after the 
    same panel come back on the new release.
 
 Run both from the same checkout with the same `HTTP_PORT`, `DASHBOARD_PORT` and `BROKER_PORT`; the defaults are fine. The second instance must answer where the
-first did, with the certificates `run-local.sh` keeps under the checkout's `.local/`, so Home Assistant still trusts it. The two must never run at once:
-`run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number. Only the file name, `firmware_version` and the
-release 202639 keys from step 2 differ between the two configs.
+first did. The two must never run at once: `run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number. The two
+configs differ only in their file names and what step 2 changed.
 
 From release 202639 the second instance does what SPAN's public [CHANGELOG](https://github.com/spanio/SPAN-API-Client-Docs) lists for that release. It publishes
 the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes one solar
