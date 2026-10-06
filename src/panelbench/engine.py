@@ -31,7 +31,7 @@ from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
 from panelbench.config_defaults import normalize_circuit_templates
 from panelbench.exceptions import SimulationConfigurationError
-from panelbench.inverter import template_inverter_type
+from panelbench.inverter import template_is_hybrid
 
 if TYPE_CHECKING:
     from ebus_panel_sim import BESSCommunication, BESSDevice
@@ -1351,25 +1351,24 @@ class DynamicSimulationEngine:
 
         grid_config = GridConfig(connected=not self._forced_grid_offline)
 
-        pv_config: PVConfig | None = None
         baseline_templates = (
             baseline_config.get("circuit_templates", {}) if baseline_config is not None else {}
         )
-        for circuit in included.values():
-            if circuit.energy_mode == "producer":
-                # Use snapshot template if available (Before pass), else live
-                tpl = (
-                    baseline_templates.get(
-                        circuit.template_name,
-                        circuit.template,
-                    )
-                    if baseline_config is not None
-                    else circuit.template
-                )
-                nameplate = float(tpl["energy_profile"]["typical_power"])
-                inverter_type = template_inverter_type(tpl)
-                pv_config = PVConfig(nameplate_w=abs(nameplate), inverter_type=inverter_type)
-                break
+        # Use snapshot templates if available (Before pass), else live
+        producer_templates = [
+            baseline_templates.get(circuit.template_name, circuit.template)
+            if baseline_config is not None
+            else circuit.template
+            for circuit in included.values()
+            if circuit.energy_mode == "producer"
+        ]
+        # Every producer feeds the one PV source, so a single grid-forming
+        # inverter keeps them all producing off-grid, whichever circuit it is on.
+        pv_config = (
+            PVConfig(grid_forming=any(template_is_hybrid(tpl) for tpl in producer_templates))
+            if producer_templates
+            else None
+        )
 
         loads = [LoadConfig() for c in included.values() if c.energy_mode == "consumer"]
 
@@ -1383,7 +1382,7 @@ class DynamicSimulationEngine:
         # hybrid PV inverter; the simulator's PV stays online off-grid only when
         # so configured. (Battery presence no longer affects this — the BESS
         # native device runs independently in the emitter.)
-        system.islandable = pv_config is not None and pv_config.inverter_type == "hybrid"
+        system.islandable = pv_config is not None and pv_config.grid_forming
         return system
 
 

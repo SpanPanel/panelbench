@@ -78,10 +78,10 @@ class GridConfig:
 
 @dataclass(frozen=True)
 class PVConfig:
-    """Configuration for a solar PV inverter."""
+    """Configuration for the panel's solar PV, every inverter aggregated into one source."""
 
-    nameplate_w: float = 0.0
-    inverter_type: str = "ac_coupled"
+    grid_forming: bool = False
+    """Whether any inverter is grid-forming (hybrid), which keeps them all producing off-grid."""
 
 
 @dataclass(frozen=True)

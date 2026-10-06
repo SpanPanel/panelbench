@@ -41,6 +41,7 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 
 - **An upgraded add-on now refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down and published
   whatever firmware they named.
+- **The dashboard shows a panel as islandable when any of its solar inverters is hybrid**, where only the first solar circuit listed decided it.
 - **A panel's HTTP status, Homie schema endpoint and mDNS advertisement now report the same firmware version it publishes over MQTT.**
 - **A cloned panel keeps the source panel's firmware version**, so a clone of a panel on a SPAN release before 202639 keeps that release's battery power sign
   and SPAN Drive charge limit.
