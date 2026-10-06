@@ -2,10 +2,16 @@
   "panelbench": {},
   "reference": {
     "energy.ebus.device.bess::Battery": "bess is not <proxier-id>-<identifier>",
+    "energy.ebus.device.circuit::Commissioned PV System @31,33": "solar-inverter-garage is not <circuit-uuid>",
+    "energy.ebus.device.circuit::Commissioned PV System @36,38": "solar-inverter is not <circuit-uuid>",
+    "energy.ebus.device.circuit::Garage Outlet @2": "garage-outlet is not <circuit-uuid>",
+    "energy.ebus.device.circuit::Kitchen Lights @1": "kitchen-lights is not <circuit-uuid>",
+    "energy.ebus.device.circuit::Pool Pump @3": "pool-pump is not <circuit-uuid>",
+    "energy.ebus.device.circuit::SPAN Drive - Driveway @35,37": "span-drive-driveway is not <circuit-uuid>",
+    "energy.ebus.device.circuit::SPAN Drive - Garage @32,34": "span-drive-garage is not <circuit-uuid>",
     "energy.ebus.device.evse::SPAN Drive - Driveway": "evse-2 is not <proxier-id>-<identifier>",
     "energy.ebus.device.evse::SPAN Drive - Garage": "evse is not <proxier-id>-<identifier>",
     "energy.ebus.device.lugs::Downstream lugs": "lugs-downstream is not <panel-serial>-lugs-{up,dn}",
-    "energy.ebus.device.lugs::Upstream lugs": "lugs-upstream is not <panel-serial>-lugs-{up,dn}",
-    "energy.ebus.device.pv::Solar": "pv is not <proxier-id>-<identifier>"
+    "energy.ebus.device.lugs::Upstream lugs": "lugs-upstream is not <panel-serial>-lugs-{up,dn}"
   }
 }

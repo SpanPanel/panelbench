@@ -16,62 +16,67 @@ properties resolve from ``DeviceInstance.metadata``, so it is exactly the surfac
 a manifest builder decides. Every other node resolves from tick physics, where
 the two producers are *supposed* to differ.
 
-Two of the recorded entries are intentional and must never be "fixed":
+Only the example cell is measured. The PanelBench cell is deliberately absent:
+its reference is upstream's reading of PanelBench's own published tree, so its
+``info`` values are PanelBench's values read back, and comparing them would
+compare PanelBench with a copy of itself.
 
-``info/serial-number`` on the minimal cell
-    panelbench forces a simulated panel's serial to carry a ``sim-`` prefix
-    (``clone.py:51``), idempotently, so a simulator can never present a serial
-    that reads as real hardware. The reference has no such rule. Every proxied
-    device's serial derives from the panel's, so one deliberate rule shows up on
-    the panel and both EVSEs.
+The example cell's entries are of two kinds.
 
-``info/firmware-version`` everywhere
-    the two producers have different placeholder defaults, ``example/v0.1.0``
-    against ``sim/v0.1.0``. Same class as the PV model: a naming difference, not
-    a fidelity defect. The panel's value is the package's own version, which a
-    panel naming no firmware reports everywhere.
+``info/serial-number`` on the panel and both SPAN Drives is intentional and must
+never be "fixed". The import runs the example as a clone, and a clone serves
+``sim-<serial>-clone`` (``clone.make_clone_serial``): a simulator never presents
+a serial that reads as real hardware, and a clone never collides with the panel
+it copies. Each drive's serial derives from the panel's and from its position
+(``instance_ids.evse_serial_number``), the documented fallback while no circuit
+names its drive's serial. The clone orders circuits by source device id, so
+``span-drive-driveway`` comes first and the Driveway drive takes the unsuffixed
+serial upstream's example gives the Garage drive.
 
-The EVSE entry is the one worth acting on, and it is only visible because the
-placeholder difference dragged it into view. The reference reads an EVSE's
-firmware version from ``panel_config`` (``run_forty_tab_minimal.py:265``) while
-panelbench reads it from that EVSE's own config block
-(``spec_generator.py:284``). Set ``panel_config.firmware_version`` and the
-reference's EVSEs follow it; ours do not. Ours is the more defensible source, so
-this is recorded as a divergence rather than chased as a bug.
+``info/firmware-version`` on both SPAN Drives is a clone gap. The clone carries
+the panel's firmware and each PV inverter's identity onto the config, but not a
+drive's firmware, so PanelBench publishes its ``evse.firmware_version`` default
+``sim/v0.1.0`` where the example names ``example/v0.1.0``. When the clone carries
+it, these two entries leave the baseline.
+
+Every other value both publish agrees, the panel's firmware and hardware version
+and both inverters' model and vendor among them.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
 
 from .comparator import (
-    PANELBENCH_CONFIG,
-    REFERENCE_CONFIG,
+    Capture,
     ValueReport,
-    capture_panelbench,
-    capture_reference,
     compare_identity_values,
+    example_pair,
 )
 
 BASELINE = Path(__file__).parent / "fixtures" / "identity_value_baseline.json"
 
-CELLS = (("minimal", REFERENCE_CONFIG), ("rich", PANELBENCH_CONFIG))
+CELLS = (("example", example_pair),)
 
-_by_name = pytest.mark.parametrize(("name", "config"), CELLS, ids=[c[0] for c in CELLS])
+_by_name = pytest.mark.parametrize(("name", "pair"), CELLS, ids=[c[0] for c in CELLS])
 
 
 @_by_name
 @pytest.mark.asyncio
-async def test_identity_values_match_the_recorded_baseline(name: str, config: Path) -> None:
+async def test_identity_values_match_the_recorded_baseline(
+    name: str, pair: Callable[[Path], Awaitable[tuple[Capture, Capture]]], tmp_path: Path
+) -> None:
     """Fails on movement in either direction, like the other baselines."""
-    report = compare_identity_values(capture_reference(config), await capture_panelbench(config))
+    reference, subject = await pair(tmp_path)
+    report = compare_identity_values(reference, subject)
     expected = json.loads(BASELINE.read_text())[name]
 
     assert report.as_baseline() == expected, (
-        f"identity values moved for the {name} config.\n"
+        f"identity values moved for the {name} cell.\n"
         f"{report.describe()}\n\n"
         f"If a divergence was closed, remove its entry from {BASELINE.name} under "
         f'"{name}". If one appeared, it is a producer regression.'
@@ -128,7 +133,7 @@ def test_a_value_only_one_producer_publishes_is_left_to_the_parity_baseline() ->
 
 
 def _capture_of(properties: dict[str, str]) -> dict[str, dict[str, str]]:
-    """One synthetic MID, keyed the way ``_regroup`` keys a real capture."""
+    """One synthetic MID, keyed the way ``as_capture`` keys a real capture."""
     return {
         "bess-mid": {
             "$description": json.dumps(

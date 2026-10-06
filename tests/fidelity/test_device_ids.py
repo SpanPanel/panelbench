@@ -1,12 +1,10 @@
 """Do our device IDs follow the pattern real SPAN firmware publishes?
 
 The comparator aligns devices by declared ``type::name`` and never by instance
-id — deliberately, because the reference hashes ids with sha256 while panelbench
-uses uuid5, so an id-keyed diff reports every device as a mismatch and nothing
-useful. The cost of that choice is that device ids are outside what it measures,
-and both producers inherited the same ids from the same example code. They
-diverge from firmware *identically*, so the comparator reports parity on every
-one of them.
+id — deliberately, because the two producers derive ids differently, so an
+id-keyed diff reports every device as a mismatch and nothing useful. The cost of
+that choice is that device ids are outside what it measures, and a producer
+diverging from firmware would do so without the comparator noticing.
 
 The patterns come from the migration guide's Device ID Stability table:
 
@@ -24,11 +22,20 @@ acceptance criterion the whole fidelity effort exists to make measurable. A
 consumer validated against ids no panel ever publishes has not been validated on
 the axis that decides whether a user's history survives.
 
-Both producers are recorded, in one file, so the shared divergence is visible in
-the artifact rather than only in this docstring. The reference's entry is not a
-demand on upstream — its ids come from an example script, not from the emitter
-contract — but movement there is worth seeing, because it is where ours came
-from.
+Device ids are a per-producer pattern check, not a pairwise one, so the two rows
+need not describe the same panel. The ``panelbench`` row is PanelBench's own
+config, ``configs/default_MAIN_40.yaml``; the ``reference`` row is upstream's
+shipped example, published by upstream. They cannot be paired in the example
+cell either: PanelBench's import runs the example as a clone, which serves its
+own panel serial and ids its circuits by uuid. Both producers id a PV inverter
+``<panel>-<serial or model>``, with the feeding circuit appended when a panel has
+two or more, and both conform to ``<proxier-id>-<identifier>``.
+
+Both rows are recorded, in one file, so a divergence is visible in the artifact
+rather than only in this docstring. The reference's entries are not a demand on
+upstream — its ids come from an example definition, which names its battery,
+drives, lugs and circuits by readable slugs, not from the emitter contract — but
+movement there is worth seeing, because it is where ours came from.
 """
 
 from __future__ import annotations
@@ -38,8 +45,10 @@ from pathlib import Path
 
 import pytest
 
+from panelbench.emitter_adapter.wire_capture import as_capture, capture_retained
+
 from .against_spec import device_id_findings
-from .comparator import PANELBENCH_CONFIG, capture_panelbench, capture_reference
+from .comparator import PANELBENCH_CONFIG, reference_example
 
 BASELINE = Path(__file__).parent / "fixtures" / "device_id_baseline.json"
 
@@ -52,8 +61,8 @@ async def test_device_ids_match_the_recorded_baseline() -> None:
     off-pattern device should fail rather than arrive unnoticed.
     """
     actual = {
-        "panelbench": device_id_findings(await capture_panelbench(PANELBENCH_CONFIG)),
-        "reference": device_id_findings(capture_reference(PANELBENCH_CONFIG)),
+        "panelbench": device_id_findings(as_capture(await capture_retained(PANELBENCH_CONFIG))),
+        "reference": device_id_findings(reference_example()),
     }
     expected = json.loads(BASELINE.read_text())
 
