@@ -37,6 +37,7 @@
   and SPAN Drive charge limit.
 - **A cloned panel keeps each solar inverter's vendor, model, serial number and firmware version.**
 - **A cloned panel keeps the source panel's hardware version.**
+- **An imported config counts as unsaved until it is saved**, so switching panels asks before discarding it.
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

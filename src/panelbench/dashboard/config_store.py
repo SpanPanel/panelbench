@@ -114,19 +114,24 @@ class ConfigStore:
         """Whether in-memory state has unsaved changes."""
         return self._dirty
 
-    def load_from_yaml(self, content: str) -> None:
-        """Parse, validate, and replace state from YAML string."""
+    def load_from_yaml(self, content: str, *, saved: bool = True) -> None:
+        """Parse, validate, and replace state from YAML string.
+
+        *saved* says whether *content* is what the loaded file holds; an import
+        is not, so it loads unsaved and leaving it prompts like any other edit.
+        """
         data = yaml.safe_load(content)
         if not isinstance(data, dict):
             raise ValueError("YAML content must be a mapping")
-        self.load_from_mapping(data)
+        self.load_from_mapping(data, saved=saved)
 
-    def load_from_mapping(self, data: Mapping[str, object]) -> None:
-        """Validate and replace state from an already-parsed config."""
+    def load_from_mapping(self, data: Mapping[str, object], *, saved: bool = True) -> None:
+        """Validate and replace state from an already-parsed config; *saved* as for
+        ``load_from_yaml``."""
         state = dict(data)
         validate_yaml_config(state)
         self._state = state
-        self._dirty = False
+        self._dirty = not saved
 
     def load_from_file(self, path: Path) -> None:
         """Read a file and load its content."""

@@ -5,12 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from aiohttp import web
+import yaml
+from aiohttp import FormData, web
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.definition_export import definition_for_config_file, definition_text
 from panelbench.definition_import import config_from_definition_text
+from panelbench.emitter_adapter.definition import build_definition
 from tests._helpers import default_config, write_config
 
 pytestmark = pytest.mark.asyncio
@@ -72,6 +74,46 @@ async def test_unsaved_edits_are_a_conflict(client_app: web.Application) -> None
         await client.put("/sim-params", data={"update_interval": "7", "noise_factor": "0.02"})
         resp = await client.get("/export-definition")
         assert resp.status == 409
+
+
+def _upload(kind: str, serial: str) -> FormData:
+    """The default panel under *serial*, as a config or as a definition upload."""
+    config = default_config()
+    config["panel_config"]["serial_number"] = serial
+    if kind == "config":
+        text = yaml.safe_dump(dict(config), sort_keys=False)
+    else:
+        text = definition_text(build_definition(config))
+    form = FormData()
+    form.add_field("file", text.encode(), filename="upload.yaml")
+    return form
+
+
+def _panel_id(definition_yaml: str) -> str:
+    devices = yaml.safe_load(definition_yaml)["devices"]
+    [panel] = [d for d in devices if d["class"] == "panel"]
+    return str(panel["id"])
+
+
+@pytest.mark.parametrize("kind", ["config", "definition"])
+async def test_an_unsaved_import_is_a_conflict(client_app: web.Application, kind: str) -> None:
+    """Exporting now would describe the file the import replaced, not the import."""
+    async with TestClient(TestServer(client_app)) as client:
+        assert (await client.post("/import", data=_upload(kind, "40t-555"))).status == 200
+        resp = await client.get("/export-definition")
+        assert resp.status == 409
+
+
+@pytest.mark.parametrize("kind", ["config", "definition"])
+async def test_a_saved_import_exports_the_imported_panel(
+    client_app: web.Application, kind: str
+) -> None:
+    async with TestClient(TestServer(client_app)) as client:
+        assert (await client.post("/import", data=_upload(kind, "40t-555"))).status == 200
+        assert (await client.post("/save-reload")).status == 200
+        resp = await client.get("/export-definition")
+        assert resp.status == 200
+        assert "40t-555" in _panel_id(await resp.text())
 
 
 async def test_without_a_loaded_file_there_is_nothing_to_export(tmp_path: Path) -> None:

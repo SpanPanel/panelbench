@@ -207,6 +207,25 @@ async def test_the_import_endpoint_takes_a_definition(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["config", "definition"])
+async def test_an_import_is_unsaved_until_saved(
+    dashboard_app: web.Application, tmp_path: Path, kind: str
+) -> None:
+    """The imported config exists nowhere on disk, so leaving it must prompt."""
+    if kind == "config":
+        text = DEFAULT_CONFIG.read_text(encoding="utf-8")
+    else:
+        path = tmp_path / "upload.definition.yaml"
+        dump_definition(_definition(), path)
+        text = path.read_text(encoding="utf-8")
+
+    status, _body = await _upload(dashboard_app, text)
+
+    assert status == 200
+    assert dashboard_app[APP_KEY_STORE].dirty is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "names"),
     [

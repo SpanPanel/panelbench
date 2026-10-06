@@ -1660,9 +1660,9 @@ async def handle_import(request: web.Request) -> web.Response:
     try:
         text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         if is_definition_text(text):
-            _store(request).load_from_mapping(config_from_definition_text(text))
+            _store(request).load_from_mapping(config_from_definition_text(text), saved=False)
         else:
-            _store(request).load_from_yaml(text)
+            _store(request).load_from_yaml(text, saved=False)
     except (ValueError, TypeError, yaml.YAMLError, EmitterError) as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
     return web.Response(status=200, headers={"HX-Redirect": "./"})
