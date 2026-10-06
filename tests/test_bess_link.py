@@ -132,6 +132,21 @@ async def test_an_unknown_link_never_reaches_the_engine(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("body", ["not json", '["LOST"]', '"LOST"', "null"])
+async def test_a_body_that_is_not_a_json_object_is_a_bad_request(
+    client_and_calls: tuple[web.Application, list[str]], body: str
+) -> None:
+    """A malformed request is the caller's error, so it is a 400 and never a 500."""
+    app, calls = client_and_calls
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post(
+            "/set-bess-link", data=body, headers={"Content-Type": "application/json"}
+        )
+        assert resp.status == 400
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_the_dashboard_offers_every_link_health(
     client_and_calls: tuple[web.Application, list[str]],
 ) -> None:

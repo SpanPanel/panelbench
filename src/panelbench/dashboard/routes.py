@@ -110,6 +110,20 @@ def _presets(request: web.Request) -> PresetRegistry:
     return request.app[APP_KEY_PRESET_REGISTRY]
 
 
+async def _json_object(request: web.Request) -> dict[str, object]:
+    """The request body as a JSON object, or a 400 when it is not one.
+
+    A malformed body is the caller's error, so it must not surface as a 500.
+    """
+    try:
+        data = await request.json()
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="Request body must be JSON") from exc
+    if not isinstance(data, dict):
+        raise web.HTTPBadRequest(text="Request body must be a JSON object")
+    return data
+
+
 def _render(template: str, request: web.Request, context: dict[str, Any]) -> web.Response:
     """Render a Jinja2 template and return an HTML response."""
     body = aiohttp_jinja2.render_string(template, request, context)
@@ -1323,7 +1337,7 @@ async def handle_set_grid_islandable(request: web.Request) -> web.Response:
 
 async def handle_set_bess_link(request: web.Request) -> web.Response:
     """Set the health of the panel's link to its battery."""
-    data = await request.json()
+    data = await _json_object(request)
     link = str(data.get("link", "OK")).upper()
     if not is_bess_link(link):
         raise web.HTTPBadRequest(text=f"link must be one of {sorted(BESS_LINKS)}, got {link!r}")
