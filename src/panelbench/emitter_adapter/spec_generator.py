@@ -26,6 +26,7 @@ from panelbench.emitter_adapter.instance_ids import (
     pv_device_id,
     stable_circuit_uuid,
 )
+from panelbench.firmware import panel_firmware_version
 from panelbench.inverter import (
     normalise_inverter_type,
     template_inverter_type,
@@ -107,7 +108,7 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
         metadata={
             "vendor-name": "Span",
             "serial-number": panel_id,
-            "firmware-version": profile.get("firmware_version", "sim/v0.1.0"),
+            "firmware-version": panel_firmware_version(profile),
             "hardware-version": profile.get("hardware_version", "rev2"),
             "panel-size": str(panel_size),
             "main-breaker-rating-a": str(int(panel_cfg.get("main_size", 200))),

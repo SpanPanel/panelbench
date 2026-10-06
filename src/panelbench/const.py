@@ -42,8 +42,9 @@ PATH_CA_CERT = "/api/v2/certificate/ca"
 PATH_HOMIE_SCHEMA = "/api/v2/homie/schema"
 
 
-# Simulated firmware version — derived from the package version so that
-# HTTP bootstrap, MQTT snapshots, and mDNS all report the same value.
+# Default firmware version for a config that names no ``firmware_version``,
+# derived from the package version. ``panelbench.firmware`` decides each panel's
+# string, which its MQTT tree, HTTP status and mDNS advertisement all report.
 def _firmware_version() -> str:
     from panelbench import __version__
 

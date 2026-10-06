@@ -198,6 +198,13 @@ def translate_panel_tree(
         },
     }
 
+    # The panel's firmware decides which side of SPAN release 202639 the clone
+    # publishes (the BESS meter's sign, the EVSE limit), so a clone of a panel on an
+    # earlier release must keep it rather than inherit the simulator's own string.
+    firmware = _get_prop(devices, panel_device_id, "info", "firmware-version")
+    if firmware:
+        config["firmware_version"] = firmware
+
     # Build top-level BESS config (only when a battery is actually connected)
     for bess_id in bess_nodes:
         bess_cfg = _build_bess_config(devices, bess_id)

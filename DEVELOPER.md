@@ -406,6 +406,10 @@ simulation_params:
   noise_factor: float # Random noise fraction (0.02 = +/-2%)
   enable_realistic_behaviors: bool
 
+firmware_version:
+  str # Reported over MQTT, HTTP and mDNS (default: sim/v<package version>).
+  # A SPAN string naming a release before 202639 keeps that release's BESS sign and EVSE limit.
+
 # Clone provenance (written by the clone pipeline)
 panel_source:
   origin_serial: str # Real panel's serial (immutable)
@@ -513,6 +517,7 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 ### What gets cloned
 
 - Panel identity (`sim-{serial}-clone`), main breaker rating, panel size
+- The panel's firmware version, so the clone publishes as that SPAN release does
 - All circuits: name, tab position, breaker rating, relay behavior, priority
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)
 - Energy accumulators seeded from the panel's imported/exported energy values

@@ -19,6 +19,7 @@ from panelbench.clone import (
 )
 from panelbench.scraper import ScrapedPanel
 from panelbench.validation import validate_yaml_config
+from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -591,3 +592,18 @@ class TestUpdateConfigFromScrape:
         # Remove panel_source to test pure data path
         changed = update_config_from_scrape(config, _make_scraped())
         assert changed is False
+
+    def test_a_refresh_leaves_the_clone_firmware_alone(self) -> None:
+        """A clone keeps the release it was taken at when its source later upgrades."""
+        before = _base_devices()
+        before[_SERIAL].update_property("info", "firmware-version", EARLIER_FIRMWARE)
+        config = translate_scraped_panel(
+            _make_scraped(before), host="192.168.1.100", passphrase=None
+        )
+        assert config["firmware_version"] == EARLIER_FIRMWARE
+
+        after = _base_devices()
+        after[_SERIAL].update_property("info", "firmware-version", CURRENT_FIRMWARE)
+        update_config_from_scrape(config, _make_scraped(after))
+
+        assert config["firmware_version"] == EARLIER_FIRMWARE

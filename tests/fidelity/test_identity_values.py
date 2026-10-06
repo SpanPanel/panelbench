@@ -28,7 +28,8 @@ Two of the recorded entries are intentional and must never be "fixed":
 ``info/firmware-version`` everywhere
     the two producers have different placeholder defaults, ``example/v0.1.0``
     against ``sim/v0.1.0``. Same class as the PV model: a naming difference, not
-    a fidelity defect.
+    a fidelity defect. The panel's value is the package's own version, which a
+    panel naming no firmware reports everywhere (spec D9).
 
 The EVSE entry is the one worth acting on, and it is only visible because the
 placeholder difference dragged it into view. The reference reads an EVSE's

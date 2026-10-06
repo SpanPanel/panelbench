@@ -9,7 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from panelbench.app import SimulatorApp, _discover_configs, _file_hash
+from panelbench.emitter_adapter.spec_generator import build_manifest
+from panelbench.panel import PanelInstance
 from panelbench.schema import load_schema
+from tests._helpers import EARLIER_FIRMWARE
 
 _SIMPLE_CONFIG = """\
 panel_config:
@@ -219,3 +222,59 @@ class TestReloadContinuesOnPerPathFailure:
         for panel in list(app._panels.values()):
             with contextlib.suppress(Exception):
                 await panel.stop()
+
+
+async def _started(
+    tmp_path: Path, broker: tuple[str, int], extra_yaml: str
+) -> tuple[PanelInstance, MagicMock, MagicMock]:
+    """One panel started through `_start_panel`, its HTTP server class and mDNS
+    advertiser replaced by mocks that record what `_start_panel` hands them."""
+    host, port = broker
+    config = _write_config(
+        tmp_path, "panel.yaml", "SIM-FW-0001", broker_host=host, broker_port=port
+    )
+    config.write_text(config.read_text() + extra_yaml)
+
+    app = SimulatorApp(config_dir=tmp_path)
+    app._schema = load_schema(_BUNDLED_SCHEMA)
+    app._certs = MagicMock(
+        ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+        ca_cert_path=None,
+    )
+    advertiser = MagicMock()
+    advertiser.register_panel = AsyncMock()
+    app._advertiser = advertiser
+    mock_server = MagicMock()
+    mock_server.start = AsyncMock()
+    mock_server.stop = AsyncMock()
+
+    with patch("panelbench.app.BootstrapHttpServer", return_value=mock_server) as server_cls:
+        panel = await app._start_panel(config)
+    return panel, server_cls, advertiser
+
+
+class TestOneFirmwareString:
+    """A panel's HTTP status and mDNS record report the firmware its MQTT tree publishes."""
+
+    @pytest.mark.asyncio
+    async def test_the_status_endpoint_reports_the_published_firmware(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+    ) -> None:
+        panel, server_cls, advertiser = await _started(
+            tmp_path, amqtt_broker, f'firmware_version: "{EARLIER_FIRMWARE}"\n'
+        )
+        try:
+            engine = panel.engine
+            assert engine is not None
+            [published] = [
+                i for i in build_manifest(engine.config).instances if i.entity_class == "panel"
+            ]
+            served = server_cls.call_args.args[1]
+            advertised = advertiser.register_panel.call_args.args[1]
+
+            assert served == advertised == panel.firmware_version
+            assert served == published.metadata["firmware-version"] == EARLIER_FIRMWARE
+        finally:
+            await panel.stop()

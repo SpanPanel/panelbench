@@ -16,6 +16,14 @@
   earlier release.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
 - **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
+- **An existing clone that names no `firmware_version` publishes the conventions of SPAN release 202639**; set `firmware_version` to the source panel's
+  firmware, or clone the panel again, to keep its earlier release's conventions.
+
+### Fixed
+
+- **A panel's HTTP status and mDNS advertisement now report the same firmware version it publishes over MQTT.**
+- **A cloned panel keeps the source panel's firmware version**, so a clone of a panel on a SPAN release before 202639 keeps that release's battery power sign
+  and SPAN Drive charge limit.
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

@@ -27,7 +27,6 @@ from panelbench.const import (
     DEFAULT_BASE_HTTP_PORT,
     DEFAULT_BROKER_PASSWORD,
     DEFAULT_BROKER_USERNAME,
-    DEFAULT_FIRMWARE_VERSION,
     DEFAULT_TICK_INTERVAL_S,
     MQTTS_PORT,
     https_port_for,
@@ -123,7 +122,6 @@ class SimulatorApp:
         self._config_dir = config_dir
         self._config_filter = config_filter
         self._tick_interval = tick_interval
-        self._firmware = DEFAULT_FIRMWARE_VERSION
         self._broker_username = broker_username
         self._broker_password = broker_password
         self._broker_host = broker_host
@@ -323,6 +321,7 @@ class SimulatorApp:
             total_tabs = panel.total_tabs
             panel_model = PANEL_SIZE_TO_MODEL[total_tabs]
             panel_schema = render_for_panel(self._schema, total_tabs)
+            firmware = panel.firmware_version
         except Exception:
             await panel.stop()
             raise
@@ -359,7 +358,7 @@ class SimulatorApp:
         def _build(http_port: int) -> BootstrapHttpServer:
             return BootstrapHttpServer(
                 serial,
-                self._firmware,
+                firmware,
                 certs,
                 panel_schema,
                 broker_username=self._broker_username,
@@ -398,7 +397,7 @@ class SimulatorApp:
         if self._advertiser is not None:
             await self._advertiser.register_panel(
                 serial,
-                self._firmware,
+                firmware,
                 model=panel_model,
                 port=port,
                 https_port=https_port_for(port),

@@ -3,7 +3,7 @@
     "energy.ebus.device.distribution-enclosure::Example 40-tab Panel": {
       "info/firmware-version": [
         "example/v0.1.0",
-        "sim/v0.1.0"
+        "sim/v2.5.3"
       ],
       "info/serial-number": [
         "example-40t-001",

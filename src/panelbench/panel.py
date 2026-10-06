@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.engine import DynamicSimulationEngine
+from panelbench.firmware import panel_firmware_version
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -68,6 +69,13 @@ class PanelInstance:
             msg = "Panel not initialised — call start() first"
             raise RuntimeError(msg)
         return self._engine.total_tabs
+
+    @property
+    def firmware_version(self) -> str:
+        if self._engine is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        return panel_firmware_version(self._engine.config)
 
     @property
     def is_running(self) -> bool:
