@@ -12,6 +12,7 @@
 - **From SPAN firmware release 202639, a panel's status endpoint reports its hardware version**, as SPAN's does: `1.2` or `2.0` from the config's
   `hardware_version`, and `UNKNOWN` for any other value.
 - **The dashboard's Import accepts a panel definition file**, such as one `panel-sim-capture` wrote from a live panel, and turns it into a PanelBench config.
+- **The dashboard can export a saved config as a panel definition file**, the makeup other eBus tools read, without PanelBench's behaviour settings.
 
 ### Changed
 

@@ -40,6 +40,7 @@ from panelbench.dashboard.presets import (
     is_random_days_preset,
     match_battery_preset,
 )
+from panelbench.definition_export import definition_for_config_file, definition_text
 from panelbench.definition_import import config_from_definition_text, is_definition_text
 from panelbench.ha_api.opower import (
     async_discover_opower,
@@ -643,6 +644,7 @@ def setup_routes(app: web.Application) -> None:
 
     # File operations
     app.router.add_get("/export", handle_export)
+    app.router.add_get("/export-definition", handle_export_definition)
     app.router.add_post("/import", handle_import)
     app.router.add_post("/load-config", handle_load_config)
     app.router.add_post("/clone", handle_clone)
@@ -1625,6 +1627,27 @@ async def handle_export(request: web.Request) -> web.Response:
         text=content,
         content_type="application/x-yaml",
         headers={"Content-Disposition": 'attachment; filename="simulator_config.yaml"'},
+    )
+
+
+async def handle_export_definition(request: web.Request) -> web.Response:
+    """The loaded config's makeup as a panel definition, without its behaviour."""
+    ctx = _ctx(request)
+    if not ctx.config_filter:
+        raise web.HTTPBadRequest(text="No config file is loaded")
+    if _store(request).dirty:
+        raise web.HTTPConflict(text="Save the config before exporting its definition")
+    path = ctx.config_dir / ctx.config_filter
+    if path.resolve().parent != ctx.config_dir.resolve() or not path.is_file():
+        raise web.HTTPBadRequest(text=f"Config file not found: {ctx.config_filter}")
+    try:
+        definition = await definition_for_config_file(path)
+    except (ValueError, TypeError, yaml.YAMLError, EmitterError) as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+    return web.Response(
+        text=definition_text(definition),
+        content_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{path.stem}.definition.yaml"'},
     )
 
 
