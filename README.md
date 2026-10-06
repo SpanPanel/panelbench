@@ -28,8 +28,8 @@ schemas are not convertible.
 Click a simulator configuration to view it. Templates are read-only. A running simulator appears as a discovered panel in the SpanPanel integration (default
 configs excluded).
 
-1. **Examine templates** — Load and run the included configs (`default_config.yaml`, `simple_test_config.yaml`, etc.) to see how circuits, PV, battery, and EVSE
-   are modeled. Pick one as a starting point for your own configuration.
+1. **Examine templates** — Load and run the included configs (`default_MAIN_40.yaml`, `default_MAIN_32.yaml` and `default_MAIN_16.yaml`) to see how circuits,
+   PV, battery, and EVSE are modeled. Pick one as a starting point for your own configuration.
 2. **Clone** — The **Clone** button creates an editable copy from a template, or from a panel running `r202633+` firmware; cloning a panel preserves recorder
    history per circuit.
 3. **Model** — The **Model** button on a running panel opens the what-if view; add battery, PV, or circuits and compare before/after. Edits mark equipment as
@@ -297,21 +297,20 @@ simulation_params:
 
 ### Config Selection
 
-By default, the simulator loads `default_config.yaml`. To use a different config:
+To start a specific config:
 
 ```bash
-CONFIG_NAME=simple_test_config.yaml ./scripts/run-local.sh
+CONFIG_NAME=default_MAIN_16.yaml ./scripts/run-local.sh
 ```
 
-The simulator remembers the last running config and resumes it on restart. When no config is specified and no default exists, all YAML files in the config
-directory are loaded.
+Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts with no panel running until you pick one in the dashboard.
 
 ### Included Configs
 
 | File                   | Tabs | Description                                  |
 | ---------------------- | ---- | -------------------------------------------- |
 | `default_MAIN_40.yaml` | 40   | Full residential with solar, battery, 2 EVSE |
-| `default_main_32.yaml` | 32   | Full residential with solar, battery, 1 EVSE |
+| `default_MAIN_32.yaml` | 32   | Full residential with solar, battery, 1 EVSE |
 | `default_MAIN_16.yaml` | 16   | Minimal test: lights, outlets, HVAC, solar   |
 
 ### Firmware Version
@@ -335,17 +334,17 @@ firmware.
 
 All variables can also be passed as CLI arguments (`--help` for full list).
 
-| Variable            | Default               | Description                               |
-| ------------------- | --------------------- | ----------------------------------------- |
-| `CONFIG_DIR`        | `./configs`           | Directory containing panel YAML configs   |
-| `CONFIG_NAME`       | `default_config.yaml` | Specific config file to load              |
-| `TICK_INTERVAL`     | `1.0`                 | Seconds between simulation ticks          |
-| `LOG_LEVEL`         | `INFO`                | `DEBUG`, `INFO`, `WARNING`, `ERROR`       |
-| `HTTP_PORT`         | `8081`                | Bootstrap HTTP server port (TLS on +1000) |
-| `DASHBOARD_PORT`    | `18080`               | Dashboard web UI port                     |
-| `BROKER_HOST`       | `localhost`           | MQTT broker hostname                      |
-| `BROKER_PORT`       | `18883`               | MQTTS broker port                         |
-| `ADVERTISE_ADDRESS` | auto-detected         | IP to advertise via mDNS                  |
+| Variable            | Default         | Description                               |
+| ------------------- | --------------- | ----------------------------------------- |
+| `CONFIG_DIR`        | `./configs`     | Directory containing panel YAML configs   |
+| `CONFIG_NAME`       | last config run | Specific config file to load              |
+| `TICK_INTERVAL`     | `1.0`           | Seconds between simulation ticks          |
+| `LOG_LEVEL`         | `INFO`          | `DEBUG`, `INFO`, `WARNING`, `ERROR`       |
+| `HTTP_PORT`         | `8081`          | Bootstrap HTTP server port (TLS on +1000) |
+| `DASHBOARD_PORT`    | `18080`         | Dashboard web UI port                     |
+| `BROKER_HOST`       | `localhost`     | MQTT broker hostname                      |
+| `BROKER_PORT`       | `18883`         | MQTTS broker port                         |
+| `ADVERTISE_ADDRESS` | auto-detected   | IP to advertise via mDNS                  |
 
 ## Development
 
