@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from .comparator import class_of, declared_properties, role_key
+from .comparator import class_of, declared_properties, keyed_devices
 
 _HEX32 = re.compile(r"^[0-9a-f]{32}$")
 
@@ -20,11 +20,12 @@ def declared_but_unvalued(devices: dict[str, dict[str, str]]) -> set[str]:
     """``<role>  <node>/<property>`` for every declaration carrying no retained value.
 
     A consumer builds entities from ``$description``, so a property declared and
-    never published is an entity that never receives a state.
+    never published is an entity that never receives a state. Keyed through
+    ``keyed_devices``, which refuses two devices sharing a role rather than letting
+    one's lines stand for both.
     """
     unvalued: set[str] = set()
-    for device_id, body in devices.items():
-        role = role_key(device_id, body)
+    for role, (_device_id, body) in keyed_devices(devices).items():
         published = {key for key in body if not key.startswith("$")}
         unvalued.update(f"{role}  {path}" for path in declared_properties(body) - published)
     return unvalued
@@ -76,9 +77,9 @@ def _expected_form(
 def device_id_findings(devices: dict[str, dict[str, str]]) -> dict[str, str]:
     """``role -> "<published id> is not <documented pattern>"`` for each departure.
 
-    Keyed by ``role_key`` so the two producers' findings are comparable and two devices
-    sharing a name stay distinct, and carrying the published id in the value so a
-    changed id moves the baseline.
+    Keyed through ``keyed_devices`` so the two producers' findings are comparable and
+    two devices sharing a role are refused rather than merged, and carrying the
+    published id in the value so a changed id moves the baseline.
     """
     serial = panel_serial(devices)
     if serial is None:
@@ -86,8 +87,8 @@ def device_id_findings(devices: dict[str, dict[str, str]]) -> dict[str, str]:
 
     bess_ids = {did for did, body in devices.items() if class_of(body) == "bess"}
     findings: dict[str, str] = {}
-    for device_id, body in devices.items():
+    for role, (device_id, body) in keyed_devices(devices).items():
         pattern = _expected_form(class_of(body), device_id, serial, bess_ids)
         if pattern is not None:
-            findings[role_key(device_id, body)] = f"{device_id} is not {pattern}"
+            findings[role] = f"{device_id} is not {pattern}"
     return findings

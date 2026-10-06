@@ -21,26 +21,32 @@ its reference is upstream's reading of PanelBench's own published tree, so its
 ``info`` values are PanelBench's values read back, and comparing them would
 compare PanelBench with a copy of itself.
 
-The example cell's entries are of two kinds.
+The panel's ``info/serial-number`` is intentional and must never be "fixed". The
+import runs the example as a clone, and a clone serves ``sim-<serial>-clone``
+(``clone.make_clone_serial``): a simulator never presents a serial that reads as
+real hardware, and a clone never collides with the panel it copies.
 
-``info/serial-number`` on the panel and both SPAN Drives is intentional and must
-never be "fixed". The import runs the example as a clone, and a clone serves
-``sim-<serial>-clone`` (``clone.make_clone_serial``): a simulator never presents
-a serial that reads as real hardware, and a clone never collides with the panel
-it copies. Each drive's serial derives from the panel's and from its position
-(``instance_ids.evse_serial_number``), the documented fallback while no circuit
-names its drive's serial. The clone orders circuits by source device id, so
-``span-drive-driveway`` comes first and the Driveway drive takes the unsuffixed
-serial upstream's example gives the Garage drive.
+Every other entry is a clone gap, on both SPAN Drives. The clone carries the
+panel's firmware and each PV inverter's identity onto the config, but nothing of a
+drive's own:
 
-``info/firmware-version`` on both SPAN Drives is a clone gap. The clone carries
-the panel's firmware and each PV inverter's identity onto the config, but not a
-drive's firmware, so PanelBench publishes its ``evse.firmware_version`` default
-``sim/v0.1.0`` where the example names ``example/v0.1.0``. When the clone carries
-it, these two entries leave the baseline.
+``info/serial-number``
+    with no serial on its circuit, a drive's serial falls back to one derived from
+    the panel's and from its position (``instance_ids.evse_serial_number``), the
+    ordinal ``instance_ids.evse_circuit_serial`` names as the thing to avoid. The
+    clone orders circuits by source device id, so ``span-drive-driveway`` comes
+    first and the Driveway drive even takes the unsuffixed serial upstream's
+    example gives the Garage drive.
 
-Every other value both publish agrees, the panel's firmware and hardware version
-and both inverters' model and vendor among them.
+``info/firmware-version``
+    PanelBench publishes its ``evse.firmware_version`` default ``sim/v0.1.0`` where
+    the example names ``example/v0.1.0``.
+
+When the clone carries each drive's serial and firmware, these four entries leave
+the baseline.
+
+Outside these entries, every value both producers publish agrees, the panel's
+firmware and hardware version and both inverters' model and vendor among them.
 """
 
 from __future__ import annotations

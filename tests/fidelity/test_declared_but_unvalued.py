@@ -10,8 +10,8 @@ The conformance report cannot see these either. Its omissions are computed from
 declarations, so a property that *is* declared is not an omission no matter how
 permanently absent its value.
 
-`connection/count` is the worked example. Every circuit declares it, neither
-producer ever publishes it, and both instruments call that fine.
+The MID's `info/serial-number` is the worked example. Both producers declare it,
+neither publishes a value for it, and both instruments call that fine.
 
 This matters to a consumer because entities are built from `$description`. A
 declared property with no retained value is an entity that never receives a
@@ -36,7 +36,7 @@ other.
 
 Shrinking this file is not the goal — being right about each line is. Membership
 was audited against the specification and SPAN's r202633 topic reference, and
-what remains is there for three different reasons:
+what remains is there for four different reasons:
 
   `connection/feeds-device-*` on a mixed-load circuit is *correct* absence, not a
   gap. The catalog omits the triple "when mixed-load with no commissioned
@@ -61,6 +61,17 @@ what remains is there for three different reasons:
   receiving end of an inter-panel link is populated. Neither producer has a
   sub-enclosure to point at. Valuing them would mean modelling a topology neither
   producer has, on firmware behaviour nobody has observed.
+
+  `info/*` on the battery, the MID and both PV inverters is a fact about upstream's
+  example, not about either producer. The emitter declares a device class's whole
+  `info` catalog and values only what the device's metadata names, and the example
+  names no battery firmware, part number or serial, nothing for the MID beyond its
+  vendor, and no inverter firmware or serial. PanelBench's import reads the
+  example's tree, so it has nothing more to publish. PanelBench's own config names
+  every one of these but an inverter serial. These lines leave when upstream's
+  example names the values, or when the emitter stops declaring `info` properties
+  a device has no value for. Carrying more identity through the clone does not
+  remove them, since membership needs the reference to leave them unvalued too.
 
 Two kinds of line have left:
 

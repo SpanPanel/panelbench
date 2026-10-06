@@ -167,16 +167,24 @@ def role_key(device_id: str, props: dict[str, str]) -> str:
     return role
 
 
-def by_role(devices: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
-    """Devices keyed by ``role_key``. Any repeated key is refused: merging two
-    devices would hide one of them."""
-    keyed: dict[str, dict[str, str]] = {}
+def keyed_devices(devices: dict[str, dict[str, str]]) -> dict[str, tuple[str, dict[str, str]]]:
+    """Each device's id and properties, keyed by ``role_key``.
+
+    Any repeated key is refused: merging two devices would hide one of them. Every
+    instrument that keys by role goes through here, so none can merge them quietly.
+    """
+    keyed: dict[str, tuple[str, dict[str, str]]] = {}
     for device_id, props in devices.items():
         key = role_key(device_id, props)
         if key in keyed:
             raise ValueError(f"two devices share the role {key!r}; comparing would merge them")
-        keyed[key] = props
+        keyed[key] = (device_id, props)
     return keyed
+
+
+def by_role(devices: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+    """Devices' properties keyed by ``role_key``, refusing a repeat as ``keyed_devices`` does."""
+    return {key: props for key, (_device_id, props) in keyed_devices(devices).items()}
 
 
 def declared_properties(body: dict[str, str]) -> set[str]:

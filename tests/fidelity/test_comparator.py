@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 import pytest
 
+from .against_spec import declared_but_unvalued, device_id_findings
 from .comparator import by_role, compare, compare_settable
 
 _CIRCUIT = "energy.ebus.device.circuit"
@@ -51,6 +53,26 @@ def test_any_other_repeated_role_is_refused() -> None:
 
     with pytest.raises(ValueError, match="share the role"):
         by_role({"a": {"$description": solar}, "b": {"$description": solar}})
+
+
+@pytest.mark.parametrize(
+    "check", [declared_but_unvalued, device_id_findings], ids=lambda check: check.__name__
+)
+def test_the_absolute_checks_refuse_a_repeated_role_too(
+    check: Callable[[dict[str, dict[str, str]]], object],
+) -> None:
+    """The checks against the specification key by role as the comparisons do, so a
+    repeat would let one device's findings stand for both."""
+    panel = json.dumps({"type": "energy.ebus.device.distribution-enclosure", "name": "Panel"})
+    solar = json.dumps({"type": "energy.ebus.device.pv", "name": "Solar"})
+    devices = {
+        "sim-0001": {"$description": panel, "info/serial-number": "sim-0001"},
+        "a": {"$description": solar},
+        "b": {"$description": solar},
+    }
+
+    with pytest.raises(ValueError, match="share the role"):
+        check(devices)
 
 
 def test_a_lost_lock_is_a_settable_difference() -> None:
