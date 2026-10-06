@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.6.0 — SPAN firmware release 202639, where a config names it
+
+**The shipped templates stay on SPAN release 202633's conventions, and a config or clone that names no SPAN release now publishes release 202639's.** The add-on
+refreshes its shipped templates on every start, so an upgraded install publishes what this release ships. A config or clone whose `firmware_version` names no
+SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 40 template, which named `sim/v0.1.0`. To keep the earlier conventions, set its
+`firmware_version` to a 202633 release such as `spanos3/r202633/02`.
 
 ### Added
 
@@ -8,7 +13,6 @@
   source control.
 - **Commissioned PV and battery system circuits**, locked as SPAN firmware release 202639 locks them, are modelled and kept by a clone, and a config naming an
   earlier release is refused if it asks for one.
-- **A panel with several solar inverters publishes each as its own device**, as SPAN firmware does from release 202639, and a clone keeps every inverter.
 - **From SPAN firmware release 202639, a panel's status endpoint reports its hardware version**, as SPAN's does: `1.2` or `2.0` from the config's
   `hardware_version`, and `UNKNOWN` for any other value.
 - **The dashboard's Import accepts a panel definition file**, such as one `panel-sim-capture` wrote from a live panel, and turns it into a PanelBench config.
@@ -21,13 +25,13 @@
   earlier release.
 - **A SPAN Drive's user charge limit is no longer published until a user sets one**, as on SPAN firmware r202639, unless the panel's firmware version names an
   earlier release.
-- **The shipped configs stay on SPAN release 202633's conventions**, so integrations released before r202639 support read them correctly; set `firmware_version`
-  to a 202639 release to emulate the new firmware.
+- **The shipped configs now report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows, so they keep SPAN release 202633's conventions and
+  integrations released before r202639 support read them correctly; set a clone's `firmware_version` to a 202639 release to emulate the new firmware.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
-- **An existing clone that names no `firmware_version` publishes the conventions of SPAN release 202639**; set `firmware_version` to the source panel's
-  firmware, or clone the panel again, to keep its earlier release's conventions.
-- **A config with two or more solar circuits now publishes one solar device per inverter, under new device ids**, unless its `firmware_version` names a SPAN
-  release before 202639, as a SPAN panel's solar device ids change at that upgrade.
+- **An existing config or clone whose `firmware_version` names no SPAN release, such as `sim/v0.1.0`, publishes the conventions of SPAN release 202639**; set
+  `firmware_version` to the source panel's firmware, or clone the panel again, to keep its earlier release's conventions.
+- **A config with two or more solar circuits now publishes each inverter as its own solar device, under new device ids**, unless its `firmware_version` names a
+  SPAN release before 202639, as SPAN firmware does from that release, and a clone keeps every inverter.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
   `UNKNOWN` from release 202639.
 - **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a panel
@@ -35,6 +39,8 @@
 
 ### Fixed
 
+- **An upgraded add-on now refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down and published
+  whatever firmware they named.
 - **A panel's HTTP status, Homie schema endpoint and mDNS advertisement now report the same firmware version it publishes over MQTT.**
 - **A cloned panel keeps the source panel's firmware version**, so a clone of a panel on a SPAN release before 202639 keeps that release's battery power sign
   and SPAN Drive charge limit.
