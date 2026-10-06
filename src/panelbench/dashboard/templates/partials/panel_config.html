@@ -57,40 +57,8 @@
   var latInput = document.getElementById('panel-lat');
   var lonInput = document.getElementById('panel-lon');
   var display = document.getElementById('location-display');
-  var debounceTimer = null;
-
-  query.addEventListener('input', function() {
-    clearTimeout(debounceTimer);
-    var q = query.value.trim();
-    if (q.length < 3) {
-      results.style.display = 'none';
-      return;
-    }
-    debounceTimer = setTimeout(function() {
-      fetch('geocode?q=' + encodeURIComponent(q))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (!data.length) {
-            results.innerHTML = '<div class="location-item location-empty">No results</div>';
-            results.style.display = 'block';
-            return;
-          }
-          var html = '';
-          data.forEach(function(item) {
-            html += '<div class="location-item" data-lat="' + item.lat +
-                    '" data-lon="' + item.lon + '">' +
-                    escapeHtml(item.display) + '</div>';
-          });
-          results.innerHTML = html;
-          results.style.display = 'block';
-        })
-        .catch(function() {
-          results.style.display = 'none';
-        });
-    }, 350);
-  });
-
   var weatherStatus = document.getElementById('weather-status');
+  var debounceTimer = null;
 
   function fetchWeather(lat, lon) {
     weatherStatus.textContent = 'Fetching historical weather data...';
@@ -110,29 +78,63 @@
       });
   }
 
-  results.addEventListener('click', function(e) {
-    var item = e.target.closest('.location-item');
-    if (!item || !item.dataset.lat) return;
-    var lat = parseFloat(item.dataset.lat).toFixed(2);
-    var lon = parseFloat(item.dataset.lon).toFixed(2);
-    latInput.value = lat;
-    lonInput.value = lon;
-    display.textContent = item.textContent;
-    query.value = '';
-    results.style.display = 'none';
-    fetchWeather(lat, lon);
-  });
-
-  document.addEventListener('click', function(e) {
-    if (!results.contains(e.target) && e.target !== query) {
-      results.style.display = 'none';
-    }
-  });
-
   function escapeHtml(s) {
     var d = document.createElement('div');
     d.appendChild(document.createTextNode(s));
     return d.innerHTML;
+  }
+
+  // A read-only template renders no location search, but its weather is still fetched.
+  if (query && results) {
+    query.addEventListener('input', function() {
+      clearTimeout(debounceTimer);
+      var q = query.value.trim();
+      if (q.length < 3) {
+        results.style.display = 'none';
+        return;
+      }
+      debounceTimer = setTimeout(function() {
+        fetch('geocode?q=' + encodeURIComponent(q))
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (!data.length) {
+              results.innerHTML = '<div class="location-item location-empty">No results</div>';
+              results.style.display = 'block';
+              return;
+            }
+            var html = '';
+            data.forEach(function(item) {
+              html += '<div class="location-item" data-lat="' + item.lat +
+                      '" data-lon="' + item.lon + '">' +
+                      escapeHtml(item.display) + '</div>';
+            });
+            results.innerHTML = html;
+            results.style.display = 'block';
+          })
+          .catch(function() {
+            results.style.display = 'none';
+          });
+      }, 350);
+    });
+
+    results.addEventListener('click', function(e) {
+      var item = e.target.closest('.location-item');
+      if (!item || !item.dataset.lat) return;
+      var lat = parseFloat(item.dataset.lat).toFixed(2);
+      var lon = parseFloat(item.dataset.lon).toFixed(2);
+      latInput.value = lat;
+      lonInput.value = lon;
+      display.textContent = item.textContent;
+      query.value = '';
+      results.style.display = 'none';
+      fetchWeather(lat, lon);
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!results.contains(e.target) && e.target !== query) {
+        results.style.display = 'none';
+      }
+    });
   }
 
   // Auto-fetch weather for current coordinates on load
