@@ -21,32 +21,17 @@ its reference is upstream's reading of PanelBench's own published tree, so its
 ``info`` values are PanelBench's values read back, and comparing them would
 compare PanelBench with a copy of itself.
 
-The panel's ``info/serial-number`` is intentional and must never be "fixed". The
-import runs the example as a clone, and a clone serves ``sim-<serial>-clone``
-(``clone.make_clone_serial``): a simulator never presents a serial that reads as
-real hardware, and a clone never collides with the panel it copies.
+The baseline's one entry, the panel's ``info/serial-number``, is intentional and
+must never be "fixed". The import runs the example as a clone, and a clone serves
+``sim-<serial>-clone`` (``clone.make_clone_serial``): a simulator never presents a
+serial that reads as real hardware, and a clone never collides with the panel it
+copies.
 
-Every other entry is a clone gap, on both SPAN Drives. The clone carries the
-panel's firmware and each PV inverter's identity onto the config, but nothing of a
-drive's own:
-
-``info/serial-number``
-    with no serial on its circuit, a drive's serial falls back to one derived from
-    the panel's and from its position (``instance_ids.evse_serial_number``), the
-    ordinal ``instance_ids.evse_circuit_serial`` names as the thing to avoid. The
-    clone orders circuits by source device id, so ``span-drive-driveway`` comes
-    first and the Driveway drive even takes the unsuffixed serial upstream's
-    example gives the Garage drive.
-
-``info/firmware-version``
-    PanelBench publishes its ``evse.firmware_version`` default ``sim/v0.1.0`` where
-    the example names ``example/v0.1.0``.
-
-When the clone carries each drive's serial and firmware, these four entries leave
-the baseline.
-
-Outside these entries, every value both producers publish agrees, the panel's
-firmware and hardware version and both inverters' model and vendor among them.
+Every other value both producers publish agrees: the panel's firmware and hardware
+version, both inverters' and the battery's model and vendor, and each SPAN Drive's
+serial and firmware. A drive's serial is copied verbatim onto the circuit that
+feeds it, because the drive's device id is already scoped by the clone's own panel
+id and cannot collide with the source's.
 """
 
 from __future__ import annotations
@@ -123,12 +108,13 @@ def test_physics_payloads_are_not_compared() -> None:
     assert report == ValueReport()
 
 
-def test_a_value_only_one_producer_publishes_is_left_to_the_parity_baseline() -> None:
+def test_a_value_only_one_producer_publishes_is_left_to_structural_parity() -> None:
     """Held here so the two instruments cannot both claim the same finding.
 
     A key present on one side only is a structural gap. If it were reported as a
-    value difference too, closing it would mean editing two baselines, and one of
-    them would eventually be forgotten.
+    value difference too, one gap would fail two instruments, and recording it
+    while it is closed would mean editing two places, one of which would
+    eventually be forgotten.
     """
     report = compare_identity_values(
         _capture_of({"info/serial-number": "SIM-BESS-001-mid", "info/model": "SPAN MID"}),

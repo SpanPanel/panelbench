@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from panelbench.config_types import (
         CircuitDefinitionExtended,
         CircuitTemplateExtended,
+        EVSEConfigYAML,
         PVConfigYAML,
         SimulationConfig,
     )
@@ -365,7 +366,7 @@ def _pv_metadata(
     *defaults* is the top-level ``pv`` section for the first inverter and empty for
     the others. Its declared inverter type wins over *inverter_template*'s, and its
     nameplate over the circuit template's. The firmware version is not read from
-    *defaults*: see ``_inverter_firmware``.
+    *defaults*: see ``_circuit_firmware``.
     """
     declared_inverter = defaults.get("inverter_type")
     inverter_type = (
@@ -382,7 +383,7 @@ def _pv_metadata(
         "inverter-type": inverter_type,
         "relative-position": relative_position,
     }
-    firmware = _inverter_firmware(profile, circuit)
+    firmware = _circuit_firmware(circuit, profile.get("pv") or {})
     if firmware is not None:
         metadata["firmware-version"] = firmware
     if feed is not None:
@@ -390,21 +391,20 @@ def _pv_metadata(
     return metadata
 
 
-def _inverter_firmware(
-    profile: SimulationConfig, circuit: CircuitDefinitionExtended | None
+def _circuit_firmware(
+    circuit: CircuitDefinitionExtended | None, section: Mapping[str, object]
 ) -> str | None:
-    """The firmware version of the inverter *circuit* feeds.
+    """The firmware version of the device *circuit* feeds, an inverter or a drive.
 
-    The circuit's own first, then the top-level ``pv`` section's for every inverter,
-    not only the first: a firmware version is not identity, and an inverter that
-    declares ``info/firmware-version`` without a value leaves a consumer's entity
-    waiting forever.
+    The circuit's own first, then *section*'s, the top-level ``pv`` or ``evse``
+    section, for every such device, not only the first: a firmware version is not
+    identity, and a device that declares ``info/firmware-version`` without a value
+    leaves a consumer's entity waiting forever.
     """
     own = circuit.get("firmware_version") if circuit is not None else None
     if own:
         return str(own)
-    pv_cfg = profile.get("pv") or {}
-    return str(pv_cfg["firmware_version"]) if "firmware_version" in pv_cfg else None
+    return str(section["firmware_version"]) if "firmware_version" in section else None
 
 
 def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
@@ -462,39 +462,52 @@ def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     if not feeds:
         return []
 
-    base_metadata = {
-        "vendor-name": str(evse_cfg.get("vendor", "SPAN")),
-        "model": str(evse_cfg.get("product", "SPAN Drive")),
-        "part-number": str(evse_cfg.get("part_number", "SPN-DRV-001")),
-        "firmware-version": str(evse_cfg.get("firmware_version", "sim/v0.1.0")),
-        "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),
-    }
     instances: list[DeviceInstance] = []
     for idx, feed in enumerate(feeds, start=1):
-        instance_id = evse_device_id(panel_id, evse_cfg, idx)
-        metadata = dict(base_metadata)
-        # The circuit's own serial wins over the panel-and-position derivation, so a
-        # config that pins identity is immune to circuit reordering. `feed_circuits`
-        # is the same list `feeds` was built from, in the same order, so index `idx-1`
-        # is this instance's circuit -- except on the explicit-feed path, which pins a
-        # single feed by id and has no circuit to read.
+        # `feed_circuits` is the same list `feeds` was built from, in the same order,
+        # so index `idx-1` is this instance's circuit -- except on the explicit-feed
+        # path, which pins a single feed by id and has no circuit to read.
         circuit = (
             feed_circuits[idx - 1] if not explicit_feed and idx <= len(feed_circuits) else None
         )
-        metadata["serial-number"] = evse_circuit_serial(circuit) or evse_serial_number(
-            evse_cfg, panel_id, idx
-        )
-        if feed:
-            metadata["feed"] = feed
         instances.append(
             DeviceInstance(
                 entity_class="evse",
-                instance_id=instance_id,
+                instance_id=evse_device_id(panel_id, evse_cfg, idx),
                 display_name=_evse_display_name(feed_circuits, idx),
-                metadata=metadata,
+                metadata=_evse_metadata(panel_id, circuit, evse_cfg, idx=idx, feed=feed),
             ),
         )
     return instances
+
+
+def _evse_metadata(
+    panel_id: str,
+    circuit: CircuitDefinitionExtended | None,
+    evse_cfg: EVSEConfigYAML,
+    *,
+    idx: int,
+    feed: str,
+) -> dict[str, str]:
+    """One drive's manifest metadata: the ``evse`` section's, then its circuit's own.
+
+    The circuit's serial wins over the panel-and-position derivation, so a config
+    that pins identity is immune to circuit reordering. Its firmware version wins
+    over the ``evse`` section's, which is every drive's default: see
+    ``_circuit_firmware``.
+    """
+    metadata = {
+        "vendor-name": str(evse_cfg.get("vendor", "SPAN")),
+        "model": str(evse_cfg.get("product", "SPAN Drive")),
+        "part-number": str(evse_cfg.get("part_number", "SPN-DRV-001")),
+        "firmware-version": _circuit_firmware(circuit, evse_cfg) or "sim/v0.1.0",
+        "max-current-a": str(evse_cfg.get("max_current_a", 32.0)),
+        "serial-number": evse_circuit_serial(circuit)
+        or evse_serial_number(evse_cfg, panel_id, idx),
+    }
+    if feed:
+        metadata["feed"] = feed
+    return metadata
 
 
 def _bess_is_grid_forming(profile: SimulationConfig) -> bool:

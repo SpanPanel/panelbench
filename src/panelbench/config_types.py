@@ -235,12 +235,13 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     recorder_entity: str  # HA entity for recorder replay (also merged onto resolved template)
     # The identity of the device this circuit feeds: a DER's identity belongs to the
     # circuit, not to its position in a list (see `instance_ids.evse_circuit_serial`).
-    # Read for a PV circuit's inverter; the top-level `pv` section is the default.
+    # Read for a PV circuit's inverter, where the top-level `pv` section is the
+    # default; `serial_number` is also read for an EVSE circuit's drive.
     serial_number: str
     model: str
     vendor: str
-    # Not identity, so the `pv` section's is every PV inverter's default, not only
-    # the first's.
+    # Not identity, so the `pv` or `evse` section's is every inverter's or drive's
+    # default, not only the first's.
     firmware_version: str
 
 

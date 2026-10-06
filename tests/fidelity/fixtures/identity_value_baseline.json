@@ -5,26 +5,6 @@
         "example-40t-001",
         "sim-example-40t-001-clone"
       ]
-    },
-    "energy.ebus.device.evse::SPAN Drive - Driveway": {
-      "info/firmware-version": [
-        "example/v0.1.0",
-        "sim/v0.1.0"
-      ],
-      "info/serial-number": [
-        "SIM-EVSE-example-40t-001-2",
-        "sim-evse-sim-example-40t-001-clone"
-      ]
-    },
-    "energy.ebus.device.evse::SPAN Drive - Garage": {
-      "info/firmware-version": [
-        "example/v0.1.0",
-        "sim/v0.1.0"
-      ],
-      "info/serial-number": [
-        "SIM-EVSE-example-40t-001",
-        "sim-evse-sim-example-40t-001-clone-2"
-      ]
     }
   }
 }

@@ -403,7 +403,9 @@ circuits:
     vendor: str # PV circuit: its inverter's vendor (first inverter: else pv.vendor)
     model: str # PV circuit: its inverter's model (first inverter: else pv.product_name)
     serial_number: str # PV circuit: its inverter's serial (first: else pv.serial_number)
+    # EVSE circuit: its drive's serial (else evse.serial_number or the panel serial, by position)
     firmware_version: str # PV circuit: its inverter's firmware (every inverter: else pv.firmware_version)
+    # EVSE circuit: its drive's firmware (every drive: else evse.firmware_version)
     overrides: # Override any template field
       typical_power: 500.0
 
@@ -437,6 +439,9 @@ release 202639. A PV circuit's `vendor`, `model` and `serial_number` name its in
 does not. A PV circuit's `firmware_version` is its inverter's firmware, and `pv.firmware_version` is every inverter's default, because a firmware version is not
 identity. A panel whose `firmware_version` names an earlier release publishes a single PV device fed by the first PV circuit, as that firmware did, and a panel
 with one PV circuit keeps the single PV device and id it has always published.
+
+An EVSE circuit's `serial_number` and `firmware_version` are its SPAN Drive's, in the same way: the serial wins over one derived by position from
+`evse.serial_number` or the panel serial, and `evse.firmware_version` is every drive's default firmware.
 
 ### Shed Priority
 
@@ -543,9 +548,9 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 - Commissioned PV and battery system circuits, recognised by name and both locks, as `commissioned_system`
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)
 - Energy accumulators seeded from the panel's imported/exported energy values
-- Battery behavior with sensible schedule defaults
+- Battery behavior with sensible schedule defaults, and the battery's vendor, model, part number, serial and firmware version
 - PV nameplate capacity and production profile, and each inverter's vendor, model, serial and firmware version on the circuit that feeds it
-- EVSE night-charging time-of-day profile
+- EVSE night-charging time-of-day profile, and each SPAN Drive's serial and firmware version on the circuit that feeds it
 - Source panel credentials stored in `panel_source` for on-demand refresh
 
 ### Usage profile import

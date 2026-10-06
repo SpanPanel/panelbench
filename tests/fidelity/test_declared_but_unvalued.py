@@ -103,7 +103,7 @@ BASELINE = Path(__file__).parent / "fixtures" / "unvalued_by_both_baseline.json"
 async def test_the_shared_unvalued_declarations_match_the_recorded_baseline(
     tmp_path: Path,
 ) -> None:
-    """Fails on movement in either direction, like the parity baseline.
+    """Fails on movement in either direction, like the other baselines.
 
     A declaration gaining a value should shrink this file. A new declaration
     arriving without one should fail rather than pass silently, because the cost

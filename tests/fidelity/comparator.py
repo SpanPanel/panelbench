@@ -283,8 +283,8 @@ def compare_identity_values(
     """Diff ``info/*`` payloads for devices and keys both producers publish.
 
     Keys only one side publishes are ``compare``'s finding, not this one.
-    Reporting them here too would couple the two baselines, so that a single
-    missing property has to be recorded — and later cleared — in two files.
+    Reporting them here too would couple the two instruments, so that a single
+    missing property has to be recorded — and later cleared — in two places.
     """
     ref = by_role(reference)
     sub = by_role(subject)

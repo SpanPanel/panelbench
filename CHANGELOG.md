@@ -38,6 +38,7 @@
 - **A cloned panel keeps the source panel's firmware version**, so a clone of a panel on a SPAN release before 202639 keeps that release's battery power sign
   and SPAN Drive charge limit.
 - **A cloned panel keeps each solar inverter's vendor, model, serial number and firmware version.**
+- **A cloned panel keeps its battery's model and each SPAN Drive's serial number and firmware version.**
 - **A cloned panel keeps the source panel's hardware version.**
 - **An imported config counts as unsaved until it is saved**, so switching panels asks before discarding it.
 

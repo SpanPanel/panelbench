@@ -14,12 +14,19 @@ from typing import TYPE_CHECKING, Final
 
 import yaml
 
+from panelbench.clone import translate_panel_tree
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.runtime import bess_config_from_engine
-from panelbench.emitter_adapter.wire_capture import recorded_panel
+from panelbench.emitter_adapter.wire_capture import (
+    capture_retained,
+    discovered_devices,
+    recorded_panel,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from ebus_sdk import DiscoveredDevice
 
     from panelbench.config_types import SimulationConfig
     from panelbench.emitter_adapter.runtime import CloneRuntime
@@ -43,6 +50,22 @@ def write_config(path: Path, config: Mapping[str, object]) -> Path:
     """Write *config* to *path* as YAML and return *path*."""
     path.write_text(yaml.safe_dump(dict(config), sort_keys=False), encoding="utf-8")
     return path
+
+
+async def source_and_clone(
+    tmp_path: Path, source: SimulationConfig
+) -> tuple[dict[str, DiscoveredDevice], dict[str, DiscoveredDevice]]:
+    """What *source* publishes, and what a clone of it publishes.
+
+    The clone reads *source*'s published tree through the translator a live clone
+    uses, so whatever it drops is dropped from a clone of a real panel too.
+    """
+    source_path = write_config(tmp_path / "panel.yaml", source)
+    devices = discovered_devices(await capture_retained(source_path))
+    cloned = translate_panel_tree(source["panel_config"]["serial_number"], devices)
+    clone_path = write_config(tmp_path / "clone.yaml", cloned)
+    clone = discovered_devices(await capture_retained(clone_path))
+    return devices, clone
 
 
 def published(recorder: RecordingTransport, device_id: str, path: str) -> str:

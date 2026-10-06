@@ -51,6 +51,28 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# The `info` properties a clone carries for each kind of DER, and the config key each
+# is written to. Each set is exactly what `spec_generator` publishes from that key, so
+# a clone republishes what it read: a PV circuit's and an EVSE circuit's keys, and the
+# top-level `bess` section's.
+_PV_IDENTITY: Final = (
+    ("serial-number", "serial_number"),
+    ("model", "model"),
+    ("vendor-name", "vendor"),
+    ("firmware-version", "firmware_version"),
+)
+_EVSE_IDENTITY: Final = (
+    ("serial-number", "serial_number"),
+    ("firmware-version", "firmware_version"),
+)
+_BESS_IDENTITY: Final = (
+    ("vendor-name", "vendor"),
+    ("model", "model"),
+    ("part-number", "part_number"),
+    ("serial-number", "serial_number"),
+    ("firmware-version", "firmware_version"),
+)
+
 
 def make_clone_serial(original_serial: str) -> str:
     """Derive the clone serial from an original panel serial.
@@ -189,7 +211,7 @@ def translate_panel_tree(
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(devices, evse_id, feed_map, templates)
+        _enrich_evse_template(devices, evse_id, feed_map, templates, circuits)
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -810,7 +832,7 @@ def _build_bess_config(
     if not nameplate:
         return None
 
-    return {
+    bess: dict[str, object] = {
         "enabled": True,
         "charge_mode": "custom",
         "nameplate_capacity_kwh": nameplate,
@@ -822,6 +844,10 @@ def _build_bess_config(
         "charge_hours": [0, 1, 2, 3, 4, 5],
         "discharge_hours": [16, 17, 18, 19, 20, 21],
     }
+    # The battery's identity, so a clone republishes the battery it read. Its serial
+    # also names its device id, `<panel>-<serial>`, under the clone's own panel id.
+    _copy_info(devices, bess_node_id, bess, _BESS_IDENTITY)
+    return bess
 
 
 def _enrich_pv_template(
@@ -849,19 +875,9 @@ def _enrich_pv_template(
 
     # The inverter's identity and firmware belong to the circuit that feeds it, so a
     # clone of a panel with several inverters republishes each as it was.
-    template_name = next((name for name, value in templates.items() if value is template), None)
-    circuit = next((c for c in circuits if c.get("template") == template_name), None)
-    if circuit is None:
-        return
-    for prop, key in (
-        ("serial-number", "serial_number"),
-        ("model", "model"),
-        ("vendor-name", "vendor"),
-        ("firmware-version", "firmware_version"),
-    ):
-        value = _get_prop(devices, pv_node_id, "info", prop)
-        if value:
-            circuit[key] = value
+    circuit = _circuit_using(template, templates, circuits)
+    if circuit is not None:
+        _copy_info(devices, pv_node_id, circuit, _PV_IDENTITY)
 
 
 def _enrich_evse_template(
@@ -869,8 +885,10 @@ def _enrich_evse_template(
     evse_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
+    circuits: list[dict[str, object]],
 ) -> None:
-    """Enrich the EVSE circuit template with time-of-day charging profile."""
+    """Enrich the EVSE circuit template with time-of-day charging profile, and write
+    the drive's serial and firmware onto the circuit that feeds it."""
     circuit_uuid = _circuit_feeding(devices, evse_node_id)
     template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
@@ -880,6 +898,42 @@ def _enrich_evse_template(
         "enabled": True,
         "hour_factors": dict(_NIGHT_CHARGING_HOURS),
     }
+
+    # On the circuit, as for an inverter: the clone orders circuits by source device
+    # id, so a serial derived from position could move a drive's serial onto another
+    # drive. Verbatim, because the drive's device id is already scoped by the clone's
+    # own panel id and cannot collide with the source's on one broker.
+    circuit = _circuit_using(template, templates, circuits)
+    if circuit is not None:
+        _copy_info(devices, evse_node_id, circuit, _EVSE_IDENTITY)
+
+
+def _circuit_using(
+    template: dict[str, object],
+    templates: dict[str, dict[str, object]],
+    circuits: list[dict[str, object]],
+) -> dict[str, object] | None:
+    """The circuit definition built on *template*, which a clone gives one circuit."""
+    template_name = next((name for name, value in templates.items() if value is template), None)
+    return next((c for c in circuits if c.get("template") == template_name), None)
+
+
+def _copy_info(
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    target: dict[str, object],
+    keys: tuple[tuple[str, str], ...],
+) -> None:
+    """Write each of *device_id*'s published ``info`` values onto *target*.
+
+    *keys* pairs an ``info`` property with the config key it is written to. A
+    property the device does not value is left unwritten, so the config's default
+    applies to it.
+    """
+    for prop, key in keys:
+        value = _get_prop(devices, device_id, "info", prop)
+        if value:
+            target[key] = value
 
 
 def _find_template_for_feed(

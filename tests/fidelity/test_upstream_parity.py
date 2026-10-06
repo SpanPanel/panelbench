@@ -23,35 +23,22 @@ the two were told. It is a SPAN panel with two PV inverters, each fed by its own
 commissioned ``Commissioned PV System`` circuit, a never-backup pool pump, a
 battery with its MID and two SPAN Drives. PanelBench reads it through the same
 translator it reads a live panel with, so the cell also measures the clone: that
-it keeps the panel's firmware and hardware, commissions both circuits, and gives
-each inverter its own device and identity.
+it keeps the panel's firmware and hardware, commissions both circuits, gives each
+inverter its own device and identity, and keeps the battery's identity.
 
 The **panelbench** cell runs PanelBench's own richest config — every circuit
 template, both EVSEs, PV, tandem breakers — and lets upstream's capture read the
 published tree back into a definition, which upstream's emitter then publishes.
 It is the only cell that exercises PanelBench's PV path from a PanelBench config.
 
-**The panelbench cell is at full structural parity**, so it has no baseline: it
-asserts an empty report directly, and any gap is a regression rather than
-something to record.
-
-The example cell keeps one, for a single entry: the battery's ``info/model``.
-Upstream's example names its battery ``Example BESS``; PanelBench's clone carries
-a battery's capacity but none of its identity, so the imported battery publishes
-no model. That is a clone gap, not a difference between the emitters, and the
-entry leaves when the clone carries a battery's identity as it carries each PV
-inverter's.
-
-A baseline exists to make a known divergence exact while it is being closed, so
-**any** movement fails: a new gap appearing, or a known one closing. Both deserve
-a deliberate look. When a baseline reaches empty, delete it and assert parity
-directly, as the panelbench cell does.
+**Both cells are at full structural parity**, so neither keeps a baseline: each
+asserts an empty report directly, and any gap is a producer regression rather
+than something to record.
 """
 
 from __future__ import annotations
 
 import importlib.metadata
-import json
 import os
 import subprocess
 from collections import Counter
@@ -76,8 +63,6 @@ from .comparator import (
     role_of,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
-
 # Where a developer checkout of the emitter usually sits, so drift is caught
 # locally. CI has no checkout and skips.
 #
@@ -95,23 +80,15 @@ _CONVENTIONAL_CHECKOUT = (
 
 @dataclass(frozen=True)
 class Cell:
-    """One comparison: how to produce (reference, PanelBench), and its baseline."""
+    """One comparison: how to produce (reference, PanelBench)."""
 
     name: str
     pair: Callable[[Path], Awaitable[tuple[Capture, Capture]]]
-    baseline: Path | None
-    """``None`` once the cell reaches parity.
-
-    A baseline exists to make a known divergence exact while it is being closed.
-    An *empty* baseline file would be a weaker statement than its own absence: it
-    reads as a place to record the next gap, where asserting parity directly says
-    there is not supposed to be one.
-    """
 
 
 CELLS = (
-    Cell("example", example_pair, FIXTURES / "parity_baseline_example.json"),
-    Cell("panelbench", panelbench_pair, None),
+    Cell("example", example_pair),
+    Cell("panelbench", panelbench_pair),
 )
 
 VENDORED: dict[str, str] = {
@@ -125,8 +102,8 @@ _by_name = pytest.mark.parametrize("cell", CELLS, ids=lambda c: c.name)
 
 @_by_name
 @pytest.mark.asyncio
-async def test_structural_parity_matches_the_recorded_baseline(cell: Cell, tmp_path: Path) -> None:
-    """The instrument. Fails on any structural movement in either direction.
+async def test_both_producers_are_at_structural_parity(cell: Cell, tmp_path: Path) -> None:
+    """The instrument. Fails on any structural difference in either direction.
 
     Extras that the reference *declares* and merely leaves unvalued are filtered
     out first, for the reason `test_panelbench_publishes_nothing_the_reference_does_not`
@@ -139,20 +116,10 @@ async def test_structural_parity_matches_the_recorded_baseline(cell: Cell, tmp_p
     reference, subject = await cell.pair(tmp_path)
     report = _without_declared_extensions(compare(reference, subject), reference)
 
-    if cell.baseline is None:
-        assert report.as_baseline() == ParityReport().as_baseline(), (
-            f"the {cell.name} cell was at full structural parity and no longer is.\n"
-            f"{report.describe()}\n\n"
-            "This is a producer regression, not a baseline to update."
-        )
-        return
-
-    expected = json.loads(cell.baseline.read_text())
-    assert report.as_baseline() == expected, (
-        f"structural parity with the reference emitter moved for the {cell.name} cell.\n"
+    assert report.as_baseline() == ParityReport().as_baseline(), (
+        f"the {cell.name} cell was at full structural parity and no longer is.\n"
         f"{report.describe()}\n\n"
-        f"If this is a gap you closed, update {cell.baseline.name} to match. "
-        "If it is a gap that appeared, it is a producer regression."
+        "This is a producer regression, not a baseline to update."
     )
 
 
@@ -161,7 +128,7 @@ async def test_structural_parity_matches_the_recorded_baseline(cell: Cell, tmp_p
 async def test_panelbench_publishes_nothing_the_reference_does_not(
     cell: Cell, tmp_path: Path
 ) -> None:
-    """Held separately from the baseline because the two failure modes differ.
+    """Held separately from the parity check because the two failure modes differ.
 
     An omission is a missing feature. An *extension* is a claim about the eBus
     contract that the reference does not make, and the integration would build

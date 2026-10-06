@@ -19,7 +19,7 @@ import pytest
 from ebus_panel_sim import DeviceInstance
 from ebus_sdk import DiscoveredDevice
 
-from panelbench.clone import TYPE_PV, translate_panel_tree
+from panelbench.clone import TYPE_PV
 from panelbench.config_types import SimulationConfig
 from panelbench.emitter_adapter.instance_ids import (
     pv_device_id,
@@ -28,7 +28,13 @@ from panelbench.emitter_adapter.instance_ids import (
 )
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.wire_capture import capture_retained, discovered_devices
-from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, default_config, write_config
+from tests._helpers import (
+    CURRENT_FIRMWARE,
+    EARLIER_FIRMWARE,
+    default_config,
+    source_and_clone,
+    write_config,
+)
 
 _SERIAL = default_config()["panel_config"]["serial_number"]
 
@@ -68,18 +74,6 @@ def _pv_info(devices: Mapping[str, DiscoveredDevice], property_id: str) -> list[
         for device in devices.values()
         if (device.description or {}).get("type") == TYPE_PV
     )
-
-
-async def _source_and_clone(
-    tmp_path: Path, source: SimulationConfig
-) -> tuple[dict[str, DiscoveredDevice], dict[str, DiscoveredDevice]]:
-    """What *source* publishes, and what a clone of it publishes."""
-    source_path = write_config(tmp_path / "panel.yaml", source)
-    devices = discovered_devices(await capture_retained(source_path))
-    cloned = translate_panel_tree(_SERIAL, devices)
-    clone_path = write_config(tmp_path / "clone.yaml", cloned)
-    clone = discovered_devices(await capture_retained(clone_path))
-    return devices, clone
 
 
 @pytest.mark.parametrize("firmware", [EARLIER_FIRMWARE, CURRENT_FIRMWARE, "sim/v0.1.0"])
@@ -173,7 +167,7 @@ def test_only_the_identifier_is_slugged() -> None:
 
 @pytest.mark.asyncio
 async def test_a_clone_republishes_every_inverter(tmp_path: Path) -> None:
-    source, clone = await _source_and_clone(tmp_path, _panel(CURRENT_FIRMWARE, two_inverters=True))
+    source, clone = await source_and_clone(tmp_path, _panel(CURRENT_FIRMWARE, two_inverters=True))
 
     assert (
         _pv_info(clone, "model") == _pv_info(source, "model") == ["IQ8PLUS-72-2-US", "SE3800H-US"]
@@ -182,7 +176,7 @@ async def test_a_clone_republishes_every_inverter(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_a_clone_keeps_a_single_inverter_identity(tmp_path: Path) -> None:
-    source, clone = await _source_and_clone(tmp_path, _panel(CURRENT_FIRMWARE))
+    source, clone = await source_and_clone(tmp_path, _panel(CURRENT_FIRMWARE))
 
     assert _pv_info(clone, "model") == _pv_info(source, "model") == ["IQ8PLUS-72-2-US"]
 
@@ -224,7 +218,7 @@ async def test_a_clone_republishes_every_inverter_firmware(tmp_path: Path) -> No
     assert garage["id"] == "solar_garage"
     garage["firmware_version"] = "inverter/v9.9.9"
 
-    source, clone = await _source_and_clone(tmp_path, config)
+    source, clone = await source_and_clone(tmp_path, config)
 
     expected = sorted([_pv_firmware(config), "inverter/v9.9.9"])
     assert _pv_info(clone, "firmware-version") == _pv_info(source, "firmware-version") == expected
