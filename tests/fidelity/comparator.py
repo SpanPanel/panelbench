@@ -235,7 +235,7 @@ class ParityReport:
         )
 
     def as_baseline(self) -> dict[str, Any]:
-        """The JSON-comparable form committed as the baseline."""
+        """The JSON-comparable form, compared with an empty report or a cell's baseline."""
         return {
             "missing_devices": self.missing_devices,
             "extra_devices": self.extra_devices,

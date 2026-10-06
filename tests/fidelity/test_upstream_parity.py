@@ -31,14 +31,20 @@ template, both EVSEs, PV, tandem breakers — and lets upstream's capture read t
 published tree back into a definition, which upstream's emitter then publishes.
 It is the only cell that exercises PanelBench's PV path from a PanelBench config.
 
-**Both cells are at full structural parity**, so neither keeps a baseline: each
-asserts an empty report directly, and any gap is a producer regression rather
-than something to record.
+A cell may carry a baseline, which makes a known divergence exact while it is
+being closed, so **any** movement fails: a new gap appearing, or a known one
+closing. Both deserve a deliberate look. When a baseline reaches empty, delete it
+and assert parity directly.
+
+**The example and panelbench cells are at full structural parity**, so they need
+no baseline: each asserts an empty report directly, and any gap is a producer
+regression rather than something to record.
 """
 
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import os
 import subprocess
 from collections import Counter
@@ -80,10 +86,18 @@ _CONVENTIONAL_CHECKOUT = (
 
 @dataclass(frozen=True)
 class Cell:
-    """One comparison: how to produce (reference, PanelBench)."""
+    """One comparison: how to produce (reference, PanelBench), and its baseline."""
 
     name: str
     pair: Callable[[Path], Awaitable[tuple[Capture, Capture]]]
+    baseline: Path | None = None
+    """``None`` while the cell is at parity.
+
+    A baseline exists to make a known divergence exact while it is being closed.
+    An *empty* baseline file would be a weaker statement than its own absence: it
+    reads as a place to record the next gap, where asserting parity directly says
+    there is not supposed to be one.
+    """
 
 
 CELLS = (
@@ -102,8 +116,8 @@ _by_name = pytest.mark.parametrize("cell", CELLS, ids=lambda c: c.name)
 
 @_by_name
 @pytest.mark.asyncio
-async def test_both_producers_are_at_structural_parity(cell: Cell, tmp_path: Path) -> None:
-    """The instrument. Fails on any structural difference in either direction.
+async def test_structural_parity_matches_the_recorded_baseline(cell: Cell, tmp_path: Path) -> None:
+    """The instrument. Fails on any structural movement in either direction.
 
     Extras that the reference *declares* and merely leaves unvalued are filtered
     out first, for the reason `test_panelbench_publishes_nothing_the_reference_does_not`
@@ -116,10 +130,20 @@ async def test_both_producers_are_at_structural_parity(cell: Cell, tmp_path: Pat
     reference, subject = await cell.pair(tmp_path)
     report = _without_declared_extensions(compare(reference, subject), reference)
 
-    assert report.as_baseline() == ParityReport().as_baseline(), (
-        f"the {cell.name} cell was at full structural parity and no longer is.\n"
+    if cell.baseline is None:
+        assert report.as_baseline() == ParityReport().as_baseline(), (
+            f"the {cell.name} cell was at full structural parity and no longer is.\n"
+            f"{report.describe()}\n\n"
+            "This is a producer regression, not a baseline to update."
+        )
+        return
+
+    expected = json.loads(cell.baseline.read_text())
+    assert report.as_baseline() == expected, (
+        f"structural parity with the reference emitter moved for the {cell.name} cell.\n"
         f"{report.describe()}\n\n"
-        "This is a producer regression, not a baseline to update."
+        f"If this is a gap you closed, update {cell.baseline.name} to match. "
+        "If it is a gap that appeared, it is a producer regression."
     )
 
 
