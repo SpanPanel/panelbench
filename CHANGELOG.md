@@ -15,6 +15,7 @@
 - **A SPAN Drive's user charge limit is no longer published until a user sets one**, as on SPAN firmware r202639, unless the panel's firmware version names an
   earlier release.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
+- **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

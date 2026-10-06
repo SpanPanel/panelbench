@@ -19,7 +19,8 @@ from panelbench.emitter_adapter.runtime import (
     bess_config_from_engine,
     update_bess_config_live,
 )
-from tests._helpers import DEFAULT_CONFIG, clone, default_config, published, write_config
+from panelbench.emitter_adapter.wire_capture import recorded_panel
+from tests._helpers import DEFAULT_CONFIG, default_config, published, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -37,7 +38,7 @@ def _assert(runtime: CloneRuntime, value: str) -> None:
 
 
 async def test_an_assertion_is_ignored_while_the_battery_link_is_healthy() -> None:
-    runtime, recorder = await clone(DEFAULT_CONFIG)
+    runtime, recorder = await recorded_panel(DEFAULT_CONFIG)
     await emitter_runtime.publish_tick(runtime)
 
     _assert(runtime, "OFF_GRID")
@@ -47,7 +48,7 @@ async def test_an_assertion_is_ignored_while_the_battery_link_is_healthy() -> No
 
 
 async def test_an_assertion_is_accepted_while_the_battery_link_is_lost() -> None:
-    runtime, recorder = await clone(DEFAULT_CONFIG)
+    runtime, recorder = await recorded_panel(DEFAULT_CONFIG)
     await emitter_runtime.publish_tick(runtime)
 
     runtime.engine.set_bess_link("LOST")
@@ -64,7 +65,7 @@ async def test_an_assertion_is_accepted_while_the_battery_link_is_lost() -> None
 async def test_a_link_set_without_a_battery_is_not_sent(tmp_path: Path) -> None:
     config = default_config()
     config["bess"] = {"enabled": False}
-    runtime, recorder = await clone(write_config(tmp_path / "no_battery.yaml", config))
+    runtime, recorder = await recorded_panel(write_config(tmp_path / "no_battery.yaml", config))
 
     runtime.engine.set_bess_link("LOST")
     # Naming a battery the emitter was not configured with would raise
@@ -76,7 +77,7 @@ async def test_a_link_set_without_a_battery_is_not_sent(tmp_path: Path) -> None:
 
 
 async def test_a_battery_disabled_mid_run_stops_receiving_the_link() -> None:
-    runtime, recorder = await clone(DEFAULT_CONFIG)
+    runtime, recorder = await recorded_panel(DEFAULT_CONFIG)
     battery = bess_config_from_engine(runtime.engine)
     assert battery is not None
     runtime.engine.set_bess_link("LOST")

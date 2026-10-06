@@ -15,11 +15,10 @@ import pytest
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.runtime import CloneRuntime, bess_config_from_engine
-from panelbench.emitter_adapter.wire_capture import RecordingTransport
+from panelbench.emitter_adapter.wire_capture import RecordingTransport, recorded_panel
 from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    clone,
     default_config,
     published,
     write_config,
@@ -37,7 +36,7 @@ async def _ticked(tmp_path: Path, firmware: str) -> tuple[CloneRuntime, Recordin
     # discharges whenever load exceeds PV and its charge is above the reserve.
     config["simulation_params"]["use_simulation_time"] = True
     config["simulation_params"]["simulation_start_time"] = "2026-06-15T22:00:00"
-    runtime, recorder = await clone(write_config(tmp_path / "panel.yaml", config))
+    runtime, recorder = await recorded_panel(write_config(tmp_path / "panel.yaml", config))
     await emitter_runtime.publish_tick(runtime)
     return runtime, recorder
 

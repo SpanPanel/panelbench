@@ -1,8 +1,8 @@
 """eBus-to-YAML translation — converts a discovered panel into a simulator config.
 
-Pure data transformation: takes a ``ScrapedPanel`` (a tree of discovered Homie
-devices) and produces a complete YAML config dict matching the ``SimulationConfig``
-TypedDict shape.
+Pure data transformation: takes a panel's tree of discovered Homie devices — scraped
+from a live panel, or read back from a published capture — and produces a complete
+YAML config dict matching the ``SimulationConfig`` TypedDict shape.
 
 Design principles:
   - Each circuit gets its own template (``clone_{first position}``) for per-circuit
@@ -102,22 +102,45 @@ def translate_scraped_panel(
     Returns a dict matching the ``SimulationConfig`` TypedDict shape,
     ready for YAML serialisation and ``validate_yaml_config()``.
     """
-    root = scraped.serial_number
-    circuit_nodes = _devices_of_type(scraped.devices, root, TYPE_CIRCUIT)
-    bess_nodes = _devices_of_type(scraped.devices, root, TYPE_BESS)
-    pv_nodes = _devices_of_type(scraped.devices, root, TYPE_PV)
-    evse_nodes = _devices_of_type(scraped.devices, root, TYPE_EVSE)
+    return translate_panel_tree(
+        scraped.serial_number, scraped.devices, host=host, passphrase=passphrase
+    )
+
+
+def translate_panel_tree(
+    panel_device_id: str,
+    devices: Mapping[str, DiscoveredDevice],
+    *,
+    host: str | None = None,
+    passphrase: str | None = None,
+) -> dict[str, object]:
+    """Translate a panel's device tree into a simulator config dict.
+
+    Args:
+        panel_device_id: The panel's Homie device id, which roots the tree. On a
+            live SPAN panel it is the serial number.
+        devices: Every discovered device; only *panel_device_id*'s tree is read.
+        host: Source panel IP/hostname (stored in panel_source for refresh).
+        passphrase: Source panel passphrase (stored in panel_source for refresh).
+
+    Returns a dict matching the ``SimulationConfig`` TypedDict shape,
+    ready for YAML serialisation and ``validate_yaml_config()``.
+    """
+    circuit_nodes = _devices_of_type(devices, panel_device_id, TYPE_CIRCUIT)
+    bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
+    pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
+    evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
 
     # Build feed cross-reference: circuit_uuid → device_type
-    feed_map = _build_feed_map(scraped.devices, circuit_nodes)
+    feed_map = _build_feed_map(devices, circuit_nodes)
 
     # Extract panel-level values
-    main_breaker = _int_prop(scraped.devices, scraped.serial_number, "breaker", "rating") or 200
+    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating") or 200
 
     # Derive panel size from maximum space value across all circuits
-    total_tabs = _derive_total_tabs(scraped.devices, circuit_nodes)
+    total_tabs = _derive_total_tabs(devices, circuit_nodes)
 
-    clone_serial = make_clone_serial(scraped.serial_number)
+    clone_serial = make_clone_serial(panel_device_id)
 
     panel_config: dict[str, object] = {
         "serial_number": clone_serial,
@@ -126,6 +149,10 @@ def translate_scraped_panel(
         "latitude": 37.7,
         "longitude": -122.4,
     }
+    panel_device = devices.get(panel_device_id)
+    panel_description = panel_device.description if panel_device is not None else None
+    if isinstance(panel_description, dict) and isinstance(panel_description.get("name"), str):
+        panel_config["display_name"] = panel_description["name"]
 
     # Build per-circuit templates and definitions
     templates: dict[str, dict[str, object]] = {}
@@ -134,7 +161,7 @@ def translate_scraped_panel(
 
     for node_uuid in sorted(circuit_nodes):
         result = _translate_circuit(
-            scraped.devices,
+            devices,
             node_uuid,
             feed_map,
         )
@@ -148,11 +175,11 @@ def translate_scraped_panel(
 
     # Enrich PV circuit template
     for pv_id in pv_nodes:
-        _enrich_pv_template(scraped.devices, pv_id, feed_map, templates)
+        _enrich_pv_template(devices, pv_id, feed_map, templates)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(scraped.devices, evse_id, feed_map, templates)
+        _enrich_evse_template(devices, evse_id, feed_map, templates)
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -173,13 +200,13 @@ def translate_scraped_panel(
 
     # Build top-level BESS config (only when a battery is actually connected)
     for bess_id in bess_nodes:
-        bess_cfg = _build_bess_config(scraped.devices, bess_id)
+        bess_cfg = _build_bess_config(devices, bess_id)
         if bess_cfg is not None:
             config["bess"] = bess_cfg
 
     if host is not None:
         panel_source: dict[str, object] = {
-            "origin_serial": scraped.serial_number,
+            "origin_serial": panel_device_id,
             "host": host,
             "passphrase": passphrase,
             "last_synced": datetime.now(UTC).isoformat(),
