@@ -24,15 +24,14 @@
 - **The shipped configs stay on SPAN release 202633's conventions**, so integrations released before r202639 support read them correctly; set `firmware_version`
   to a 202639 release to emulate the new firmware.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
-- **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
 - **An existing clone that names no `firmware_version` publishes the conventions of SPAN release 202639**; set `firmware_version` to the source panel's
   firmware, or clone the panel again, to keep its earlier release's conventions.
 - **A config with two or more solar circuits now publishes one solar device per inverter, under new device ids**, unless its `firmware_version` names a SPAN
   release before 202639, as a SPAN panel's solar device ids change at that upgrade.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
   `UNKNOWN` from release 202639.
-- **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a
-  panel gives its battery, and the MID whose id follows it as `<bess-id>-mid`, a new device id, while existing clone configs are unchanged.
+- **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a panel
+  gives its battery, and the MID whose id follows it as `<bess-id>-mid`, a new device id, while existing clone configs are unchanged.
 
 ### Fixed
 
@@ -42,6 +41,7 @@
 - **A cloned panel keeps each solar inverter's vendor, model, serial number and firmware version.**
 - **A cloned panel keeps its battery's model and each SPAN Drive's serial number and firmware version.**
 - **A cloned panel keeps the source panel's hardware version.**
+- **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
 - **An imported config counts as unsaved until it is saved**, so switching panels asks before discarding it.
 
 ## 2.5.3 — two simulated panels no longer publish over each other

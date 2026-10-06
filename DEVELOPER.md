@@ -230,6 +230,34 @@ unit, and the conformance checker rejects one that reaches the wire.
 The `conformance` package deliberately imports nothing from the rest of this simulator and nothing MQTT-related — a test enforces it. That keeps it a general
 eBus publisher checker rather than a SPAN-specific one, and it is why the rules describe _any_ publisher's output rather than just ours.
 
+### Fidelity: the same panel through the reference emitter
+
+Conformance asks whether what PanelBench publishes is legal, and the specification permits omission, so it cannot ask whether PanelBench publishes what a panel
+does. `tests/fidelity/` asks that. Each cell hands one panel to the pinned `ebus-panel-sim` release, the reference, and to PanelBench, and compares what the two
+publish:
+
+| Cell         | Reference (`ebus-panel-sim`)                                   | PanelBench                                    |
+| ------------ | -------------------------------------------------------------- | --------------------------------------------- |
+| `example`    | the release's example definition and ticks                     | its import of that definition, run as a clone |
+| `panelbench` | the release's capture reading PanelBench's published tree      | `configs/default_MAIN_40.yaml`                |
+| `captured`   | the release's reading of a real panel's capture on SPAN 202639 | its import of that definition, run as a clone |
+
+Every cell is at full structural parity and asserts it directly, and both producers must agree on what is settable. Identity values, device ids and the
+properties both producers declare but neither values are held to baselines in `tests/fidelity/fixtures/`, so any movement fails. Devices are aligned by where
+they hang rather than by name, because real firmware names a battery, MID or inverter after its own device id: a PV inverter, an in-panel battery or a SPAN
+Drive by the circuit that feeds it, an upstream battery by the lugs it feeds, and a MID by its battery. The module docstring of
+`tests/fidelity/test_upstream_parity.py` describes each cell and what it cannot see.
+
+The reference data is the release's own, vendored byte-identical under `tests/fidelity/fixtures/upstream/` (see its `PROVENANCE.md`). No upstream code is
+copied: reading a definition or a capture is the pinned package's public API. `test_vendored_example_matches_the_pinned_release` compares the vendored bytes
+with the release's tag in a local checkout of the upstream repository, and skips without one:
+
+```bash
+EBUS_EMITTER_CHECKOUT=/path/to/distribution-enclosure-simulator uv run pytest tests/fidelity
+```
+
+When the pin moves, re-copy every vendored file from the new tag and re-review every fidelity baseline.
+
 ## Running Locally
 
 There are three ways to run the simulator locally, depending on what you're testing:

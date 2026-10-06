@@ -20,7 +20,6 @@ Includes a web dashboard for real-time configuration, grid simulation, Home Assi
 | [`SpanPanel/simulator`](https://github.com/SpanPanel/simulator) | flat single-device                                    | `r202603`–`r202627` |
 
 Both ship the same certificate authority, so stopping one and starting the other rehearses a firmware upgrade on a single panel instead of reading as a panel
-
 substitution. Cloning follows the same schema line: PanelBench reads a panel running `r202633` or later and does not clone earlier firmware, because the two
 schemas are not convertible.
 
@@ -106,6 +105,42 @@ using the port shown in the dashboard panel list:
 
 Each panel has a unique serial number, so there is no conflict between the auto-discovered panel and manually added ones.
 
+## Rehearsing a SPAN firmware upgrade
+
+A SPAN panel reads its firmware once, when it starts, and an over-the-air upgrade takes it offline and brings it back reporting the new release. PanelBench
+rehearses an upgrade the same way: two configs for one panel, run one after the other. The shipped configs name `spanos3/r202633/02` (see
+[Firmware Version](#firmware-version)), so the upgrade rehearsed here is to SPAN release 202639.
+
+1. **Before.** Clone your panel from the dashboard while it still runs a release before 202639, or clone one of the shipped templates. A clone keeps its
+   source's `firmware_version`, so it publishes what that release publishes, and refreshing a panel's clone from the panel later never changes it.
+2. **After.** Copy the first config's YAML to a second file in the same config directory, under a name that does not start with `default_` (that prefix marks a
+   read-only template), and edit the copy's YAML:
+   - Set `firmware_version` to a 202639 release, for example `spanos3/r202639/03`.
+   - Release 202639 locks the circuits SPAN names "Commissioned PV System" and "Commissioned Backup System", which earlier releases left switchable. Give each
+     such circuit's template (a clone gives every circuit its own) `commissioned_system: pv` (or `backup`), `priority: NEVER` and
+     `relay_behavior: non_controllable`. PanelBench refuses `commissioned_system` on a config naming an earlier release, so these keys belong only in this file.
+   - On a panel with more than one inverter, mark every other inverter's circuit too. Before 202639 only one inverter's circuit named its inverter, so the clone
+     holds a single PV circuit and modelled the others as loads. Give each other inverter's circuit template `device_type: pv` and
+     `energy_profile.mode: producer`, and give the circuit itself, under `circuits`, its inverter's `vendor`, `model` and `serial_number`.
+
+   Change nothing else. The serial number, circuits and tabs are what make the two configs one panel, so they stay as they are.
+
+3. Start the first instance with `CONFIG_NAME=<before>.yaml ./scripts/run-local.sh` and add the panel to Home Assistant.
+4. Stop the first instance and start the second: `./scripts/run-local.sh --stop` from another terminal (or Ctrl+C in the first), then
+   `CONFIG_NAME=<after>.yaml ./scripts/run-local.sh`. `CONFIG_NAME=<after>.yaml ./scripts/run-local.sh --restart` does both at once. Home Assistant sees the
+   same panel come back on the new release.
+
+Run both from the same checkout with the same `HTTP_PORT`, `DASHBOARD_PORT` and `BROKER_PORT`; the defaults are fine. The second instance must answer where the
+first did, with the certificates `run-local.sh` keeps under the checkout's `.local/`, so Home Assistant still trusts it. The two must never run at once:
+`run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number. Only the file name, `firmware_version` and the
+release 202639 keys from step 2 differ between the two configs.
+
+From release 202639 the second instance does what SPAN's public [CHANGELOG](https://github.com/spanio/SPAN-API-Client-Docs) lists for that release. It publishes
+the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes one solar
+device per inverter when the panel has more than one, and a panel with one keeps its device id. `GET /api/v2/status` reports `hardwareVersion`: `1.2` or `2.0`
+from the config's `hardware_version`, and `UNKNOWN` for any other value. With step 2's template keys, it publishes the commissioned PV and battery system
+circuits locked.
+
 ## Running with Docker (Linux only)
 
 ```bash
@@ -130,7 +165,8 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 - **Config persistence** — the simulator remembers the last running config across restarts
 
 Import also accepts a panel definition file (`panel-sim-definition/1`, as `panel-sim-capture` writes one). PanelBench builds a config from the panel's makeup
-and gives every circuit a default behaviour, which you then tune as for a clone.
+and gives every circuit a default behaviour, which you then tune as for a clone. **Export definition** writes a saved config the other way, as a panel
+definition file holding the panel's makeup without PanelBench's behaviour settings.
 
 ### Simulation Controls
 
@@ -188,8 +224,9 @@ Add, edit, and delete circuits with specialized editors per type:
 - **EVSE** — charging schedule with presets (Peak Solar, Evening, Night) or custom start/duration, 24-hour visual timeline
 - **Circuits** — typical power, 24-hour usage profile with presets, HVAC type selector with seasonal power modulation
 
-PV and Battery are singleton types — only one of each can exist per panel. Recorder-sourced entities preserve their original panel settings (priority, relay
-behavior) as read-only.
+The dashboard adds one PV circuit per panel, and a panel has one battery. A panel with more than one inverter gives each inverter its own PV circuit in the
+config's YAML, as [Rehearsing a SPAN firmware upgrade](#rehearsing-a-span-firmware-upgrade) shows. Recorder-sourced entities preserve their original panel
+settings (priority, relay behavior) as read-only.
 
 ### Relay Control and Load Shedding
 
