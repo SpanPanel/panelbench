@@ -579,7 +579,7 @@ def _islandable(profile: SimulationConfig) -> bool:
 
 
 def _first_producer_template(profile: SimulationConfig) -> CircuitTemplateExtended | None:
-    """The template of the first producer circuit, matching ``engine.py``'s walk."""
+    """The template of the first producer circuit, whose inverter the single PV device describes."""
     templates = profile.get("circuit_templates") or {}
     for circuit in profile.get("circuits") or []:
         template = templates.get(circuit.get("template", ""))
