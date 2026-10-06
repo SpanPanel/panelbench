@@ -215,6 +215,12 @@ def translate_panel_tree(
     if firmware:
         config["firmware_version"] = firmware
 
+    # Published as info/hardware-version and, from SPAN release 202639, reported by
+    # the status endpoint, so a clone reports the source panel's value on both.
+    hardware = _get_prop(devices, panel_device_id, "info", "hardware-version")
+    if hardware:
+        config["hardware_version"] = hardware
+
     # Build top-level BESS config (only when a battery is actually connected)
     for bess_id in bess_nodes:
         bess_cfg = _build_bess_config(devices, bess_id)

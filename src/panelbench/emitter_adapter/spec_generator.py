@@ -28,6 +28,7 @@ from panelbench.emitter_adapter.instance_ids import (
     stable_circuit_uuid,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
+from panelbench.hardware import panel_hardware_version
 from panelbench.inverter import (
     normalise_inverter_type,
     template_inverter_type,
@@ -111,7 +112,7 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
             "vendor-name": "Span",
             "serial-number": panel_id,
             "firmware-version": panel_firmware_version(profile),
-            "hardware-version": profile.get("hardware_version", "rev2"),
+            "hardware-version": panel_hardware_version(profile),
             "panel-size": str(panel_size),
             "main-breaker-rating-a": str(int(panel_cfg.get("main_size", 200))),
             "panel-model": panel_model,

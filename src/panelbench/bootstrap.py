@@ -11,10 +11,11 @@ the CA in plaintext because it has nothing to trust yet, then sends the
 registration passphrase over the TLS port under that anchor.
 
 Endpoints:
-  GET  /api/v2/status           -> panel identity (serialNumber, firmwareVersion)
+  GET  /api/v2/status           -> panel identity (serialNumber, firmwareVersion,
+                                   and hardwareVersion from r202639)
   POST /api/v2/auth/register    -> JWT + MQTT credentials (camelCase fields)
   GET  /api/v2/certificate/ca   -> self-signed CA PEM
-  GET  /api/v2/homie/schema     -> Homie property schema JSON
+  GET  /api/v2/homie/schema     -> Homie property schema JSON (the panel's firmwareVersion)
 """
 
 from __future__ import annotations
@@ -64,6 +65,7 @@ class BootstrapHttpServer:
         host: str = "0.0.0.0",
         port: int = 443,
         https_port: int = DEFAULT_HTTPS_PORT,
+        hardware_version: str | None = None,
     ) -> None:
         self._serial = serial
         self._firmware = firmware
@@ -74,6 +76,7 @@ class BootstrapHttpServer:
         self._host = host
         self._port = port
         self._https_port = https_port
+        self._hardware_version = hardware_version
 
         self._homie_schema = schema.raw_json
         self._app = web.Application()
@@ -95,15 +98,19 @@ class BootstrapHttpServer:
         The ``?serial=`` query parameter is accepted but ignored — each
         server only knows about one panel.
 
-        Response matches real panel: ``{"serialNumber": "...", "firmwareVersion": "..."}``
+        Matches the panel's ``StatusV2Out``: ``serialNumber``, ``firmwareVersion``
+        and ``proximityProven``, plus ``hardwareVersion``, which SPAN release
+        202639 made required and earlier releases do not send. The caller passes
+        ``None`` for a panel on an earlier release.
         """
-        return web.json_response(
-            {
-                "serialNumber": self._serial,
-                "firmwareVersion": self._firmware,
-                "proximityProven": True,
-            }
-        )
+        payload: dict[str, object] = {
+            "serialNumber": self._serial,
+            "firmwareVersion": self._firmware,
+            "proximityProven": True,
+        }
+        if self._hardware_version is not None:
+            payload["hardwareVersion"] = self._hardware_version
+        return web.json_response(payload)
 
     async def _handle_register(self, request: web.Request) -> web.Response:
         """POST /api/v2/auth/register — return MQTT credentials.
@@ -112,6 +119,12 @@ class BootstrapHttpServer:
         by the simulator — any passphrase is accepted).
 
         Response matches real panel's camelCase field names exactly.
+
+        SPAN release 202639 made ``hopPassphrase`` and ``ebusBrokerPassword``
+        nullable and added a 422 (``Dashboard password is not available``) and a
+        503 (``Serial number is not available yet``) for a panel whose passphrase
+        or serial is unavailable. A simulated panel always has both, so it never
+        takes those paths, on any firmware.
         """
         body: dict[str, str] = {}
         with contextlib.suppress(Exception):

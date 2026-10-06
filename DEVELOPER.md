@@ -419,6 +419,10 @@ firmware_version:
   str # Reported over MQTT, HTTP and mDNS (default: sim/v<package version>).
   # A SPAN string naming a release before 202639 keeps that release's BESS sign and EVSE limit.
 
+hardware_version:
+  str # Published as info/hardware-version (default: rev2). From release 202639
+  # the status endpoint reports it as hardwareVersion if it is 1.2 or 2.0, else UNKNOWN.
+
 # Clone provenance (written by the clone pipeline)
 panel_source:
   origin_serial: str # Real panel's serial (immutable)
@@ -455,12 +459,12 @@ User relay overrides (from dashboard or MQTT) take precedence over shedding — 
 
 These endpoints match the real SPAN panel's API exactly.
 
-| Method | Path                     | Description                                        |
-| ------ | ------------------------ | -------------------------------------------------- |
-| `GET`  | `/api/v2/status`         | Panel identity (`serialNumber`, `firmwareVersion`) |
-| `POST` | `/api/v2/auth/register`  | Returns MQTT credentials and broker details        |
-| `GET`  | `/api/v2/certificate/ca` | Self-signed CA certificate (PEM)                   |
-| `GET`  | `/api/v2/homie/schema`   | Homie v5 property schema                           |
+| Method | Path                     | Description                                                                               |
+| ------ | ------------------------ | ----------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v2/status`         | Panel identity (`serialNumber`, `firmwareVersion`; `hardwareVersion` from release 202639) |
+| `POST` | `/api/v2/auth/register`  | Returns MQTT credentials and broker details                                               |
+| `GET`  | `/api/v2/certificate/ca` | Self-signed CA certificate (PEM)                                                          |
+| `GET`  | `/api/v2/homie/schema`   | Homie v5 property schema                                                                  |
 
 Query `/api/v2/status?serial=XXX` to target a specific panel when multiple are loaded.
 
@@ -533,6 +537,7 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 
 - Panel identity (`sim-{serial}-clone`), main breaker rating, panel size
 - The panel's firmware version, so the clone publishes as that SPAN release does
+- The panel's hardware version
 - All circuits: name, tab position, breaker rating, relay behavior, priority
 - Commissioned PV and battery system circuits, recognised by name and both locks, as `commissioned_system`
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)

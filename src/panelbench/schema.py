@@ -153,24 +153,33 @@ _CIRCUIT_TYPE_KEY = "energy.ebus.device.circuit"
 def render_for_panel(
     registry: HomieSchemaRegistry,
     total_tabs: int,
+    *,
+    firmware: str,
 ) -> HomieSchemaRegistry:
-    """Produce a size-specific copy of a schema registry.
+    """Produce a panel-specific copy of a schema registry.
 
     Patches the ``space`` property's ``format`` field to reflect the
     actual panel size and recomputes ``typesSchemaHash`` over the
     resulting ``types`` structure using the same algorithm span-panel-api
     uses for drift detection.
 
+    Sets ``firmwareVersion`` to the panel's own firmware string: a panel
+    serves the schema its firmware generated, so the template's string,
+    which names the release the bundled document was taken from, would
+    disagree with the firmware the panel reports everywhere else.
+
     The input ``registry`` is not mutated.
 
     Args:
         registry: Template registry (typically the bundled schema).
         total_tabs: Panel size — must be a positive even integer.
+        firmware: The firmware string the panel reports.
 
     Returns:
         A new ``HomieSchemaRegistry`` whose ``raw_json`` declares
-        ``"format": "1:{total_tabs}:1"`` on the circuit ``space`` property
-        and whose ``typesSchemaHash`` is derived from the rendered ``types``.
+        ``"format": "1:{total_tabs}:1"`` on the circuit ``space`` property,
+        whose ``typesSchemaHash`` is derived from the rendered ``types``,
+        and whose ``firmwareVersion`` is *firmware*.
 
     Raises:
         ValueError: If ``total_tabs`` is not a positive even integer, or
@@ -204,6 +213,7 @@ def render_for_panel(
     types_json = json.dumps(types, sort_keys=True)
     new_hash = "sha256:" + hashlib.sha256(types_json.encode()).hexdigest()[:16]
     data["typesSchemaHash"] = new_hash
+    data["firmwareVersion"] = firmware
 
     raw_json = json.dumps(data, indent=4) + "\n"
     return _build_registry(raw_json)

@@ -320,8 +320,9 @@ class SimulatorApp:
         try:
             total_tabs = panel.total_tabs
             panel_model = PANEL_SIZE_TO_MODEL[total_tabs]
-            panel_schema = render_for_panel(self._schema, total_tabs)
             firmware = panel.firmware_version
+            status_hardware = panel.status_hardware_version
+            panel_schema = render_for_panel(self._schema, total_tabs, firmware=firmware)
         except Exception:
             await panel.stop()
             raise
@@ -366,6 +367,7 @@ class SimulatorApp:
                 broker_host=self._broker_host,
                 port=http_port,
                 https_port=https_port_for(http_port),
+                hardware_version=status_hardware,
             )
 
         port = self._allocate_port()

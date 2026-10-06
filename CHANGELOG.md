@@ -9,6 +9,8 @@
 - **Commissioned PV and battery system circuits**, locked as SPAN firmware release 202639 locks them, are modelled and kept by a clone, and a config naming an
   earlier release is refused if it asks for one.
 - **A panel with several solar inverters publishes each as its own device**, as SPAN firmware does from release 202639, and a clone keeps every inverter.
+- **From SPAN firmware release 202639, a panel's status endpoint reports its hardware version**, as SPAN's does: `1.2` or `2.0` from the config's
+  `hardware_version`, and `UNKNOWN` for any other value.
 
 ### Changed
 
@@ -23,13 +25,16 @@
   firmware, or clone the panel again, to keep its earlier release's conventions.
 - **A config with two or more solar circuits now publishes one solar device per inverter, under new device ids**, unless its `firmware_version` names a SPAN
   release before 202639, as a SPAN panel's solar device ids change at that upgrade.
+- **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
+  `UNKNOWN` from release 202639.
 
 ### Fixed
 
-- **A panel's HTTP status and mDNS advertisement now report the same firmware version it publishes over MQTT.**
+- **A panel's HTTP status, Homie schema endpoint and mDNS advertisement now report the same firmware version it publishes over MQTT.**
 - **A cloned panel keeps the source panel's firmware version**, so a clone of a panel on a SPAN release before 202639 keeps that release's battery power sign
   and SPAN Drive charge limit.
 - **A cloned panel keeps each solar inverter's vendor, model, serial number and firmware version.**
+- **A cloned panel keeps the source panel's hardware version.**
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

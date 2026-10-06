@@ -7,13 +7,15 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.app import SimulatorApp, _discover_configs, _file_hash
+from panelbench.bootstrap import BootstrapHttpServer
 from panelbench.const import DEFAULT_FIRMWARE_VERSION
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.panel import PanelInstance
 from panelbench.schema import load_schema
-from tests._helpers import EARLIER_FIRMWARE
+from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE
 
 _SIMPLE_CONFIG = """\
 panel_config:
@@ -287,5 +289,50 @@ class TestOneFirmwareString:
 
             assert served == advertised == panel.firmware_version
             assert served == published.metadata["firmware-version"] == firmware
+        finally:
+            await panel.stop()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "extra_yaml",
+        [f'firmware_version: "{EARLIER_FIRMWARE}"\n', ""],
+        ids=["named", "unnamed"],
+    )
+    async def test_the_schema_endpoint_reports_the_status_firmware(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+        extra_yaml: str,
+    ) -> None:
+        """A server built from what `_start_panel` hands it serves one firmware string
+        on both endpoints, rather than the bundled schema document's own."""
+        panel, server_cls, _advertiser = await _started(tmp_path, amqtt_broker, extra_yaml)
+        try:
+            server = BootstrapHttpServer(*server_cls.call_args.args, **server_cls.call_args.kwargs)
+            async with TestClient(TestServer(server._app)) as client:
+                status = await (await client.get("/api/v2/status")).json()
+                schema = await (await client.get("/api/v2/homie/schema")).json()
+
+            assert schema["firmwareVersion"] == status["firmwareVersion"] == panel.firmware_version
+        finally:
+            await panel.stop()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("firmware", "reported"),
+        [(EARLIER_FIRMWARE, None), (CURRENT_FIRMWARE, "1.2")],
+    )
+    async def test_the_status_endpoint_reports_hardware_from_202639(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+        firmware: str,
+        reported: str | None,
+    ) -> None:
+        extra = f'firmware_version: "{firmware}"\nhardware_version: "1.2"\n'
+        panel, server_cls, _advertiser = await _started(tmp_path, amqtt_broker, extra)
+        try:
+            assert server_cls.call_args.kwargs["hardware_version"] == reported
+            assert panel.status_hardware_version == reported
         finally:
             await panel.stop()
