@@ -31,6 +31,8 @@
   release before 202639, as a SPAN panel's solar device ids change at that upgrade.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
   `UNKNOWN` from release 202639.
+- **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a
+  panel gives its battery a new device id, while existing clone configs are unchanged.
 
 ### Fixed
 
