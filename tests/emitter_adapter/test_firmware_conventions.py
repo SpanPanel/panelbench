@@ -42,12 +42,8 @@ async def _ticked(tmp_path: Path, firmware: str) -> tuple[CloneRuntime, Recordin
     return runtime, recorder
 
 
-@pytest.mark.parametrize(
-    ("firmware", "same_sign"), [(EARLIER_FIRMWARE, True), (CURRENT_FIRMWARE, False)]
-)
-async def test_the_bess_meter_frame_follows_the_firmware(
-    tmp_path: Path, firmware: str, same_sign: bool
-) -> None:
+async def _discharging_bess_meter(tmp_path: Path, firmware: str) -> float:
+    """The BESS meter's `active-power` of the default panel at *firmware*, discharging."""
     runtime, recorder = await _ticked(tmp_path, firmware)
     battery = bess_config_from_engine(runtime.engine)
     assert battery is not None
@@ -55,7 +51,19 @@ async def test_the_bess_meter_frame_follows_the_firmware(
     meter = float(published(recorder, battery.instance_id, "meter/active-power"))
     flow = float(published(recorder, runtime.engine.serial_number, "power-flows/battery"))
 
+    # An idle battery shows no frame at all, so no caller may pass on one.
     assert flow < 0, "the battery discharges at night, so power flows out of it"
+    return meter
+
+
+@pytest.mark.parametrize(
+    ("firmware", "same_sign"), [(EARLIER_FIRMWARE, True), (CURRENT_FIRMWARE, False)]
+)
+async def test_the_bess_meter_frame_follows_the_firmware(
+    tmp_path: Path, firmware: str, same_sign: bool
+) -> None:
+    meter = await _discharging_bess_meter(tmp_path, firmware)
+
     assert (meter < 0) if same_sign else (meter > 0)
 
 
@@ -85,14 +93,7 @@ async def test_panelbench_reads_the_release_as_the_emitter_publishes_it(
     gate and the REST status. This reads which frame the emitter actually chose
     for the BESS meter and fails the moment the two rules disagree on a string.
     """
-    runtime, recorder = await _ticked(tmp_path, firmware)
-    battery = bess_config_from_engine(runtime.engine)
-    assert battery is not None
+    meter = await _discharging_bess_meter(tmp_path, firmware)
 
-    meter = float(published(recorder, battery.instance_id, "meter/active-power"))
-    flow = float(published(recorder, runtime.engine.serial_number, "power-flows/battery"))
-
-    # An idle battery shows no frame at all, so the test must not pass on one.
-    assert flow < 0, "the battery discharges at night, so power flows out of it"
     emitter_publishes_earlier = meter < 0
     assert predates(firmware, SPAN_RELEASE_202639) is emitter_publishes_earlier

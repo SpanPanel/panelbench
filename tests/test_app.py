@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from panelbench.app import SimulatorApp, _discover_configs, _file_hash
+from panelbench.const import DEFAULT_FIRMWARE_VERSION
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.panel import PanelInstance
 from panelbench.schema import load_schema
@@ -257,14 +258,24 @@ class TestOneFirmwareString:
     """A panel's HTTP status and mDNS record report the firmware its MQTT tree publishes."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("extra_yaml", "firmware"),
+        [
+            (f'firmware_version: "{EARLIER_FIRMWARE}"\n', EARLIER_FIRMWARE),
+            # Before, HTTP and mDNS reported the package version while MQTT
+            # published its own default, so a panel naming none saw two strings.
+            ("", DEFAULT_FIRMWARE_VERSION),
+        ],
+        ids=["named", "unnamed"],
+    )
     async def test_the_status_endpoint_reports_the_published_firmware(
         self,
         tmp_path: Path,
         amqtt_broker: tuple[str, int],
+        extra_yaml: str,
+        firmware: str,
     ) -> None:
-        panel, server_cls, advertiser = await _started(
-            tmp_path, amqtt_broker, f'firmware_version: "{EARLIER_FIRMWARE}"\n'
-        )
+        panel, server_cls, advertiser = await _started(tmp_path, amqtt_broker, extra_yaml)
         try:
             engine = panel.engine
             assert engine is not None
@@ -275,6 +286,6 @@ class TestOneFirmwareString:
             advertised = advertiser.register_panel.call_args.args[1]
 
             assert served == advertised == panel.firmware_version
-            assert served == published.metadata["firmware-version"] == EARLIER_FIRMWARE
+            assert served == published.metadata["firmware-version"] == firmware
         finally:
             await panel.stop()
