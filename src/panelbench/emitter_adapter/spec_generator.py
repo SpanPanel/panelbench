@@ -385,10 +385,11 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
         if circuit is not None
         else _first_producer_template(profile)
     )
+    instance_id = pv_device_id(profile["panel_config"]["serial_number"], pv_cfg)
     return DeviceInstance(
         entity_class="pv",
-        instance_id=pv_device_id(profile["panel_config"]["serial_number"], pv_cfg),
-        display_name="Solar",
+        instance_id=instance_id,
+        display_name=instance_id,
         metadata=_pv_metadata(
             profile,
             circuit,
@@ -488,6 +489,10 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     with one inverter keeps its id under every firmware, and a panel before 202639
     published one aggregate device fed by one PV circuit, ``pv_section_circuit``
     (SPAN-API-Client-Docs CHANGELOG, Release 202639).
+
+    Every PV device is named after its own device id, as SPAN firmware names an
+    inverter (both public MAIN 32 captures, r202633 and r202639), so no name
+    follows a circuit's place in the list.
     """
     circuits = _circuits_for_device_type(profile, "pv")
     if len(circuits) < 2 or predates(panel_firmware_version(profile), SPAN_RELEASE_202639):
@@ -498,7 +503,7 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     section_circuit = pv_section_circuit(profile)
     templates = profile.get("circuit_templates") or {}
     instances: list[DeviceInstance] = []
-    for idx, circuit in enumerate(circuits, start=1):
+    for circuit in circuits:
         # The `pv` section describes one inverter, as it did when a panel had one.
         defaults: PVConfigYAML = pv_cfg if circuit is section_circuit else {}
         circuit_id = stable_circuit_uuid(panel_id, circuit["id"])
@@ -511,11 +516,12 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             relative_position=str(defaults.get("relative_position", "IN_PANEL")),
         )
         identifier = metadata.get("serial-number") or metadata.get("model")
+        instance_id = pv_inverter_device_id(panel_id, identifier, circuit_id)
         instances.append(
             DeviceInstance(
                 entity_class="pv",
-                instance_id=pv_inverter_device_id(panel_id, identifier, circuit_id),
-                display_name="Solar" if idx == 1 else f"Solar {idx}",
+                instance_id=instance_id,
+                display_name=instance_id,
                 metadata=metadata,
             )
         )

@@ -472,13 +472,13 @@ panel_source:
   last_synced: str # ISO 8601 timestamp
 ```
 
-A panel with two or more PV circuits publishes one PV device per inverter, named "Solar", "Solar 2" and so on in circuit order, as SPAN firmware does from
-release 202639. A PV circuit's `vendor`, `model` and `serial_number` name its inverter. The top-level `pv` section names one inverter where its circuit does
-not: the one whose circuit `pv.feed` names, else the only PV circuit's. It never follows list order, because a real panel publishes the inverter its feeding
-circuit names, wherever that circuit sits; with several PV circuits and no `pv.feed` it names none of them. A PV circuit's `firmware_version` is its inverter's
-firmware, and `pv.firmware_version` is every inverter's default, because a firmware version is not identity. A panel whose `firmware_version` names an earlier
-release publishes a single PV device fed by the circuit `pv.feed` names, as that firmware did, so such a config with several PV circuits and no `pv.feed` is
-refused. A panel with one PV circuit keeps the single PV device and id it has always published.
+A panel with two or more PV circuits publishes one PV device per inverter, as SPAN firmware does from release 202639. Every PV device is named after its own
+device id, as SPAN firmware names an inverter, so no name follows circuit order. A PV circuit's `vendor`, `model` and `serial_number` name its inverter. The
+top-level `pv` section names one inverter where its circuit does not: the one whose circuit `pv.feed` names, else the only PV circuit's. It never follows list
+order, because a real panel publishes the inverter its feeding circuit names, wherever that circuit sits; with several PV circuits and no `pv.feed` it names
+none of them. A PV circuit's `firmware_version` is its inverter's firmware, and `pv.firmware_version` is every inverter's default, because a firmware version is
+not identity. A panel whose `firmware_version` names an earlier release publishes a single PV device fed by the circuit `pv.feed` names, as that firmware did,
+so such a config with several PV circuits and no `pv.feed` is refused. A panel with one PV circuit keeps the single PV device and id it has always published.
 
 An EVSE circuit's `serial_number` and `firmware_version` are its SPAN Drive's, in the same way: the serial wins over one derived by position from
 `evse.serial_number` or the panel serial, and `evse.firmware_version` is every drive's default firmware.

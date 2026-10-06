@@ -97,11 +97,6 @@ def _by_feed(config: SimulationConfig) -> dict[str, DeviceInstance]:
     return {feeds[pv.metadata["feed"]]: pv for pv in _pvs(config)}
 
 
-def _identities(config: SimulationConfig) -> dict[str, tuple[str, Mapping[str, str]]]:
-    """Each PV device's id and `info` metadata, keyed by the circuit id that feeds it."""
-    return {feed: (pv.instance_id, pv.metadata) for feed, pv in _by_feed(config).items()}
-
-
 def _pvs(config: SimulationConfig) -> list[DeviceInstance]:
     return [i for i in build_manifest(config).instances if i.entity_class == "pv"]
 
@@ -134,7 +129,7 @@ def test_two_pv_circuits_are_two_devices_from_202639(firmware: str) -> None:
     assert second.instance_id == pv_inverter_device_id(
         _SERIAL, "SE3800H-US", stable_circuit_uuid(_SERIAL, "solar_garage")
     )
-    assert (first.display_name, second.display_name) == ("Solar", "Solar 2")
+    assert (first.display_name, second.display_name) == (first.instance_id, second.instance_id)
     assert second.metadata["vendor-name"] == "SolarEdge"
     assert second.metadata["model"] == "SE3800H-US"
     assert second.metadata["feed"] == stable_circuit_uuid(_SERIAL, "solar_garage")
@@ -173,15 +168,40 @@ def test_a_pv_circuit_identity_wins_over_the_pv_section() -> None:
     assert pv.instance_id == pv_device_id(_SERIAL, config.get("pv")), "the id does not move"
 
 
+@pytest.mark.parametrize("two_inverters", [False, True])
+@pytest.mark.parametrize("firmware", [EARLIER_FIRMWARE, CURRENT_FIRMWARE])
+@pytest.mark.asyncio
+async def test_a_pv_device_is_named_after_its_own_id(
+    tmp_path: Path, firmware: str, *, two_inverters: bool
+) -> None:
+    """SPAN firmware names a PV device after its device id, never after its position.
+
+    Both public MAIN 32 captures publish an inverter's `$description` name as its id
+    (`<panel>-<model>`), so a name taken from list order would be one more thing a
+    reordered config moved.
+    """
+    path = write_config(tmp_path / "panel.yaml", _panel(firmware, two_inverters=two_inverters))
+
+    devices = discovered_devices(await capture_retained(path))
+
+    names = {
+        device_id: (device.description or {}).get("name")
+        for device_id, device in devices.items()
+        if (device.description or {}).get("type") == TYPE_PV
+    }
+    assert names
+    assert all(name == device_id for device_id, name in names.items()), names
+
+
 @pytest.mark.parametrize("firmware", [CURRENT_FIRMWARE, "sim/v0.1.0"])
 def test_reordering_circuits_does_not_move_the_pv_section_identity(firmware: str) -> None:
     """The section's inverter is the one `pv.feed` names, wherever its circuit is listed."""
-    listed = _identities(_panel(firmware, two_inverters=True))
-    reordered = _identities(_reversed_circuits(_panel(firmware, two_inverters=True)))
+    listed = _by_feed(_panel(firmware, two_inverters=True))
+    reordered = _by_feed(_reversed_circuits(_panel(firmware, two_inverters=True)))
 
     assert reordered == listed
-    assert reordered["solar_inverter"][1]["model"] == "IQ8PLUS-72-2-US"
-    assert reordered["solar_garage"][1]["model"] == "SE3800H-US"
+    assert reordered["solar_inverter"].metadata["model"] == "IQ8PLUS-72-2-US"
+    assert reordered["solar_garage"].metadata["model"] == "SE3800H-US"
 
 
 def test_reordering_circuits_does_not_move_the_earlier_firmware_feed() -> None:

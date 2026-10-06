@@ -80,6 +80,7 @@ from .comparator import (
     ParityReport,
     by_role,
     captured_pair,
+    class_of,
     compare,
     compare_settable,
     declared_properties,
@@ -253,7 +254,9 @@ async def test_the_example_reproduces_both_inverters_and_both_commissioned_circu
     """Both inverters, and both circuits that feed them, through PanelBench's import.
 
     The two circuits share a role, so they are counted with multiplicity: that is
-    what proves neither was lost.
+    what proves neither was lost. The inverters' names differ by producer: upstream
+    publishes the definition's display names, and PanelBench names each inverter
+    after its own device id, as SPAN firmware does.
     """
     reference, subject = await example_pair(tmp_path)
 
@@ -261,9 +264,14 @@ async def test_the_example_reproduces_both_inverters_and_both_commissioned_circu
         roles = (role_of(device_id, body) for device_id, body in capture.items())
         return Counter(r for r in roles if r == _COMMISSIONED_PV or r.startswith(_PV))
 
-    expected = Counter({_COMMISSIONED_PV: 2, f"{_PV}Solar": 1, f"{_PV}Solar 2": 1})
-    assert census(reference) == expected
-    assert census(subject) == expected
+    assert census(reference) == Counter(
+        {_COMMISSIONED_PV: 2, f"{_PV}Solar": 1, f"{_PV}Solar 2": 1}
+    )
+    inverters = [device_id for device_id, body in subject.items() if class_of(body) == "pv"]
+    assert len(inverters) == 2
+    assert census(subject) == Counter(
+        {_COMMISSIONED_PV: 2, **{f"{_PV}{device_id}": 1 for device_id in inverters}}
+    )
 
 
 def test_the_panelbench_config_still_exercises_pv() -> None:

@@ -34,6 +34,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
   SPAN release before 202639, as SPAN firmware does from that release, and a clone keeps every inverter.
 - **The top-level `pv` section now describes the inverter whose circuit `pv.feed` names by its `id`, or the only solar circuit's, where it followed whichever
   solar circuit was listed first**, so a config with several solar circuits and no `pv.feed` is refused if its `firmware_version` names a release before 202639.
+- **Every solar device is now named after its own device id**, as SPAN firmware names an inverter, where it was named "Solar", "Solar 2" and so on in circuit
+  order.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
   `UNKNOWN` from release 202639.
 - **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a panel
