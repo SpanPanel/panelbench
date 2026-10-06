@@ -253,7 +253,7 @@ async def test_a_pre_202639_definition_with_a_commissioned_circuit_is_a_400(
 
     The definition renders and the clone reads the lock off the wire, so the
     imported config pairs `commissioned_system` with an earlier `firmware_version`.
-    Validation refuses that pair (spec D18), and the endpoint says why, rather than
+    Validation refuses that pair, and the endpoint says why, rather than
     import a lock the definition's own release never published.
     """
     config = default_config()
