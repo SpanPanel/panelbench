@@ -32,12 +32,16 @@ def _commissioned_config(
     system: Literal["pv", "backup"] | None = "pv",
     relay_behavior: str = "non_controllable",
 ) -> SimulationConfig:
-    """The default panel with its solar circuit named and locked as the commissioned PV system.
+    """The default panel at r202639 with its solar circuit named and locked as the
+    commissioned PV system.
 
-    *system* is written as the template's `commissioned_system` unless it is None, so
-    a test can take the key away and see what the rest of the path does without it.
+    r202639, because SPAN locks these circuits only from that release and the
+    shipped default names an earlier one. *system* is written as the template's
+    `commissioned_system` unless it is None, so a test can take the key away and see
+    what the rest of the path does without it.
     """
     config = default_config()
+    config["firmware_version"] = CURRENT_FIRMWARE
     solar = config["circuit_templates"]["solar"]
     solar["priority"] = "NEVER"
     solar["relay_behavior"] = relay_behavior

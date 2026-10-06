@@ -274,6 +274,22 @@ directory are loaded.
 | `default_main_32.yaml` | 32   | Full residential with solar, battery, 1 EVSE |
 | `default_MAIN_16.yaml` | 16   | Minimal test: lights, outlets, HVAC, solar   |
 
+### Firmware Version
+
+`firmware_version` is the firmware string a panel reports over MQTT, its HTTP status endpoint and mDNS. It also decides which side of SPAN release 202639 the
+panel emulates: the battery's power sign, whether a SPAN Drive's user charge limit is published before a user sets one, one solar device per inverter, the
+status endpoint's hardware version, and commissioned-system circuits.
+
+The included configs name `spanos3/r202633/02` and so publish release 202633's conventions, which integrations released before r202639 support read correctly.
+To emulate r202639, set a 202639 firmware string:
+
+```yaml
+firmware_version: spanos3/r202639/03
+```
+
+A config naming no firmware reports `sim/v<package version>`, which names no SPAN release, and publishes r202639's conventions. A clone keeps its source panel's
+firmware.
+
 ## Environment Variables
 
 All variables can also be passed as CLI arguments (`--help` for full list).

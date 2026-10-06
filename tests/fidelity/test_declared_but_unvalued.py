@@ -34,7 +34,7 @@ declares a superset of the properties.
 
 Shrinking this file is not the goal — being right about each line is. Membership
 was audited against the specification and SPAN's r202633 topic reference, and
-what remains is there for four different reasons:
+what remains is there for three different reasons:
 
   `connection/feeds-device-*` on a mixed-load circuit is *correct* absence, not a
   gap. The catalog omits the triple "when mixed-load with no commissioned
@@ -62,16 +62,17 @@ what remains is there for four different reasons:
   topology this producer does not have, on firmware behaviour nobody has
   observed.
 
-  An EVSE's `config/user-max-charge-current` is *correct* absence too. SPAN
-  firmware r202639 leaves it unpublished until a user sets a limit, and the
-  emitter follows that for any firmware string naming no earlier release. The
-  `sim/v0.1.0` both producers read from this config names none, so these lines
-  leave only if the config comes to name an earlier release.
+Two kinds of line have left:
 
-`panel status/wifi-ssid` is the line that left. It was valued because the
-enclosure device model defines it (MAY), r202633 documents it as the MQTT
-successor to the panel's Wi-Fi REST endpoint, and consumers read the flat
-equivalent today — evidence about the panel, not about the emitter's mechanism.
+  `panel status/wifi-ssid` was valued because the enclosure device model defines
+  it (MAY), r202633 documents it as the MQTT successor to the panel's Wi-Fi REST
+  endpoint, and consumers read the flat equivalent today — evidence about the
+  panel, not about the emitter's mechanism.
+
+  An EVSE's `config/user-max-charge-current` is valued by both producers because
+  this config names SPAN release 202633, which publishes the commissioned maximum
+  until a user sets a limit. Release 202639 leaves it unpublished until then, so
+  these lines return, as *correct* absence, if the config names 202639 or later.
 """
 
 from __future__ import annotations

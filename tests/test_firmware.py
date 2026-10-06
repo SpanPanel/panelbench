@@ -9,6 +9,7 @@ which must agree with the emitter's.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -18,17 +19,34 @@ from panelbench.clone import translate_panel_tree
 from panelbench.config_types import SimulationConfig
 from panelbench.const import DEFAULT_FIRMWARE_VERSION
 from panelbench.emitter_adapter.spec_generator import build_manifest
-from panelbench.emitter_adapter.wire_capture import capture_retained, discovered_devices
+from panelbench.emitter_adapter.wire_capture import (
+    as_capture,
+    capture_retained,
+    discovered_devices,
+)
 from panelbench.firmware import (
     SPAN_RELEASE_202639,
     panel_firmware_version,
     predates,
     release_build,
 )
-from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, default_config, write_config
+from tests._helpers import (
+    CURRENT_FIRMWARE,
+    DEFAULT_CONFIG,
+    EARLIER_FIRMWARE,
+    default_config,
+    discharging_bess_meter,
+    night_panel,
+    write_config,
+)
+
+if TYPE_CHECKING:
+    from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
 _SERIAL = default_config()["panel_config"]["serial_number"]
-_EVSE_LIMIT = "/config/user-max-charge-current"
+_EVSE_LIMIT_PATH = "config/user-max-charge-current"
+_EVSE_LIMIT = f"/{_EVSE_LIMIT_PATH}"
+_SHIPPED = sorted(DEFAULT_CONFIG.parent.glob("*.yaml"))
 
 
 def _naming(firmware: str | None) -> SimulationConfig:
@@ -127,3 +145,39 @@ async def test_a_clone_of_an_earlier_panel_keeps_its_conventions(tmp_path: Path)
 
     limits = [t for t in republished if t.endswith(_EVSE_LIMIT)]
     assert len(limits) == 2, "both cloned SPAN Drives keep an r202633 panel's preset limit"
+
+
+def _shipped(path: Path) -> SimulationConfig:
+    config: SimulationConfig = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return config
+
+
+def _evse_limits(recorder: RecordingTransport) -> dict[str, str]:
+    """Each EVSE's published `config/user-max-charge-current`, by device id."""
+    return {
+        device_id: properties[_EVSE_LIMIT_PATH]
+        for device_id, properties in as_capture(recorder.retained).items()
+        if _EVSE_LIMIT_PATH in properties
+    }
+
+
+@pytest.mark.parametrize("path", _SHIPPED, ids=lambda path: path.stem)
+@pytest.mark.asyncio
+async def test_the_shipped_configs_publish_the_earlier_conventions(
+    tmp_path: Path, path: Path
+) -> None:
+    """Every Home Assistant SPAN integration released before r202639 support negates
+    the BESS meter unconditionally, so a default on the current frame shows its users
+    an inverted battery. The defaults stay on release 202633 until that support ships.
+    """
+    config = _shipped(path)
+    runtime, recorder = await night_panel(tmp_path / path.name, config)
+    evses = ManifestPhysicsView(build_manifest(config)).all_evse()
+
+    assert predates(panel_firmware_version(config), SPAN_RELEASE_202639)
+    assert discharging_bess_meter(runtime, recorder) < 0, (
+        "the meter's sign is power-flows/battery's, the panel's frame"
+    )
+    assert _evse_limits(recorder) == {
+        device_id: str(int(evse.max_current_a)) for device_id, evse in evses.items()
+    }, "every EVSE's user limit is preset at its maximum"

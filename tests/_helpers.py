@@ -8,15 +8,21 @@ would replay from the broker.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import yaml
 
+from panelbench.emitter_adapter import runtime as emitter_runtime
+from panelbench.emitter_adapter.runtime import bess_config_from_engine
+from panelbench.emitter_adapter.wire_capture import recorded_panel
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from panelbench.config_types import SimulationConfig
+    from panelbench.emitter_adapter.runtime import CloneRuntime
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
 DEFAULT_CONFIG: Final = Path(__file__).resolve().parents[1] / "configs" / "default_MAIN_40.yaml"
@@ -42,3 +48,34 @@ def write_config(path: Path, config: Mapping[str, object]) -> Path:
 def published(recorder: RecordingTransport, device_id: str, path: str) -> str:
     """The retained value of *device_id*'s property at *path*."""
     return recorder.retained[f"ebus/5/{device_id}/{path}"].decode()
+
+
+async def night_panel(
+    path: Path, config: SimulationConfig
+) -> tuple[CloneRuntime, RecordingTransport]:
+    """The panel *config* describes, written to *path*, at night after one tick.
+
+    Night, so the battery is discharging to cover load and its sign is observable.
+    The shipped batteries are self-consumption, which ignores `discharge_hours`: it
+    discharges whenever load exceeds PV and its charge is above the reserve.
+    *config* itself is left unchanged.
+    """
+    night = copy.deepcopy(config)
+    night["simulation_params"]["use_simulation_time"] = True
+    night["simulation_params"]["simulation_start_time"] = "2026-06-15T22:00:00"
+    runtime, recorder = await recorded_panel(write_config(path, night))
+    await emitter_runtime.publish_tick(runtime)
+    return runtime, recorder
+
+
+def discharging_bess_meter(runtime: CloneRuntime, recorder: RecordingTransport) -> float:
+    """The BESS meter's `active-power` of a `night_panel`, whose battery is discharging."""
+    battery = bess_config_from_engine(runtime.engine)
+    assert battery is not None
+
+    meter = float(published(recorder, battery.instance_id, "meter/active-power"))
+    flow = float(published(recorder, runtime.engine.serial_number, "power-flows/battery"))
+
+    # An idle battery shows no frame at all, so no caller may pass on one.
+    assert flow < 0, "the battery discharges at night, so power flows out of it"
+    return meter

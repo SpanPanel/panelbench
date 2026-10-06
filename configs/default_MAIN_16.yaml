@@ -12,6 +12,9 @@ panel_config:
   wifi_ssid: sim-wifi
   latitude: 37.7
   longitude: -122.4
+# Stays on SPAN release 202633 conventions so integrations released before r202639 support
+# read it correctly; set a 202639 string, such as `spanos3/r202639/03`, to emulate the new firmware.
+firmware_version: spanos3/r202633/02
 
 pv:
   # Identity only. There is no `enabled` key: the PV device is instantiated from the

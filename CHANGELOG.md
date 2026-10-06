@@ -21,6 +21,8 @@
   earlier release.
 - **A SPAN Drive's user charge limit is no longer published until a user sets one**, as on SPAN firmware r202639, unless the panel's firmware version names an
   earlier release.
+- **The shipped configs stay on SPAN release 202633's conventions**, so integrations released before r202639 support read them correctly; set `firmware_version`
+  to a 202639 release to emulate the new firmware.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
 - **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
 - **An existing clone that names no `firmware_version` publishes the conventions of SPAN release 202639**; set `firmware_version` to the source panel's

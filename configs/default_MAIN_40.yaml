@@ -26,7 +26,9 @@ panel_config:
   # are. Synthetic, so it attests the mapping rather than what a real network is
   # called.
   wifi_ssid: sim-wifi
-firmware_version: sim/v0.1.0
+# Stays on SPAN release 202633 conventions so integrations released before r202639 support
+# read it correctly; set a 202639 string, such as `spanos3/r202639/03`, to emulate the new firmware.
+firmware_version: spanos3/r202633/02
 hardware_version: rev2
 pv:
   enabled: true
