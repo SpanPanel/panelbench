@@ -11,14 +11,36 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # `ebus-panel-sim` is the emitter: its bump decides what this add-on publishes
+      # (`pyproject.toml` pins it exactly so upgrades stay deliberate). The ruleset
+      # requires only `lint` and one approval, so this job's approval would be the
+      # only review a bump gets, and the next image build would ship it.
       - name: Approve PR
+        if: ${{ !contains(steps.metadata.outputs.dependency-names, 'ebus-panel-sim') }}
         run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge
+        if: ${{ !contains(steps.metadata.outputs.dependency-names, 'ebus-panel-sim') }}
         run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on emitter updates
+        if: ${{ github.event.action == 'opened' && contains(steps.metadata.outputs.dependency-names, 'ebus-panel-sim') }}
+        run: |
+          gh pr comment "$PR_URL" --body "**\`ebus-panel-sim\` is not auto-merged.**
+
+          It decides what this add-on publishes. Review its changelog against the shipped configs and the fidelity and conformance baselines before merging."
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
