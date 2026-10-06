@@ -40,8 +40,11 @@
       </label>
       {% endif %}
       {% if e.entity_type != 'battery' %}
+      {#- A commissioned-system circuit's relay is locked whatever relay_behavior says,
+          and validation refuses a controllable one, so PUT /entities/<id> refuses a
+          change; `disabled` keeps the rest of the form saveable, as for priority. -#}
       <label>Relay Behavior:
-        <select name="relay_behavior">
+        <select name="relay_behavior" {{ 'disabled' if e.commissioned_system }}>
           {% for r in relay_behaviors %}
           <option value="{{ r }}" {{ 'selected' if r == e.relay_behavior }}>{{ r }}</option>
           {% endfor %}

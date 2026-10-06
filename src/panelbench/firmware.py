@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Final
 from panelbench.const import DEFAULT_FIRMWARE_VERSION
 
 if TYPE_CHECKING:
-    from panelbench.config_types import SimulationConfig
+    from collections.abc import Mapping
 
 SPAN_RELEASE_202639: Final = 202639
 """The SPAN release that reversed the BESS meter's sign, left the EVSE user limit
@@ -35,10 +35,12 @@ unpublished until set, published one PV device per inverter, and added
 _RELEASE_SEGMENT: Final = re.compile(r"r(\d{6})")
 
 
-def panel_firmware_version(config: SimulationConfig) -> str:
+def panel_firmware_version(config: Mapping[str, object]) -> str:
     """The firmware string the panel *config* describes reports everywhere.
 
-    ``str()`` because YAML reads an unquoted all-digit value as a number.
+    ``str()`` because YAML reads an unquoted all-digit value as a number. Takes any
+    mapping, not only a ``SimulationConfig``, because validation asks it of a config
+    that is still unvalidated YAML.
     """
     return str(config.get("firmware_version") or DEFAULT_FIRMWARE_VERSION)
 

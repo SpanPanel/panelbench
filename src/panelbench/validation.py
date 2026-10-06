@@ -6,10 +6,13 @@ dashboard can validate configs without circular imports.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def validate_yaml_config(config_data: Any) -> None:
@@ -24,7 +27,9 @@ def validate_yaml_config(config_data: Any) -> None:
 
     validate_panel_config(config_data["panel_config"])
     validate_circuit_templates(config_data["circuit_templates"])
-    _validate_commissioned_firmware(config_data)
+    _validate_commissioned_firmware(
+        panel_firmware_version(config_data), config_data["circuit_templates"]
+    )
     validate_circuits(config_data["circuits"], config_data["circuit_templates"])
 
     if "panel_source" in config_data:
@@ -75,7 +80,7 @@ def validate_single_template(template_name: str, template: Any) -> None:
 _COMMISSIONED_SYSTEMS = ("pv", "backup")
 
 
-def _validate_commissioned_system(template_name: str, template: dict[str, Any]) -> None:
+def _validate_commissioned_system(template_name: str, template: Mapping[str, object]) -> None:
     """Every fact the emitter enforces for a commissioned-system circuit, stated in the config.
 
     The emitter rejects the circuit at construction otherwise, which surfaces as a
@@ -100,7 +105,9 @@ def _validate_commissioned_system(template_name: str, template: dict[str, Any]) 
         )
 
 
-def _validate_commissioned_firmware(config_data: Any) -> None:
+def _validate_commissioned_firmware(
+    firmware: str, circuit_templates: Mapping[str, Mapping[str, object]]
+) -> None:
     """Commissioned-system circuits are locked only from SPAN release 202639.
 
     Before it, SPAN published the "Commissioned PV System" and "Commissioned Backup
@@ -108,12 +115,14 @@ def _validate_commissioned_firmware(config_data: Any) -> None:
     202639). The emitter does not key the lock on the firmware, so a config naming an
     earlier release must not ask for one: refused here, naming the template, rather
     than published as a lock that release never had.
+
+    *circuit_templates* has already passed `validate_circuit_templates`, so every
+    template is a mapping.
     """
-    firmware = panel_firmware_version(config_data)
     if not predates(firmware, SPAN_RELEASE_202639):
         return
-    for template_name, template in config_data["circuit_templates"].items():
-        if isinstance(template, dict) and "commissioned_system" in template:
+    for template_name, template in circuit_templates.items():
+        if template.get("commissioned_system") is not None:
             raise ValueError(
                 f"Circuit template '{template_name}' is a commissioned-system circuit, which is "
                 f"locked only from SPAN release 202639, but firmware_version is {firmware!r}: "

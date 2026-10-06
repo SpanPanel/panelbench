@@ -54,7 +54,7 @@ from panelbench.solar import compute_solar_curve
 from panelbench.weather import fetch_historical_weather, get_cached_weather
 
 if TYPE_CHECKING:
-    from panelbench.dashboard.config_store import ConfigStore
+    from panelbench.dashboard.config_store import ConfigStore, EntityView
     from panelbench.rates.cache import RateCache
 
 _LOGGER = logging.getLogger(__name__)
@@ -814,6 +814,40 @@ def _persist_config_live_bess(request: web.Request) -> None:
         ctx.start_panel(filename)
 
 
+def _refuse_locked_priority_change(entity: EntityView, priority: str) -> None:
+    """Raise 409 when *priority* would change a priority-locked circuit's priority."""
+    if not entity.priority_locked or priority == entity.priority:
+        return
+    if entity.commissioned_system is not None:
+        reason = (
+            f"{entity.name} is the commissioned {entity.commissioned_system} system's "
+            f"circuit, so it is permanently {entity.priority} and publishes "
+            "load-shed/priority without $settable."
+        )
+    else:
+        reason = (
+            f"{entity.name} is commissioned never-backup, so it is permanently "
+            f"{entity.priority} and publishes load-shed/priority without "
+            "$settable. Clear never_backup to re-prioritise it."
+        )
+    raise web.HTTPConflict(text=reason)
+
+
+def _commissioned_relay_reason(entity: EntityView, system: str) -> str:
+    """Why a commissioned *system*'s circuit refuses any change to its relay."""
+    return (
+        f"{entity.name} is the commissioned {system} system's circuit, so its relay is "
+        "locked and publishes switch/relay without $settable and relay-controllable=false."
+    )
+
+
+def _refuse_commissioned_relay_change(entity: EntityView, relay_behavior: str) -> None:
+    """Raise 409 when *relay_behavior* would change a commissioned-system circuit's."""
+    if entity.commissioned_system is None or relay_behavior == entity.relay_behavior:
+        return
+    raise web.HTTPConflict(text=_commissioned_relay_reason(entity, entity.commissioned_system))
+
+
 async def handle_put_entity(request: web.Request) -> web.Response:
     """Save a circuit's edited fields.
 
@@ -825,29 +859,24 @@ async def handle_put_entity(request: web.Request) -> web.Response:
     for never-backup, `NEVER` for a commissioned system — and the emitter rejects a
     manifest that says otherwise at construction, so accepting the edit would
     produce a config that cannot start the panel.
+
+    A `relay_behavior` change is refused on a commissioned-system circuit for the
+    second half of that reason: its relay is locked too, and validation refuses a
+    commissioned template whose relay is controllable, so the saved config would
+    not start the panel either.
     """
     entity_id = request.match_info["id"]
     data = await request.post()
     store = _store(request)
-    if "priority" in data:
+    if "priority" in data or "relay_behavior" in data:
         try:
             entity = store.get_entity(entity_id)
         except KeyError:
             raise web.HTTPNotFound(text=f"Entity not found: {entity_id}") from None
-        if entity.priority_locked and str(data["priority"]) != entity.priority:
-            if entity.commissioned_system is not None:
-                reason = (
-                    f"{entity.name} is the commissioned {entity.commissioned_system} system's "
-                    f"circuit, so it is permanently {entity.priority} and publishes "
-                    "load-shed/priority without $settable."
-                )
-            else:
-                reason = (
-                    f"{entity.name} is commissioned never-backup, so it is permanently "
-                    f"{entity.priority} and publishes load-shed/priority without "
-                    "$settable. Clear never_backup to re-prioritise it."
-                )
-            raise web.HTTPConflict(text=reason)
+        if "priority" in data:
+            _refuse_locked_priority_change(entity, str(data["priority"]))
+        if "relay_behavior" in data:
+            _refuse_commissioned_relay_change(entity, str(data["relay_behavior"]))
     store.update_entity(entity_id, dict(data))
     # Push priority change to the running engine immediately
     if "priority" in data:
@@ -1328,6 +1357,8 @@ async def handle_set_relay(request: web.Request) -> web.Response:
         entity = _store(request).get_entity(entity_id)
     except KeyError:
         raise web.HTTPNotFound(text=f"Entity not found: {entity_id}") from None
+    if entity.commissioned_system is not None:
+        raise web.HTTPConflict(text=_commissioned_relay_reason(entity, entity.commissioned_system))
     if entity.relay_locked:
         raise web.HTTPConflict(
             text=(

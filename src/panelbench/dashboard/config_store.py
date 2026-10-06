@@ -63,9 +63,11 @@ class EntityView:
 
         Derived rather than stored, from the one predicate the manifest is built
         with, so the dot the dashboard offers and the `$settable` the panel
-        publishes cannot disagree.
+        publishes cannot disagree. A commissioned-system circuit is locked whatever
+        its `relay_behavior` says, as upstream's `manifest_physics.relay_locked`
+        decides it from the `commissioned-system` key alone.
         """
-        return relay_locked(self.relay_behavior)
+        return relay_locked(self.relay_behavior) or self.commissioned_system is not None
 
     @property
     def priority_locked(self) -> bool:
