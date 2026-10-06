@@ -455,6 +455,9 @@ class ConfigStore:
             ep["nameplate_capacity_w"] = nameplate
             ep["power_range"] = [-nameplate, 0.0]
             ep["typical_power"] = -nameplate * 0.6
+            # The template's profile is the nameplate's one source: a circuit override
+            # of any of these would replace the edit in the engine's circuit.
+            overrides.pop("nameplate_capacity_w", None)
             overrides.pop("typical_power", None)
             overrides.pop("power_range", None)
             # Nameplate always implies leaving HA replay — same as other edits

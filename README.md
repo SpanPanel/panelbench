@@ -149,8 +149,10 @@ Before release 202639 a panel publishes one solar device, so a clone holds one P
 upgrade of a panel with a second inverter, also make that circuit an inverter's in the second config:
 
 - Give it a PV template: copy the "Commissioned PV System" circuit's template as the first config has it, unlocked, under a new name. Set the copy's
-  `energy_profile.nameplate_capacity_w` to the inverter's rating and its producer `power_range` to match, such as `[-7600.0, 0.0]`, and point the circuit's
-  `template` at the copy.
+  `energy_profile.nameplate_capacity_w` to the inverter's rating, its producer `power_range` to match, such as `[-7600.0, 0.0]`, and its `typical_power` to
+  about 60% of the rating, negative, such as `-4560.0`, and point the circuit's `template` at the copy. Production follows the rating and the time of day, but
+  `typical_power` seeds the energy total the inverter's circuit starts from, so a copy that keeps the original's would start with a total sized for the
+  original inverter. The dashboard's nameplate field sets all three for you.
 - Remove any `overrides: power_range` on the circuit itself. It was the load's, and it would cap the inverter's production.
 - Give the circuit, under `circuits`, its own inverter's `vendor`, `model` and `serial_number`. It takes `pv.firmware_version` unless it sets its own
   `firmware_version`, which a config with no `pv` section needs.

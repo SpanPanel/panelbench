@@ -310,8 +310,10 @@ def test_the_panelbench_config_still_exercises_pv() -> None:
         "no circuit resolves to a template with device_type: pv, so the panelbench "
         "cell would stop measuring solar"
     )
-    assert all("nameplate_capacity_w" in templates[name] for name in solar), (
-        "the solar template's nameplate_capacity_w feeds info/nominal-power-w; "
+    assert all(
+        "nameplate_capacity_w" in (templates[name].get("energy_profile") or {}) for name in solar
+    ), (
+        "the solar template's energy_profile.nameplate_capacity_w feeds info/nominal-power-w; "
         "without it the published value falls to a default and no instrument disagrees"
     )
 

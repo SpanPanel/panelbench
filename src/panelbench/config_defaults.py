@@ -109,10 +109,11 @@ ENTITY_TYPE_DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
-# Template top-level keys that belong inside ``energy_profile``. The eBus
-# emitter's example configs put ``nameplate_capacity_w`` at template top level
-# (its ``_pv_instance`` reads it there); this package reads it from the nested
-# profile. Promoting rather than duplicating lets one config drive both.
+# Template top-level keys that belong inside ``energy_profile``, the one place this
+# package reads them and the dashboard edits them. The eBus emitter's example
+# configs put ``nameplate_capacity_w`` at template top level (its ``_pv_instance``
+# reads it there), so a config written that way is still read, as a legacy
+# fallback: see ``normalize_circuit_templates``.
 _PROMOTABLE_TO_PROFILE = ("nameplate_capacity_w",)
 
 _DEFAULT_DEVICE_TYPE = "circuit"
@@ -142,8 +143,11 @@ def normalize_circuit_templates(config_data: Any) -> None:
        ``device_type`` -- producer shape for ``pv``, high-power consumer for
        ``evse``, ordinary consumer otherwise.
     2. Energy-profile keys written at template top level are moved into the
-       profile. An explicit value always wins over the default, whichever level
-       it was written at, so this cannot silently override what a config says.
+       profile, leaving one source for each. The profile's own value is the one
+       the dashboard edits, so where the config states both it wins: copying the
+       top-level value over it silently replaced a dashboard nameplate edit on the
+       next start. The top-level value is read only where the profile has none,
+       and it does replace a default from step 1, which the config never stated.
     """
     templates = config_data.get("circuit_templates")
     if not isinstance(templates, dict):
@@ -153,11 +157,15 @@ def normalize_circuit_templates(config_data: Any) -> None:
         if not isinstance(template, dict):
             continue
         device_type = template.get("device_type", _DEFAULT_DEVICE_TYPE)
-        if "energy_profile" not in template:
+        stated_profile = "energy_profile" in template
+        if not stated_profile:
             template["energy_profile"] = default_energy_profile(device_type)
         profile = template["energy_profile"]
         if not isinstance(profile, dict):
             continue
         for key in _PROMOTABLE_TO_PROFILE:
-            if key in template:
-                profile[key] = template[key]
+            if key not in template:
+                continue
+            legacy = template.pop(key)
+            if not stated_profile or key not in profile:
+                profile[key] = legacy

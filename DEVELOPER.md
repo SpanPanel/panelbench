@@ -361,7 +361,7 @@ circuit_templates: # Reusable template definitions
       typical_power: float # Base power in watts
       power_variation: float # Fraction (0.1 = +/-10%)
       efficiency: float # 0.0-1.0 (optional, PV/battery)
-      nameplate_capacity_w: float # PV nameplate rating in watts
+      nameplate_capacity_w: float # PV nameplate rating in watts (a template-level key is read only without this one)
       initial_consumed_energy_wh: float # Seed consumed energy (from clone)
       initial_produced_energy_wh: float # Seed produced energy (from clone)
     relay_behavior: str # "controllable" | "non-controllable" | "always-on" (underscore spellings are read the same)

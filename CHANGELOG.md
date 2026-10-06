@@ -57,6 +57,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **The dashboard now fetches a read-only template's weather**, where a script error on its missing location search stopped it.
 - **The dashboard's relay control shows a locked relay however its config spells it**, where a circuit written `non-controllable`, as the shipped configs
   write it, showed `controllable` and saving its form unlocked it.
+- **A solar inverter's nameplate edited in the dashboard now survives a restart**, where a second copy of the rating, at the template's top level as in the
+  shipped MAIN 40 template or in the circuit's overrides as in the shipped MAIN 32, replaced the edit.
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

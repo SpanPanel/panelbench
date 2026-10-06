@@ -700,8 +700,6 @@ circuits:
     template: "solar_production"
     tabs: [28, 30]
     device_type: "pv"
-    overrides:
-      nameplate_capacity_w: 8000.0
 
 unmapped_tabs: [31, 32]
 

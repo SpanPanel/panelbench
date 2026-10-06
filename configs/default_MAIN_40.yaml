@@ -594,7 +594,6 @@ circuit_templates:
     inverter_type: hybrid
     device_type: pv
     breaker_rating: 30
-    nameplate_capacity_w: 10000.0
   pool:
     energy_profile:
       mode: consumer
