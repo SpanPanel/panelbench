@@ -111,23 +111,23 @@ A SPAN panel reads its firmware once, when it starts, and an over-the-air upgrad
 rehearses an upgrade the same way: two configs for one panel, run one after the other. The shipped configs name `spanos3/r202633/02` (see
 [Firmware Version](#firmware-version)), so the upgrade rehearsed here is to SPAN release 202639.
 
+A panel with a commissioned PV system has a circuit named "Commissioned PV System" before the upgrade. On a release before 202639 it is unlocked: its relay is
+switchable and not always-on, and its priority is `OFF_GRID` and can be changed, so it sheds like any other circuit. The upgrade to release 202639 locks it.
+
 1. **Before.** Clone your panel from the dashboard while it still runs a release before 202639, or clone one of the shipped templates. A clone keeps its
    source's `firmware_version`, so it publishes what that release publishes, and a panel clone's **Update eBus Energy** button, which refreshes its energy
-   readings from the panel, never changes it.
+   readings from the panel, never changes it. A clone of your panel already holds the "Commissioned PV System" circuit as the panel publishes it. In a clone of
+   a template, its PV circuit plays that part: set the circuit's `name` under `circuits` to `Commissioned PV System`, keeping its `id`, and give its template
+   `relay_behavior: controllable` and `priority: OFF_GRID`.
 2. **After.** Copy the first config's YAML to a second file in the same config directory, under a name that does not start with `default_` (that prefix marks a
-   read-only template), and edit the copy's YAML:
+   read-only template), and change two things in the copy:
    - Set `firmware_version` to a 202639 release, for example `spanos3/r202639/03`.
-   - Release 202639 locks the circuits SPAN names "Commissioned PV System" and "Commissioned Backup System", which earlier releases left switchable. Give each
-     such circuit's template (a panel clone gives every circuit its own) `commissioned_system: pv` (or `backup`), `priority: NEVER` and
-     `relay_behavior: non_controllable`. PanelBench refuses `commissioned_system` on a config naming an earlier release, so these keys belong only in this file.
-   - On a panel with more than one inverter, mark every other inverter's circuit too. Before 202639 only one inverter's circuit named its inverter, so the clone
-     holds a single PV circuit and modelled the others as loads. Such a circuit's template is still the load's: switched to `mode: producer` alone, it would
-     produce no more than the load's `power_range` allows and keep the load's shape. Give each other inverter's circuit a PV template instead. Either copy the
-     first PV circuit's template under a new name and point the circuit's `template` at it, or set its own template's `device_type: pv`,
-     `energy_profile.mode: producer`, `energy_profile.nameplate_capacity_w` to the inverter's rating and a producer `power_range` such as `[-7600.0, 0.0]`. Then
-     give the circuit itself, under `circuits`, its inverter's `vendor`, `model` and `serial_number`.
+   - Lock the "Commissioned PV System" circuit as release 202639 does: give its template `commissioned_system: pv`, `priority: NEVER` and
+     `relay_behavior: non-controllable`. A circuit named "Commissioned Backup System" is locked the same way, with `commissioned_system: backup`. PanelBench
+     refuses `commissioned_system` on a config naming an earlier release, so these keys belong only in this file.
 
-   Leave everything else as it is. The serial number, circuits and tabs are what make the two configs one panel.
+   That is all for a panel with one inverter; [A second inverter](#a-second-inverter) adds to it. The serial number, circuits and tabs are what make the two
+   configs one panel.
 
 3. Start the first instance with `CONFIG_NAME=<before>.yaml ./scripts/run-local.sh` and add the panel to Home Assistant.
 4. Stop the first instance and start the second: `./scripts/run-local.sh --stop` from another terminal (or Ctrl+C in the first), then
@@ -135,14 +135,28 @@ rehearses an upgrade the same way: two configs for one panel, run one after the 
    same panel come back on the new release.
 
 Run both from the same checkout with the same `HTTP_PORT`, `DASHBOARD_PORT` and `BROKER_PORT`; the defaults are fine. The second instance must answer where the
-first did. The two must never run at once: `run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number. The two
-configs differ only in their file names and what step 2 changed.
+first did. The two must never run at once: `run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number.
 
 From release 202639 the second instance does what SPAN's public [CHANGELOG](https://github.com/spanio/SPAN-API-Client-Docs) lists for that release. It publishes
-the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes one solar
-device per inverter when the panel has more than one, and a panel with one keeps its device id. `GET /api/v2/status` reports `hardwareVersion`: `1.2` or `2.0`
-from the config's `hardware_version`, and `UNKNOWN` for any other value. With step 2's template keys, it publishes the commissioned PV and battery system
-circuits locked.
+the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes the
+"Commissioned PV System" circuit locked, with no relay command and a priority fixed at `NEVER`. `GET /api/v2/status` reports `hardwareVersion`: `1.2` or `2.0`
+from the config's `hardware_version`, and `UNKNOWN` for any other value. It publishes one solar device per inverter when the panel has more than one, and a
+panel with one keeps its device id.
+
+### A second inverter
+
+Before release 202639 a panel publishes one solar device, so a clone holds one PV circuit and models any other inverter's circuit as a load. To rehearse the
+upgrade of a panel with a second inverter, also make that circuit an inverter's in the second config:
+
+- Give it a PV template: copy the "Commissioned PV System" circuit's template as the first config has it, unlocked, under a new name. Set the copy's
+  `energy_profile.nameplate_capacity_w` to the inverter's rating and its producer `power_range` to match, such as `[-7600.0, 0.0]`, and point the circuit's
+  `template` at the copy.
+- Remove any `overrides: power_range` on the circuit itself. It was the load's, and it would cap the inverter's production.
+- Give the circuit, under `circuits`, its own inverter's `vendor`, `model` and `serial_number`. It takes `pv.firmware_version` unless it sets its own
+  `firmware_version`, which a config with no `pv` section needs.
+- Where the config has a top-level `pv` section, as a clone of a template does, set `pv.feed` to the `id` of the original inverter's circuit. The section
+  describes one inverter, the one whose circuit `pv.feed` names; with two PV circuits and no `pv.feed` it describes neither, and the original inverter would
+  lose the identity the first config gave it. A clone of your panel names each inverter on its own circuit instead, and needs no `pv.feed`.
 
 ## Running with Docker (Linux only)
 
