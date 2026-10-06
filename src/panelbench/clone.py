@@ -185,7 +185,7 @@ def translate_panel_tree(
 
     # Enrich PV circuit template
     for pv_id in pv_nodes:
-        _enrich_pv_template(devices, pv_id, feed_map, templates)
+        _enrich_pv_template(devices, pv_id, feed_map, templates, circuits)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
@@ -823,8 +823,10 @@ def _enrich_pv_template(
     pv_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
+    circuits: list[dict[str, object]],
 ) -> None:
-    """Enrich the PV circuit template with nameplate capacity and solar profile."""
+    """Enrich the PV circuit template with nameplate capacity and solar profile, and
+    write the inverter's identity onto the circuit that feeds it."""
     circuit_uuid = _circuit_feeding(devices, pv_node_id)
     template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
@@ -838,6 +840,21 @@ def _enrich_pv_template(
             ep["nameplate_capacity_w"] = nameplate
             ep["power_range"] = [-nameplate, 0.0]
             ep["typical_power"] = -nameplate * 0.6
+
+    # The inverter's identity belongs to the circuit that feeds it, so a clone of a
+    # panel with several inverters republishes each under its own name.
+    template_name = next((name for name, value in templates.items() if value is template), None)
+    circuit = next((c for c in circuits if c.get("template") == template_name), None)
+    if circuit is None:
+        return
+    for prop, key in (
+        ("serial-number", "serial_number"),
+        ("model", "model"),
+        ("vendor-name", "vendor"),
+    ):
+        value = _get_prop(devices, pv_node_id, "info", prop)
+        if value:
+            circuit[key] = value
 
 
 def _enrich_evse_template(

@@ -233,6 +233,12 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     overrides: dict[str, Any]
     breaker_rating: int  # Per-circuit breaker rating in Amps (overrides template)
     recorder_entity: str  # HA entity for recorder replay (also merged onto resolved template)
+    # The identity of the device this circuit feeds: a DER's identity belongs to the
+    # circuit, not to its position in a list (see `instance_ids.evse_circuit_serial`).
+    # Read for a PV circuit's inverter; the top-level `pv` section is the default.
+    serial_number: str
+    model: str
+    vendor: str
 
 
 class TabSynchronization(TypedDict):

@@ -24,9 +24,10 @@ from panelbench.emitter_adapter.instance_ids import (
     lugs_device_ids,
     mid_device_id,
     pv_device_id,
+    pv_inverter_device_id,
     stable_circuit_uuid,
 )
-from panelbench.firmware import panel_firmware_version
+from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 from panelbench.inverter import (
     normalise_inverter_type,
     template_inverter_type,
@@ -34,9 +35,12 @@ from panelbench.inverter import (
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from panelbench.config_types import (
         CircuitDefinitionExtended,
         CircuitTemplateExtended,
+        PVConfigYAML,
         SimulationConfig,
     )
 
@@ -86,9 +90,7 @@ def build_manifest(profile: SimulationConfig) -> DeviceManifest:
     bess = _bess_instance(profile)
     if bess is not None:
         instances.append(bess)
-    pv = _pv_instance(profile)
-    if pv is not None:
-        instances.append(pv)
+    instances.extend(_pv_instances(profile))
     instances.extend(_evse_instances(profile))
     mid = _mid_instance(profile)
     if mid is not None:
@@ -301,43 +303,129 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
 
 
 def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
+    """The single PV device this panel has always published, fed by its first PV circuit."""
     pv_cfg = profile.get("pv") or {}
     pv_feed = _feed_circuit_id(profile, "pv")
     if not pv_cfg.get("enabled") and pv_feed is None:
         return None
-    declared_inverter = pv_cfg.get("inverter_type")
-    inverter_type = (
-        normalise_inverter_type(str(declared_inverter))
-        if declared_inverter is not None
-        else template_inverter_type(_first_producer_template(profile) or {})
-    )
     relative_position = pv_cfg.get("relative_position")
     if relative_position is None:
         relative_position = "IN_PANEL" if pv_feed is not None else "UPSTREAM"
-    metadata = {
-        "vendor-name": str(pv_cfg.get("vendor", "Enphase")),
-        "nominal-power-w": str(
-            pv_cfg.get("nameplate_capacity_w") or _device_nameplate_w(profile, "pv", 5000.0),
-        ),
-        "inverter-type": inverter_type,
-        "relative-position": str(relative_position),
-    }
-    if "product_name" in pv_cfg:
-        metadata["model"] = str(pv_cfg["product_name"])
-    if "serial_number" in pv_cfg:
-        metadata["serial-number"] = str(pv_cfg["serial_number"])
-    if "firmware_version" in pv_cfg:
-        metadata["firmware-version"] = str(pv_cfg["firmware_version"])
-    if "feed" in pv_cfg:
-        metadata["feed"] = str(pv_cfg["feed"])
-    elif pv_feed is not None:
-        metadata["feed"] = pv_feed
     return DeviceInstance(
         entity_class="pv",
         instance_id=pv_device_id(profile["panel_config"]["serial_number"], pv_cfg),
         display_name="Solar",
-        metadata=metadata,
+        metadata=_pv_metadata(
+            profile,
+            _first_circuit_for_device_type(profile, "pv"),
+            pv_cfg,
+            feed=str(pv_cfg["feed"]) if "feed" in pv_cfg else pv_feed,
+            inverter_template=_first_producer_template(profile) or {},
+            relative_position=str(relative_position),
+        ),
     )
+
+
+def _inverter_identity(
+    circuit: CircuitDefinitionExtended | None, defaults: PVConfigYAML
+) -> dict[str, str]:
+    """The ``info`` metadata naming the inverter *circuit* feeds.
+
+    The circuit's own values first, because a DER's identity belongs to the circuit
+    that feeds it; then *defaults*, the top-level ``pv`` section, which
+    describes the first inverter as it did before circuits could carry one.
+    """
+    own_vendor = circuit.get("vendor") if circuit is not None else None
+    own_model = circuit.get("model") if circuit is not None else None
+    own_serial = circuit.get("serial_number") if circuit is not None else None
+    # `str()` as `_pv_instance` always applied it: YAML may hand a number for a
+    # model or serial written without quotes.
+    identity = {"vendor-name": str(own_vendor or defaults.get("vendor", "Enphase"))}
+    model = own_model or defaults.get("product_name")
+    if model:
+        identity["model"] = str(model)
+    serial = own_serial or defaults.get("serial_number")
+    if serial:
+        identity["serial-number"] = str(serial)
+    return identity
+
+
+def _pv_metadata(
+    profile: SimulationConfig,
+    circuit: CircuitDefinitionExtended | None,
+    defaults: PVConfigYAML,
+    *,
+    feed: str | None,
+    inverter_template: Mapping[str, object],
+    relative_position: str,
+) -> dict[str, str]:
+    """One inverter's manifest metadata, for the single device and for each of several.
+
+    *defaults* is the top-level ``pv`` section for the first inverter and empty for
+    the others. Its declared inverter type wins over *inverter_template*'s, and its
+    nameplate over the circuit template's.
+    """
+    declared_inverter = defaults.get("inverter_type")
+    inverter_type = (
+        normalise_inverter_type(str(declared_inverter))
+        if declared_inverter is not None
+        else template_inverter_type(inverter_template)
+    )
+    nameplate = defaults.get("nameplate_capacity_w") or _circuit_nameplate_w(
+        profile, circuit, 5000.0
+    )
+    metadata = {
+        **_inverter_identity(circuit, defaults),
+        "nominal-power-w": str(nameplate),
+        "inverter-type": inverter_type,
+        "relative-position": relative_position,
+    }
+    if "firmware_version" in defaults:
+        metadata["firmware-version"] = str(defaults["firmware_version"])
+    if feed is not None:
+        metadata["feed"] = feed
+    return metadata
+
+
+def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
+    """One PV device per inverter, or the single device this panel has always published.
+
+    Several devices for a panel with two or more PV circuits from SPAN release
+    202639, or naming no release. Otherwise ``_pv_instance``'s one device: a panel
+    with one inverter keeps its id under every firmware, and a panel before 202639
+    published one aggregate device fed by its first PV circuit (SPAN-API-Client-Docs
+    CHANGELOG, Release 202639).
+    """
+    circuits = _circuits_for_device_type(profile, "pv")
+    if len(circuits) < 2 or predates(panel_firmware_version(profile), SPAN_RELEASE_202639):
+        single = _pv_instance(profile)
+        return [] if single is None else [single]
+    panel_id = profile["panel_config"]["serial_number"]
+    pv_cfg = profile.get("pv") or {}
+    templates = profile.get("circuit_templates") or {}
+    instances: list[DeviceInstance] = []
+    for idx, circuit in enumerate(circuits, start=1):
+        # The `pv` section describes the first inverter, as it did when a panel had one.
+        defaults: PVConfigYAML = pv_cfg if idx == 1 else {}
+        circuit_id = stable_circuit_uuid(panel_id, circuit["id"])
+        metadata = _pv_metadata(
+            profile,
+            circuit,
+            defaults,
+            feed=str(defaults["feed"]) if "feed" in defaults else circuit_id,
+            inverter_template=templates.get(circuit["template"]) or {},
+            relative_position=str(defaults.get("relative_position", "IN_PANEL")),
+        )
+        identifier = metadata.get("serial-number") or metadata.get("model")
+        instances.append(
+            DeviceInstance(
+                entity_class="pv",
+                instance_id=pv_inverter_device_id(panel_id, identifier, circuit_id),
+                display_name="Solar" if idx == 1 else f"Solar {idx}",
+                metadata=metadata,
+            )
+        )
+    return instances
 
 
 def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
@@ -506,8 +594,10 @@ def _evse_display_name(feed_circuits: list[CircuitDefinitionExtended], idx: int)
     return "EV Charger"
 
 
-def _device_nameplate_w(profile: SimulationConfig, device_type: str, default: float) -> float:
-    circuit = _first_circuit_for_device_type(profile, device_type)
+def _circuit_nameplate_w(
+    profile: SimulationConfig, circuit: CircuitDefinitionExtended | None, default: float
+) -> float:
+    """The nameplate rating of the device *circuit* feeds, from its template."""
     if circuit is None:
         return default
     template = (profile.get("circuit_templates") or {}).get(circuit.get("template", ""))

@@ -400,6 +400,9 @@ circuits:
     template: str # References a circuit_templates key
     tabs: [int] # Tab positions ([1] = 120V, [1, 3] = 240V)
     breaker_rating: int # Per-circuit override (optional)
+    vendor: str # PV circuit: its inverter's vendor (first inverter: else pv.vendor)
+    model: str # PV circuit: its inverter's model (first inverter: else pv.product_name)
+    serial_number: str # PV circuit: its inverter's serial (first: else pv.serial_number)
     overrides: # Override any template field
       typical_power: 500.0
 
@@ -422,6 +425,11 @@ panel_source:
   passphrase: str | null # Proximity code (null for door-bypass)
   last_synced: str # ISO 8601 timestamp
 ```
+
+A panel with two or more PV circuits publishes one PV device per inverter, named "Solar", "Solar 2" and so on in circuit order, as SPAN firmware does from
+release 202639. A PV circuit's `vendor`, `model` and `serial_number` name its inverter; the top-level `pv` section names the first inverter when its circuit
+does not. A panel whose `firmware_version` names an earlier release publishes a single PV device fed by the first PV circuit, as that firmware did, and a panel
+with one PV circuit keeps the single PV device and id it has always published.
 
 ### Shed Priority
 
@@ -528,7 +536,7 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)
 - Energy accumulators seeded from the panel's imported/exported energy values
 - Battery behavior with sensible schedule defaults
-- PV nameplate capacity and production profile
+- PV nameplate capacity and production profile, and each inverter's vendor, model and serial on the circuit that feeds it
 - EVSE night-charging time-of-day profile
 - Source panel credentials stored in `panel_source` for on-demand refresh
 
