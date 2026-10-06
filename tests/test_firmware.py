@@ -46,7 +46,8 @@ if TYPE_CHECKING:
 _SERIAL = default_config()["panel_config"]["serial_number"]
 _EVSE_LIMIT_PATH = "config/user-max-charge-current"
 _EVSE_LIMIT = f"/{_EVSE_LIMIT_PATH}"
-_SHIPPED = sorted(DEFAULT_CONFIG.parent.glob("*.yaml"))
+# The dashboard's rule for a shipped template; user clones beside them are local-only.
+_SHIPPED = sorted(DEFAULT_CONFIG.parent.glob("default_*.yaml"))
 
 
 def _naming(firmware: str | None) -> SimulationConfig:
@@ -148,6 +149,7 @@ async def test_a_clone_of_an_earlier_panel_keeps_its_conventions(tmp_path: Path)
 
 
 def _shipped(path: Path) -> SimulationConfig:
+    """The shipped config at *path*, as it reads from disk."""
     config: SimulationConfig = yaml.safe_load(path.read_text(encoding="utf-8"))
     return config
 

@@ -281,7 +281,8 @@ panel emulates: the battery's power sign, whether a SPAN Drive's user charge lim
 status endpoint's hardware version, and commissioned-system circuits.
 
 The included configs name `spanos3/r202633/02` and so publish release 202633's conventions, which integrations released before r202639 support read correctly.
-To emulate r202639, set a 202639 firmware string:
+Templates are read-only, and a clone of one copies that string, so to emulate r202639 clone a template and set a 202639 firmware string in the clone's YAML
+under `configs/`:
 
 ```yaml
 firmware_version: spanos3/r202639/03
