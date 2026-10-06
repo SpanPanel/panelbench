@@ -15,6 +15,7 @@ import yaml
 from panelbench.inverter import AC_COUPLED, normalise_inverter_type, template_inverter_type
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 from panelbench.config_types import BESSConfigYAML
@@ -118,8 +119,13 @@ class ConfigStore:
         data = yaml.safe_load(content)
         if not isinstance(data, dict):
             raise ValueError("YAML content must be a mapping")
-        validate_yaml_config(data)
-        self._state = data
+        self.load_from_mapping(data)
+
+    def load_from_mapping(self, data: Mapping[str, object]) -> None:
+        """Validate and replace state from an already-parsed config."""
+        state = dict(data)
+        validate_yaml_config(state)
+        self._state = state
         self._dirty = False
 
     def load_from_file(self, path: Path) -> None:

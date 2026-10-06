@@ -11,7 +11,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ebus_panel_sim import BESSConfig, ChargeMode, LoadSheddingConfig, PanelDefinition
+from ebus_panel_sim import (
+    BESSConfig,
+    ChargeMode,
+    DeviceManifest,
+    LoadSheddingConfig,
+    ManifestPhysicsView,
+    PanelDefinition,
+)
 
 from panelbench.emitter_adapter.instance_ids import bess_device_id
 from panelbench.emitter_adapter.spec_generator import build_manifest
@@ -55,6 +62,32 @@ def bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig | None:
     )
 
 
+def bess_dispatch_yaml(config: BESSConfig, manifest: DeviceManifest) -> BESSConfigYAML:
+    """A battery's dispatch settings as YAML: the inverse of ``bess_config`` for
+    every field a published tree does not carry.
+
+    The starting charge is read from *manifest* first: the emitter seeds the battery
+    from its ``initial-soe-kwh`` over ``config.initial_soc_pct``, so that is the
+    charge the panel actually starts at. Only a manifest stating none falls back to
+    the percentage, as kWh to the watt-hour.
+    """
+    soe = ManifestPhysicsView(manifest).bess(config.instance_id).initial_soe_kwh
+    if soe is None:
+        soe = round(config.nameplate_capacity_kwh * config.initial_soc_pct / 100.0, 3)
+    return {
+        "nameplate_capacity_kwh": config.nameplate_capacity_kwh,
+        "max_charge_w": config.max_charge_w,
+        "max_discharge_w": config.max_discharge_w,
+        "charge_efficiency": config.charge_efficiency,
+        "discharge_efficiency": config.discharge_efficiency,
+        "backup_reserve_pct": config.backup_reserve_pct,
+        "charge_mode": config.charge_mode,
+        "charge_hours": list(config.charge_hours),
+        "discharge_hours": list(config.discharge_hours),
+        "initial_soe_kwh": soe,
+    }
+
+
 def _initial_soc_pct(bess: BESSConfigYAML) -> float:
     """The battery's starting charge as the emitter's percentage.
 
@@ -74,3 +107,8 @@ def load_shedding_config(panel: PanelConfig) -> LoadSheddingConfig:
     return LoadSheddingConfig(
         soc_threshold_pct=float(panel.get("soc_shed_threshold", _DEFAULT_SOC_SHED_THRESHOLD_PCT)),
     )
+
+
+def load_shedding_yaml(config: LoadSheddingConfig) -> dict[str, float]:
+    """The ``panel_config`` keys for a shed policy: the inverse of ``load_shedding_config``."""
+    return {"soc_shed_threshold": config.soc_threshold_pct}

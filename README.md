@@ -129,6 +129,9 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 - **File operations** — import/export YAML, save & reload
 - **Config persistence** — the simulator remembers the last running config across restarts
 
+Import also accepts a panel definition file (`panel-sim-definition/1`, as `panel-sim-capture` writes one). PanelBench builds a config from the panel's makeup
+and gives every circuit a default behaviour, which you then tune as for a clone.
+
 ### Simulation Controls
 
 - **Time-of-day slider** — scrub through the day to see solar curves, time-of-day profiles, and battery schedules respond

@@ -11,6 +11,7 @@
 - **A panel with several solar inverters publishes each as its own device**, as SPAN firmware does from release 202639, and a clone keeps every inverter.
 - **From SPAN firmware release 202639, a panel's status endpoint reports its hardware version**, as SPAN's does: `1.2` or `2.0` from the config's
   `hardware_version`, and `UNKNOWN` for any other value.
+- **The dashboard's Import accepts a panel definition file**, such as one `panel-sim-capture` wrote from a live panel, and turns it into a PanelBench config.
 
 ### Changed
 

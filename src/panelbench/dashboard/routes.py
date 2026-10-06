@@ -13,6 +13,7 @@ import aiohttp
 import aiohttp_jinja2
 import yaml
 from aiohttp import web
+from ebus_panel_sim import EmitterError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,6 +40,7 @@ from panelbench.dashboard.presets import (
     is_random_days_preset,
     match_battery_preset,
 )
+from panelbench.definition_import import config_from_definition_text, is_definition_text
 from panelbench.ha_api.opower import (
     async_discover_opower,
     async_get_opower_cost,
@@ -1634,8 +1636,11 @@ async def handle_import(request: web.Request) -> web.Response:
     raw = upload.file.read()
     try:
         text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-        _store(request).load_from_yaml(text)
-    except (ValueError, TypeError) as exc:
+        if is_definition_text(text):
+            _store(request).load_from_mapping(config_from_definition_text(text))
+        else:
+            _store(request).load_from_yaml(text)
+    except (ValueError, TypeError, yaml.YAMLError, EmitterError) as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
