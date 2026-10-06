@@ -15,6 +15,8 @@ cell            reference (upstream's emitter)  subject (PanelBench)
                 and ticks                       definition, run as a clone
 ``panelbench``  upstream's capture reading      ``configs/default_MAIN_40.yaml``
                 PanelBench's published tree
+``captured``    upstream's reading of a real    PanelBench's import of that
+                panel's masked capture          definition, run as a clone
 ==============  ==============================  ==================================
 
 The **example** cell is the sharpest claim: upstream's own definition, read both
@@ -31,14 +33,30 @@ template, both EVSEs, PV, tandem breakers — and lets upstream's capture read t
 published tree back into a definition, which upstream's emitter then publishes.
 It is the only cell that exercises PanelBench's PV path from a PanelBench config.
 
+The **captured** cell measures the clone path against a real panel on SPAN
+release 202639. The pinned release ships a masked capture of a MAIN 32 on
+``spanos3/r202639/03``: a full, idle battery upstream of the panel with its MID,
+one inverter on a commissioned ``Commissioned PV System`` circuit, and no SPAN
+Drive. It is upstream's data, read by upstream's own ``definition_from_tree``,
+so the reference is upstream's emitter publishing that panel. Real firmware names
+the battery, the MID and the inverter after their own device ids, which is why
+``comparator.role_key`` aligns those by where they hang rather than by name.
+
+What this cell cannot see, because no instrument compares non-``info`` payloads:
+on the commissioned PV circuit the real panel publishes ``switch/relay-requester``
+``PCS`` and no ``breaker/rating``, where both producers publish ``CONFIGURATION``
+and ``20``. That is upstream's emitter departing from the firmware
+(electrification-bus/distribution-enclosure-simulator#66), and PanelBench agrees
+with the reference on both, so it is not a PanelBench defect.
+
 A cell may carry a baseline, which makes a known divergence exact while it is
 being closed, so **any** movement fails: a new gap appearing, or a known one
 closing. Both deserve a deliberate look. When a baseline reaches empty, delete it
 and assert parity directly.
 
-**The example and panelbench cells are at full structural parity**, so they need
-no baseline: each asserts an empty report directly, and any gap is a producer
-regression rather than something to record.
+**Every cell is at full structural parity**, so none needs a baseline: each
+asserts an empty report directly, and any gap is a producer regression rather
+than something to record.
 """
 
 from __future__ import annotations
@@ -61,6 +79,7 @@ from .comparator import (
     Capture,
     ParityReport,
     by_role,
+    captured_pair,
     compare,
     compare_settable,
     declared_properties,
@@ -103,11 +122,13 @@ class Cell:
 CELLS = (
     Cell("example", example_pair),
     Cell("panelbench", panelbench_pair),
+    Cell("captured", captured_pair),
 )
 
 VENDORED: dict[str, str] = {
     "forty_tab_minimal.yaml": "examples/forty_tab_minimal.yaml",
     "forty_tab_minimal.ticks.yaml": "examples/forty_tab_minimal.ticks.yaml",
+    "main32_r202639-tree-v1.json": "tests/fixtures/main32_r202639-tree-v1.json",
 }
 """Each vendored file under ``fixtures/upstream``, by its path in the pinned release."""
 

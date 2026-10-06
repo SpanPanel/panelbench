@@ -1,6 +1,6 @@
 """Do the two producers agree on *what each device says it is*?
 
-The structural comparator next door aligns devices by declared ``type::name``
+The structural comparator next door aligns devices by ``comparator.role_key``
 and diffs key sets. That leaves identity payloads entirely unmeasured: a device
 publishing the wrong serial, model, or firmware version is structurally perfect,
 because the property is present on both sides and only its value is wrong.
@@ -87,7 +87,7 @@ def test_a_differing_identity_value_is_reported() -> None:
     )
 
     assert report.as_baseline() == {
-        "energy.ebus.device.mid::Microgrid Interconnect Device": {
+        "energy.ebus.device.mid of energy.ebus.device.bess @UPSTREAM lugs": {
             "info/serial-number": ["SIM-BESS-001-mid", "SIM-BESS-001-WRONG"]
         }
     }
@@ -125,15 +125,27 @@ def test_a_value_only_one_producer_publishes_is_left_to_structural_parity() -> N
 
 
 def _capture_of(properties: dict[str, str]) -> dict[str, dict[str, str]]:
-    """One synthetic MID, keyed the way ``as_capture`` keys a real capture."""
+    """One synthetic MID publishing *properties*, keyed the way ``as_capture`` keys a
+    real capture, with the battery and lugs ``role_key`` places it by."""
     return {
+        "lugs-up": {
+            "$description": json.dumps(
+                {"type": "energy.ebus.device.lugs", "name": "Upstream lugs"}
+            ),
+            "info/direction": "UPSTREAM",
+            "connection/fed-by-device-id": "bess",
+        },
+        "bess": {
+            "$description": json.dumps({"type": "energy.ebus.device.bess", "name": "Battery"}),
+        },
         "bess-mid": {
             "$description": json.dumps(
                 {
                     "type": "energy.ebus.device.mid",
                     "name": "Microgrid Interconnect Device",
+                    "parent": "bess",
                 }
             ),
             **properties,
-        }
+        },
     }

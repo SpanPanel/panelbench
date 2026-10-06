@@ -1,7 +1,7 @@
 [
-  "energy.ebus.device.bess::Battery  info/firmware-version",
-  "energy.ebus.device.bess::Battery  info/part-number",
-  "energy.ebus.device.bess::Battery  info/serial-number",
+  "energy.ebus.device.bess @UPSTREAM lugs  info/firmware-version",
+  "energy.ebus.device.bess @UPSTREAM lugs  info/part-number",
+  "energy.ebus.device.bess @UPSTREAM lugs  info/serial-number",
   "energy.ebus.device.circuit::Garage Outlet @2  connection/feeds-device-id",
   "energy.ebus.device.circuit::Garage Outlet @2  connection/feeds-device-status",
   "energy.ebus.device.circuit::Garage Outlet @2  connection/feeds-device-type",
@@ -22,12 +22,12 @@
   "energy.ebus.device.lugs::Upstream lugs  connection/feeds-device-id",
   "energy.ebus.device.lugs::Upstream lugs  connection/feeds-device-status",
   "energy.ebus.device.lugs::Upstream lugs  connection/feeds-device-type",
-  "energy.ebus.device.mid::Microgrid Interconnect Device  info/firmware-version",
-  "energy.ebus.device.mid::Microgrid Interconnect Device  info/hardware-version",
-  "energy.ebus.device.mid::Microgrid Interconnect Device  info/model",
-  "energy.ebus.device.mid::Microgrid Interconnect Device  info/serial-number",
-  "energy.ebus.device.pv::Solar  info/firmware-version",
-  "energy.ebus.device.pv::Solar  info/serial-number",
-  "energy.ebus.device.pv::Solar 2  info/firmware-version",
-  "energy.ebus.device.pv::Solar 2  info/serial-number"
+  "energy.ebus.device.mid of energy.ebus.device.bess @UPSTREAM lugs  info/firmware-version",
+  "energy.ebus.device.mid of energy.ebus.device.bess @UPSTREAM lugs  info/hardware-version",
+  "energy.ebus.device.mid of energy.ebus.device.bess @UPSTREAM lugs  info/model",
+  "energy.ebus.device.mid of energy.ebus.device.bess @UPSTREAM lugs  info/serial-number",
+  "energy.ebus.device.pv @31,33  info/firmware-version",
+  "energy.ebus.device.pv @31,33  info/serial-number",
+  "energy.ebus.device.pv @36,38  info/firmware-version",
+  "energy.ebus.device.pv @36,38  info/serial-number"
 ]

@@ -1,6 +1,6 @@
 """Do our device IDs follow the pattern real SPAN firmware publishes?
 
-The comparator aligns devices by declared ``type::name`` and never by instance
+The comparator aligns devices by ``comparator.role_key`` and never by instance
 id — deliberately, because the two producers derive ids differently, so an
 id-keyed diff reports every device as a mismatch and nothing useful. The cost of
 that choice is that device ids are outside what it measures, and a producer

@@ -1,7 +1,7 @@
 {
   "panelbench": {},
   "reference": {
-    "energy.ebus.device.bess::Battery": "bess is not <proxier-id>-<identifier>",
+    "energy.ebus.device.bess @UPSTREAM lugs": "bess is not <proxier-id>-<identifier>",
     "energy.ebus.device.circuit::Commissioned PV System @31,33": "solar-inverter-garage is not <circuit-uuid>",
     "energy.ebus.device.circuit::Commissioned PV System @36,38": "solar-inverter is not <circuit-uuid>",
     "energy.ebus.device.circuit::Garage Outlet @2": "garage-outlet is not <circuit-uuid>",
