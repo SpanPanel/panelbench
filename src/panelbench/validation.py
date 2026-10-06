@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from panelbench.emitter_adapter.spec_generator import relay_locked
+from panelbench.emitter_adapter.spec_generator import pv_section_circuit, relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 
 if TYPE_CHECKING:
@@ -31,6 +31,7 @@ def validate_yaml_config(config_data: Any) -> None:
         panel_firmware_version(config_data), config_data["circuit_templates"]
     )
     validate_circuits(config_data["circuits"], config_data["circuit_templates"])
+    validate_pv_section(config_data)
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -170,6 +171,16 @@ def validate_single_circuit(index: int, circuit: Any, circuit_templates: dict[st
 
     if len(tabs) == 2:
         validate_double_pole_tabs(index, circuit.get("name", f"circuit {index}"), tabs)
+
+
+def validate_pv_section(config_data: Any) -> None:
+    """Validate which inverter the ``pv`` section describes.
+
+    Refused here, naming the circuits, rather than when the panel builds its
+    manifest; ``pv_section_circuit`` states the rule. *config_data*'s templates and
+    circuits have already passed validation.
+    """
+    pv_section_circuit(config_data)
 
 
 def validate_panel_source(panel_source: Any) -> None:

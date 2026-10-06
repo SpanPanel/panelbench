@@ -428,9 +428,9 @@ circuits:
     template: str # References a circuit_templates key
     tabs: [int] # Tab positions ([1] = 120V, [1, 3] = 240V)
     breaker_rating: int # Per-circuit override (optional)
-    vendor: str # PV circuit: its inverter's vendor (first inverter: else pv.vendor)
-    model: str # PV circuit: its inverter's model (first inverter: else pv.product_name)
-    serial_number: str # PV circuit: its inverter's serial (first: else pv.serial_number)
+    vendor: str # PV circuit: its inverter's vendor (the pv section's inverter: else pv.vendor)
+    model: str # PV circuit: its inverter's model (the pv section's inverter: else pv.product_name)
+    serial_number: str # PV circuit: its inverter's serial (the pv section's inverter: else pv.serial_number)
     # EVSE circuit: its drive's serial (else evse.serial_number or the panel serial, by position)
     firmware_version: str # PV circuit: its inverter's firmware (every inverter: else pv.firmware_version)
     # EVSE circuit: its drive's firmware (every drive: else evse.firmware_version)
@@ -438,6 +438,16 @@ circuits:
       typical_power: 500.0
 
 unmapped_tabs: [int] # Tab numbers with no circuit assigned
+
+pv: # One inverter's identity, and every inverter's default firmware
+  vendor: str # Default: Enphase
+  product_name: str # Published as info/model
+  serial_number: str
+  firmware_version: str # Every inverter's default, as a firmware version is not identity
+  feed:
+    str # The id of the PV circuit feeding the inverter this section describes (its published
+    # device id is also accepted). Optional with one PV circuit; without it, several PV circuits
+    # each name their own inverter, and a firmware_version before release 202639 is refused.
 
 simulation_params:
   update_interval: int # Seconds between snapshots (default: 5)
@@ -463,10 +473,12 @@ panel_source:
 ```
 
 A panel with two or more PV circuits publishes one PV device per inverter, named "Solar", "Solar 2" and so on in circuit order, as SPAN firmware does from
-release 202639. A PV circuit's `vendor`, `model` and `serial_number` name its inverter; the top-level `pv` section names the first inverter when its circuit
-does not. A PV circuit's `firmware_version` is its inverter's firmware, and `pv.firmware_version` is every inverter's default, because a firmware version is not
-identity. A panel whose `firmware_version` names an earlier release publishes a single PV device fed by the first PV circuit, as that firmware did, and a panel
-with one PV circuit keeps the single PV device and id it has always published.
+release 202639. A PV circuit's `vendor`, `model` and `serial_number` name its inverter. The top-level `pv` section names one inverter where its circuit does
+not: the one whose circuit `pv.feed` names, else the only PV circuit's. It never follows list order, because a real panel publishes the inverter its feeding
+circuit names, wherever that circuit sits; with several PV circuits and no `pv.feed` it names none of them. A PV circuit's `firmware_version` is its inverter's
+firmware, and `pv.firmware_version` is every inverter's default, because a firmware version is not identity. A panel whose `firmware_version` names an earlier
+release publishes a single PV device fed by the circuit `pv.feed` names, as that firmware did, so such a config with several PV circuits and no `pv.feed` is
+refused. A panel with one PV circuit keeps the single PV device and id it has always published.
 
 An EVSE circuit's `serial_number` and `firmware_version` are its SPAN Drive's, in the same way: the serial wins over one derived by position from
 `evse.serial_number` or the panel serial, and `evse.firmware_version` is every drive's default firmware.
