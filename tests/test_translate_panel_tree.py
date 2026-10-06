@@ -2,22 +2,28 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from panelbench.clone import TYPE_CIRCUIT, translate_panel_tree
 from panelbench.emitter_adapter.wire_capture import capture_retained, discovered_devices
 from panelbench.validation import validate_yaml_config
+from tests._helpers import DEFAULT_CONFIG, default_config, write_config
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.asyncio
 
-_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "default_MAIN_40.yaml"
 _SERIAL = "sim-40t-001"
+# Not the shipped config's "Span Panel", so a translator that wrote that default
+# instead of reading the published name would fail here.
+_PANEL_NAME = "Garage Panel"
 
 
 async def test_every_described_device_is_discovered() -> None:
-    retained = await capture_retained(_CONFIG)
+    retained = await capture_retained(DEFAULT_CONFIG)
     devices = discovered_devices(retained)
 
     described = {t.split("/")[2] for t in retained if t.endswith("/$description")}
@@ -26,7 +32,7 @@ async def test_every_described_device_is_discovered() -> None:
 
 
 async def test_panelbench_reads_its_own_wire_back_into_a_valid_config() -> None:
-    devices = discovered_devices(await capture_retained(_CONFIG))
+    devices = discovered_devices(await capture_retained(DEFAULT_CONFIG))
 
     config = translate_panel_tree(_SERIAL, devices)
 
@@ -37,17 +43,21 @@ async def test_panelbench_reads_its_own_wire_back_into_a_valid_config() -> None:
     assert len(circuits) == len(published)
 
 
-async def test_a_translated_panel_keeps_its_published_name() -> None:
-    devices = discovered_devices(await capture_retained(_CONFIG))
+async def test_a_translated_panel_keeps_its_published_name(tmp_path: Path) -> None:
+    config = default_config()
+    config["panel_config"]["display_name"] = _PANEL_NAME
+    source = write_config(tmp_path / "panel.yaml", config)
+    devices = discovered_devices(await capture_retained(source))
+    assert (devices[_SERIAL].description or {})["name"] == _PANEL_NAME
 
     panel_config = translate_panel_tree(_SERIAL, devices)["panel_config"]
 
     assert isinstance(panel_config, dict)
-    assert panel_config["display_name"] == (devices[_SERIAL].description or {})["name"]
+    assert panel_config["display_name"] == _PANEL_NAME
 
 
 async def test_the_grid_can_be_down_for_a_capture() -> None:
-    retained = await capture_retained(_CONFIG, grid_online=False)
+    retained = await capture_retained(DEFAULT_CONFIG, grid_online=False)
     mids = [t for t in retained if t.endswith("/grid/grid-state")]
     assert mids, "the default config publishes a MID"
     assert {retained[t].decode() for t in mids} == {"DOWN"}
