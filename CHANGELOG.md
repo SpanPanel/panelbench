@@ -32,6 +32,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
   `firmware_version` to the source panel's firmware, or clone the panel again, to keep its earlier release's conventions.
 - **A config with two or more solar circuits now publishes each inverter as its own solar device, under new device ids**, unless its `firmware_version` names a
   SPAN release before 202639, as SPAN firmware does from that release, and a clone keeps every inverter.
+- **The top-level `pv` section now describes the inverter whose circuit `pv.feed` names by its `id`, or the only solar circuit's, where it followed whichever
+  solar circuit was listed first**, so a config with several solar circuits and no `pv.feed` is refused if its `firmware_version` names a release before 202639.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
   `UNKNOWN` from release 202639.
 - **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a panel
@@ -50,6 +52,7 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **A cloned panel keeps the source panel's hardware version.**
 - **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
 - **An imported config counts as unsaved until it is saved**, so switching panels asks before discarding it.
+- **The dashboard now fetches a read-only template's weather**, where a script error on its missing location search stopped it.
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 
