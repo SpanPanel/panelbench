@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- **The dashboard can set the health of the panel's link to its battery**, which is what a SPAN panel requires before it honours Home Assistant's dominant
+  power source control.
+
 ### Changed
 
 - **Home Assistant's dominant power source control is now ignored while the panel's link to its battery is healthy**, as a SPAN panel ignores it.

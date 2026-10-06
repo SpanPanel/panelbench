@@ -41,6 +41,8 @@ from panelbench.recorder import RecorderDataSource
 from panelbench.schema import HomieSchemaRegistry, load_schema, render_for_panel
 
 if TYPE_CHECKING:
+    from ebus_panel_sim import BESSCommunication
+
     from panelbench.certs import CertificateBundle
     from panelbench.config_types import BESSConfigYAML
     from panelbench.engine import DynamicSimulationEngine
@@ -248,6 +250,11 @@ class SimulatorApp:
         engine = self._get_first_engine()
         if engine is not None:
             engine.set_grid_islandable(islandable)
+
+    def _set_bess_link(self, link: BESSCommunication) -> None:
+        engine = self._get_first_engine()
+        if engine is not None:
+            engine.set_bess_link(link)
 
     def _set_circuit_priority(self, circuit_id: str, priority: str) -> None:
         engine = self._get_first_engine()
@@ -834,6 +841,7 @@ class SimulatorApp:
             set_time_acceleration=self._set_time_acceleration,
             set_grid_online=self._set_grid_online,
             set_grid_islandable=self._set_grid_islandable,
+            set_bess_link=self._set_bess_link,
             set_circuit_priority=self._set_circuit_priority,
             set_circuit_relay=self._set_circuit_relay,
             apply_bess_config_live=self.apply_bess_config_live,

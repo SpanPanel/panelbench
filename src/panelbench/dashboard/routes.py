@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.const import https_port_for
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
@@ -627,6 +628,7 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_post("/set-acceleration", handle_set_acceleration)
     app.router.add_post("/set-grid-state", handle_set_grid_state)
     app.router.add_post("/set-grid-islandable", handle_set_grid_islandable)
+    app.router.add_post("/set-bess-link", handle_set_bess_link)
     app.router.add_post("/entities/{id}/relay", handle_set_relay)
     app.router.add_post("/entities/{id}/toggle-replay", handle_toggle_replay)
     app.router.add_post("/entities/{id}/restore-recorder", handle_restore_recorder)
@@ -1277,6 +1279,16 @@ async def handle_set_grid_islandable(request: web.Request) -> web.Response:
     ctx = _ctx(request)
     ctx.set_grid_islandable(islandable)
     return web.json_response({"ok": True, "islandable": islandable})
+
+
+async def handle_set_bess_link(request: web.Request) -> web.Response:
+    """Set the health of the panel's link to its battery."""
+    data = await request.json()
+    link = str(data.get("link", "OK")).upper()
+    if not is_bess_link(link):
+        raise web.HTTPBadRequest(text=f"link must be one of {sorted(BESS_LINKS)}, got {link!r}")
+    _ctx(request).set_bess_link(link)
+    return web.json_response({"ok": True, "link": link})
 
 
 async def handle_set_relay(request: web.Request) -> web.Response:

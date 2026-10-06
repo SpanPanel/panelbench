@@ -21,6 +21,7 @@ import aiomqtt
 
 # Not re-exported from the package root, unlike every other name above.
 from ebus_panel_sim import (
+    BESSCommunication,
     BESSConfig,
     DeviceManifest,
     EbusPanelSnapshot,
@@ -308,13 +309,28 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
     and hand it to the emitter for publication."""
     raw = await runtime.engine.get_tick_inputs()
     tick = TickInputs(
-        current_time=raw["current_time"],
-        grid_online=raw["grid_online"],
-        circuits=raw["circuits"],
-        evse=_evse_tick_inputs(runtime.engine.config, raw["circuits"]),
+        current_time=raw.current_time,
+        grid_online=raw.grid_online,
+        circuits=raw.circuits,
+        evse=_evse_tick_inputs(runtime.engine.config, raw.circuits),
         envelope=_panel_envelope(runtime.engine.config),
+        bess_communication=_bess_communication(runtime.engine, raw.bess_link),
     )
     return runtime.emitter.publish_tick(tick)
+
+
+def _bess_communication(
+    engine: DynamicSimulationEngine, link: BESSCommunication
+) -> dict[str, BESSCommunication]:
+    """The link keyed by the battery the engine's config enables now.
+
+    Empty without one, because the emitter refuses a tick that names a battery it
+    was not configured with, and a battery left out of the tick reads as ``OK``.
+    Keyed from the live config rather than the emitter, so a battery disabled
+    mid-run stops receiving the link on the next tick.
+    """
+    battery = bess_config_from_engine(engine)
+    return {} if battery is None else {battery.instance_id: link}
 
 
 async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:

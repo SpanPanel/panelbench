@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
 
+    from ebus_panel_sim import BESSCommunication
+
     from panelbench.config_types import BESSConfigYAML
     from panelbench.history import HistoryProvider
 
@@ -38,6 +40,7 @@ class DashboardContext:
     set_time_acceleration: Callable[[float], None] = lambda _: None
     set_grid_online: Callable[[bool], None] = lambda _: None
     set_grid_islandable: Callable[[bool], None] = lambda _: None
+    set_bess_link: Callable[[BESSCommunication], None] = lambda _: None
     set_circuit_priority: Callable[[str, str], None] = lambda _id, _pri: None
     set_circuit_relay: Callable[[str, str], None] = lambda _id, _state: None
     apply_bess_config_live: Callable[[str, BESSConfigYAML], bool] = lambda _f, _c: False

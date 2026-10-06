@@ -38,6 +38,15 @@
   <div class="grid-controls" id="grid-controls">
     <button type="button" class="btn btn-sm grid-btn grid-online" id="btn-grid-toggle">Grid Online</button>
     <button type="button" class="btn btn-sm grid-btn islandable-on" id="btn-islandable" style="display:none">Islandable</button>
+    <label class="bess-link-control" id="bess-link-control" style="display:none">
+      Battery link
+      <select id="bess-link-select" class="form-select form-select-sm">
+        <option value="OK">OK</option>
+        <option value="DEGRADED">Degraded</option>
+        <option value="LOST">Lost</option>
+        <option value="UNKNOWN">Unknown</option>
+      </select>
+    </label>
     <span id="grid-status" class="grid-status-text"></span>
   </div>
 
@@ -312,6 +321,17 @@
     }
   });
 
+  var bessLinkControl = document.getElementById('bess-link-control');
+  var bessLinkSelect = document.getElementById('bess-link-select');
+
+  bessLinkSelect.addEventListener('change', function() {
+    busyFetch(bessLinkSelect, 'set-bess-link', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({link: bessLinkSelect.value})
+    });
+  });
+
   // -- Relay toggle (click status dot) --
   document.addEventListener('click', function(e) {
     var dot = e.target.closest('.circuit-status-toggle');
@@ -550,8 +570,13 @@
             islandableBtn.classList.add('islandable-off');
             islandableBtn.textContent = 'Not Islandable';
           }
+          bessLinkControl.style.display = '';
+          if (data.bess_link && document.activeElement !== bessLinkSelect) {
+            bessLinkSelect.value = data.bess_link;
+          }
         } else {
           islandableBtn.style.display = 'none';
+          bessLinkControl.style.display = 'none';
         }
 
         // Grid status text (SOC + shedding)

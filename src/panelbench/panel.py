@@ -120,11 +120,12 @@ class PanelInstance:
     def get_power_summary(self) -> dict[str, Any] | None:
         """Power summary in the legacy shape dashboard / HA-API consumers expect.
 
-        Live values (grid, pv, battery, consumption, SOC) are sourced from the
-        emitter's last snapshot — the authoritative post-redesign location for
-        panel state. The engine still owns the static envelope (grid_online
-        flag, configured battery presence, shed/override sets, recorder bounds,
-        clock acceleration, timezone, soc threshold)."""
+        Live values (grid, pv, battery, consumption, SOC, battery link) are
+        sourced from the emitter's last snapshot — the authoritative
+        post-redesign location for panel state. The engine still owns the
+        static envelope (grid_online flag, configured battery presence,
+        shed/override sets, recorder bounds, clock acceleration, timezone, soc
+        threshold)."""
         if self._engine is None:
             return None
         summary = self._engine.get_power_summary()
@@ -149,6 +150,9 @@ class PanelInstance:
                 summary["soc_pct"] = (
                     round(batt.soe_percentage, 1) if batt.soe_percentage is not None else None
                 )
+                # What the wire published, which is what a consumer sees; the
+                # engine's own value is only what was asked for.
+                summary["bess_link"] = batt.communication or "OK"
             else:
                 summary["battery_w"] = 0.0
                 summary["soc_pct"] = None

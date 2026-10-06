@@ -17,6 +17,7 @@ import asyncio
 import copy
 import random
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,7 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from panelbench.behavior_mutable_state import BehaviorEngineMutableState
+from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
 from panelbench.config_defaults import normalize_circuit_templates
@@ -32,7 +34,7 @@ from panelbench.exceptions import SimulationConfigurationError
 from panelbench.inverter import template_inverter_type
 
 if TYPE_CHECKING:
-    from ebus_panel_sim import BESSDevice
+    from ebus_panel_sim import BESSCommunication, BESSDevice
 
     from panelbench.config_types import (
         CircuitTemplateExtended,
@@ -52,6 +54,18 @@ DSM_OFF_GRID = "DSM_OFF_GRID"
 MAIN_RELAY_CLOSED = "CLOSED"
 PANEL_ON_GRID = "PANEL_ON_GRID"
 PANEL_OFF_GRID = "PANEL_OFF_GRID"
+
+
+@dataclass(frozen=True, slots=True)
+class EngineTick:
+    """One tick of the engine's driving signal, which ``publish_tick`` maps onto ``TickInputs``."""
+
+    current_time: float
+    grid_online: bool
+    circuits: dict[str, float]
+    """Signed instant power per circuit, keyed by emitter instance id."""
+    bess_link: BESSCommunication
+    """The requested health of the panel's link to its battery."""
 
 
 # ---------------------------------------------------------------------------
@@ -613,6 +627,9 @@ class DynamicSimulationEngine:
         # Grid control state
         self._forced_grid_offline: bool = False
 
+        # Battery link control state: what the panel reports about its link to the battery.
+        self._bess_link: BESSCommunication = "OK"
+
         # Tab synchronization tracking
         self._tab_sync_groups: dict[int, str] = {}  # tab_number -> sync_group_id
         self._sync_group_power: dict[str, float] = {}  # sync_group_id -> total_power
@@ -751,6 +768,21 @@ class DynamicSimulationEngine:
             self._behavior_engine.set_grid_offline(not online)
 
     @property
+    def bess_link(self) -> BESSCommunication:
+        """The requested health of the panel's link to its battery."""
+        return self._bess_link
+
+    def set_bess_link(self, link: str) -> None:
+        """Set the health of the panel's link to its battery, from the next tick.
+
+        Reaches the wire only while a battery is configured, since without one
+        there is no link to report.
+        """
+        if not is_bess_link(link):
+            raise ValueError(f"battery link must be one of {sorted(BESS_LINKS)}, got {link!r}")
+        self._bess_link = link
+
+    @property
     def is_grid_islandable(self) -> bool:
         """Whether PV can operate when grid is disconnected."""
         if self._energy_system is not None:
@@ -848,7 +880,7 @@ class DynamicSimulationEngine:
 
         Returns a dict suitable for dashboard rendering with keys:
         ``grid_w``, ``pv_w``, ``battery_w``, ``consumption_w``,
-        ``simulation_time``, ``grid_online``, ``has_battery``,
+        ``simulation_time``, ``grid_online``, ``has_battery``, ``bess_link``,
         ``is_islandable``, ``soc_pct``, ``soc_threshold``, ``shed_ids``,
         ``user_open_ids``, ``all_off``, ``time_zone``.
         """
@@ -889,6 +921,7 @@ class DynamicSimulationEngine:
             "simulation_time": sim_time,
             "grid_online": self.grid_online,
             "has_battery": self.has_battery,
+            "bess_link": self._bess_link,
             "is_islandable": self.is_grid_islandable,
             "soc_pct": None,
             "soc_threshold": soc_threshold,
@@ -904,14 +937,15 @@ class DynamicSimulationEngine:
     # Snapshot generation
     # ------------------------------------------------------------------
 
-    async def get_tick_inputs(self) -> dict[str, Any]:
+    async def get_tick_inputs(self) -> EngineTick:
         """v0.3.0 contract: return per-tick driving signal for ``Emitter.publish_tick``.
 
-        Returns a dict containing:
+        Returns an ``EngineTick`` containing:
             current_time: float (epoch seconds)
             grid_online: bool
             circuits: dict[str, float]  — keyed by emitter instance_id (UUID),
                                           value is signed instant_power_w
+            bess_link: the requested battery link health
 
         The simulator no longer constructs panel-level fields, energy
         accumulators, or device snapshots — the emitter does that work."""
@@ -938,11 +972,12 @@ class DynamicSimulationEngine:
             signed = -mag if circuit.energy_mode == "producer" else mag
             circuit_powers[stable_circuit_uuid(panel_id, cid)] = signed
 
-        return {
-            "current_time": current_time,
-            "grid_online": self.grid_online,
-            "circuits": circuit_powers,
-        }
+        return EngineTick(
+            current_time=current_time,
+            grid_online=self.grid_online,
+            circuits=circuit_powers,
+            bess_link=self._bess_link,
+        )
 
     # ------------------------------------------------------------------
     # Modeling computation

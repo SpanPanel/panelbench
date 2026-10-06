@@ -135,6 +135,7 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 - **Speed acceleration** — 1x to 360x time acceleration
 - **Grid online/offline** — toggle to test backup behavior and load shedding
 - **Islandable toggle** — controls whether PV operates during grid outage
+- **Battery link** — sets the health of the panel's link to its battery; Home Assistant's dominant power source control is honoured only while it is not OK
 - **Live power chart** — real-time grid, solar, and battery power flows
 
 ### Recorder Replay
