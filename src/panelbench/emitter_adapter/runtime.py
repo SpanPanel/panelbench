@@ -1,9 +1,10 @@
 """Per-clone wiring between simulator engine and emitter wire layer.
 
-``start_clone`` builds the manifest from the engine's config, instantiates an
-``Emitter`` (with optional BESS + load-shedding native-device configs), opens the
-per-clone MQTT client, runs the cold-start lifecycle, and returns a ``CloneRuntime``
-the simulator's panel instance holds across ticks.
+``start_clone`` builds the panel's ``PanelDefinition`` from the engine's config
+(manifest, optional native BESS, load-shedding policy), instantiates an
+``Emitter`` from it, opens the per-clone MQTT client, runs the cold-start
+lifecycle, and returns a ``CloneRuntime`` the simulator's panel instance holds
+across ticks.
 
 ``publish_tick`` collects the engine's per-circuit signed power into a
 ``TickInputs`` and hands it to ``Emitter.publish_tick``. The emitter does the
@@ -21,11 +22,9 @@ import aiomqtt
 # Not re-exported from the package root, unlike every other name above.
 from ebus_panel_sim import (
     BESSConfig,
-    ChargeMode,
     DeviceManifest,
     EbusPanelSnapshot,
     Emitter,
-    LoadSheddingConfig,
     MqttDeviceTransport,
     PanelEnvelopeTick,
     SetterRegistry,
@@ -33,12 +32,11 @@ from ebus_panel_sim import (
 )
 
 from panelbench.const import DEFAULT_WIFI_SSID
+from panelbench.emitter_adapter.definition import bess_config, build_definition
 from panelbench.emitter_adapter.instance_ids import (
-    bess_device_id,
     evse_device_id,
     stable_circuit_uuid,
 )
-from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.transport import LoopBoundTransport
 
 if TYPE_CHECKING:
@@ -169,28 +167,7 @@ class _AiomqttPublisher:
 def bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | None:
     """Build the emitter-side BESSConfig from the engine's loaded clone profile.
     Returns None when the profile has no BESS enabled."""
-    bess = engine.config.get("bess") or {}
-    return _build_bess_config(engine.serial_number, bess)
-
-
-def _build_bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig | None:
-    """Build a BESSConfig dataclass from a typed YAML section."""
-    if not bess.get("enabled"):
-        return None
-    raw_mode = bess.get("charge_mode", "self-consumption")
-    mode: ChargeMode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
-    return BESSConfig(
-        instance_id=bess_device_id(serial_number, bess),
-        nameplate_capacity_kwh=float(bess.get("nameplate_capacity_kwh", 13.5)),
-        max_charge_w=float(bess.get("max_charge_w", 3500.0)),
-        max_discharge_w=float(bess.get("max_discharge_w", 3500.0)),
-        charge_efficiency=float(bess.get("charge_efficiency", 0.95)),
-        discharge_efficiency=float(bess.get("discharge_efficiency", 0.95)),
-        backup_reserve_pct=float(bess.get("backup_reserve_pct", 20.0)),
-        charge_mode=mode,
-        charge_hours=tuple(bess.get("charge_hours", [10, 11, 12, 13, 14, 15])),
-        discharge_hours=tuple(bess.get("discharge_hours", [17, 18, 19, 20, 21])),
-    )
+    return bess_config(engine.serial_number, engine.config.get("bess") or {})
 
 
 def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) -> None:
@@ -205,15 +182,6 @@ def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) ->
     if new_cfg is None:
         return
     runtime.emitter.update_bess_config(new_cfg)
-
-
-def _load_shedding_config_from_engine(
-    engine: DynamicSimulationEngine,
-) -> LoadSheddingConfig:
-    panel_cfg = engine.config["panel_config"]
-    return LoadSheddingConfig(
-        soc_threshold_pct=float(panel_cfg.get("soc_shed_threshold", 20.0)),
-    )
 
 
 def _resolve_broker(
@@ -253,8 +221,8 @@ async def start_clone(
     broker: BrokerConnection | None = None,
     transport: MqttDeviceTransport | None = None,
 ) -> CloneRuntime:
-    """Assemble the emitter for ``engine``: build manifest, open MQTT, run
-    lifecycle. Returns a runtime the panel holds across ticks.
+    """Assemble the emitter for ``engine``: build its definition, open MQTT,
+    run lifecycle. Returns a runtime the panel holds across ticks.
 
     Broker connection precedence (highest first):
         1. ``broker:`` section in the YAML config (config explicitness wins).
@@ -270,7 +238,8 @@ async def start_clone(
     does. Its lifecycle stays with whoever supplied it — the same rule the SDK
     applies to an injected client, and the reason ``MqttDeviceTransport`` has no
     ``start`` or ``stop``."""
-    manifest = build_manifest(engine.config)
+    definition = build_definition(engine.config)
+    manifest = definition.manifest
 
     panel_id = engine.config["panel_config"]["serial_number"]
     uuid_to_circuit_id = {
@@ -315,19 +284,7 @@ async def start_clone(
         loop_bound.start()
         transport = loop_bound
 
-    # The emitter Phase 2 reshape pluralised the BESS-config parameter:
-    # ``bess_configs`` is a tuple keyed internally by ``instance_id``. The
-    # simulator models a single BESS per panel today, so we wrap the
-    # optional config in a one-element tuple (or empty tuple when absent).
-    bess_cfg = bess_config_from_engine(engine)
-    bess_configs: tuple[BESSConfig, ...] = (bess_cfg,) if bess_cfg is not None else ()
-    emitter = Emitter(
-        manifest,
-        setters,
-        mqttc=transport,
-        bess_configs=bess_configs,
-        load_shedding_config=_load_shedding_config_from_engine(engine),
-    )
+    emitter = Emitter.from_definition(definition, setters, mqttc=transport)
 
     runtime = CloneRuntime(
         engine=engine,

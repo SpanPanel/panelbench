@@ -5,10 +5,10 @@ integration tests against the in-process amqtt broker fixture."""
 from unittest.mock import MagicMock
 
 from panelbench.const import DEFAULT_WIFI_SSID
+from panelbench.emitter_adapter.definition import load_shedding_config
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.runtime import (
     _evse_tick_inputs,
-    _load_shedding_config_from_engine,
     _panel_envelope,
     bess_config_from_engine,
 )
@@ -75,14 +75,14 @@ def testbess_config_from_engine_uses_explicit_instance_id() -> None:
 def test_load_shedding_config_default_threshold() -> None:
     engine = MagicMock()
     engine.config = {"panel_config": {"serial_number": "x"}}
-    cfg = _load_shedding_config_from_engine(engine)
+    cfg = load_shedding_config(engine.config["panel_config"])
     assert cfg.soc_threshold_pct == 20.0
 
 
 def test_load_shedding_config_custom_threshold() -> None:
     engine = MagicMock()
     engine.config = {"panel_config": {"serial_number": "x", "soc_shed_threshold": 35.0}}
-    cfg = _load_shedding_config_from_engine(engine)
+    cfg = load_shedding_config(engine.config["panel_config"])
     assert cfg.soc_threshold_pct == 35.0
 
 
