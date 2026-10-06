@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Final
 
 import yaml
 from ebus_sdk import DiscoveredDevice
@@ -33,6 +34,15 @@ TYPE_CIRCUIT = "energy.ebus.device.circuit"
 TYPE_BESS = "energy.ebus.device.bess"
 TYPE_PV = "energy.ebus.device.pv"
 TYPE_EVSE = "energy.ebus.device.evse"
+
+COMMISSIONED_SYSTEM_NAMES: Final[Mapping[str, str]] = MappingProxyType(
+    {"Commissioned PV System": "pv", "Commissioned Backup System": "backup"}
+)
+"""The circuits a SPAN panel adds for a commissioned system, by the name it gives them.
+
+The same rule upstream's ``panel-sim-capture`` applies: the name, a locked relay,
+and a NEVER priority without ``$settable``. The name alone is not enough.
+"""
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -656,7 +666,19 @@ def _translate_circuit(
     # Deliberately not derived from `priority == "NEVER"`. `NEVER` is an ordinary settable
     # value meaning "never shed"; a production capture publishes two `NEVER` circuits with
     # `$settable = true`, which no value-derived flag can produce.
-    never_backup = not _is_settable(devices, node_uuid, "load-shed", "priority")
+    priority_locked = not _is_settable(devices, node_uuid, "load-shed", "priority")
+    # A circuit SPAN adds for a commissioned PV or battery system is the third lock:
+    # priority locked at NEVER on a locked relay. Recognised by the rule upstream's
+    # `panel-sim-capture` applies, so the name alone commissions nothing.
+    commissioned_system = COMMISSIONED_SYSTEM_NAMES.get(name)
+    if not (
+        commissioned_system is not None
+        and priority_locked
+        and not relay_controllable
+        and priority == "NEVER"
+    ):
+        commissioned_system = None
+    never_backup = priority_locked and commissioned_system is None
     if never_backup and priority != "OFF_GRID":
         # The panel contradicted itself: a circuit commissioned never-backup *is*
         # permanently OFF_GRID, and the emitter rejects the pair at construction rather
@@ -734,6 +756,12 @@ def _translate_circuit(
     # would add a line to every cloned template to say nothing.
     if never_backup:
         template["never_backup"] = True
+
+    # A commissioned-system circuit, as capture's rule recognises it. Written with
+    # the locks it implies already present above (relay non_controllable, priority
+    # NEVER), so the cloned template validates.
+    if commissioned_system is not None:
+        template["commissioned_system"] = commissioned_system
 
     if device_role == "evse":
         template["device_type"] = "evse"

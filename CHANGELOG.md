@@ -4,8 +4,10 @@
 
 ### Added
 
-- **The dashboard can set the health of the panel's link to its battery**, which is what a SPAN panel requires before it honours Home Assistant's dominant
-  power source control.
+- **The dashboard can set the health of the panel's link to its battery**, which is what a SPAN panel requires before it honours Home Assistant's dominant power
+  source control.
+- **Commissioned PV and battery system circuits**, locked as SPAN firmware release 202639 locks them, are modelled and kept by a clone, and a config naming an
+  earlier release is refused if it asks for one.
 
 ### Changed
 

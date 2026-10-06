@@ -50,6 +50,16 @@ circuit_templates:
       power_range:
         min: 50
         max: 150
+  backup_system:
+    relay_behavior: non_controllable
+    priority: NEVER
+    commissioned_system: backup
+    breaker_rating: 20
+    energy_profile:
+      mode: consumer
+      power_range:
+        min: 50
+        max: 150
 circuits:
 - id: pool_pump
   name: Pool Pump
@@ -59,6 +69,10 @@ circuits:
   name: Dishwasher
   template: dishwasher
   tabs: [3]
+- id: backup_system
+  name: Commissioned Backup System
+  template: backup_system
+  tabs: [5]
 """
 
 
@@ -88,6 +102,17 @@ async def test_a_never_backup_circuit_refuses_a_priority_change(client_and_calls
 
         assert resp.status == 409
         assert "never-backup" in await resp.text()
+    assert calls == []
+
+
+async def test_a_commissioned_system_circuit_refuses_a_priority_change(client_and_calls) -> None:
+    app, calls = client_and_calls
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.put("/entities/backup_system", data={"priority": "OFF_GRID"})
+
+        assert resp.status == 409
+        assert "commissioned backup system" in await resp.text()
     assert calls == []
 
 
@@ -122,7 +147,10 @@ async def test_the_edit_form_disables_the_locked_select(client_and_calls) -> Non
 
     async with TestClient(TestServer(app)) as client:
         locked = await (await client.get("/entities/pool_pump/edit")).text()
+        commissioned = await (await client.get("/entities/backup_system/edit")).text()
         open_ = await (await client.get("/entities/dishwasher/edit")).text()
 
     assert '<select name="priority" disabled>' in locked
+    assert '<select name="priority" disabled>' in commissioned
+    assert "Commissioned backup system" in commissioned
     assert '<select name="priority" disabled>' not in open_

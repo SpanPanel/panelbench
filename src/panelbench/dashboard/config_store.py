@@ -55,6 +55,7 @@ class EntityView:
     user_modified: bool = False
 
     never_backup: bool = False
+    commissioned_system: str | None = None
 
     @property
     def relay_locked(self) -> bool:
@@ -65,6 +66,11 @@ class EntityView:
         publishes cannot disagree.
         """
         return relay_locked(self.relay_behavior)
+
+    @property
+    def priority_locked(self) -> bool:
+        """Whether this circuit's priority is a commissioning lock no consumer may change."""
+        return self.never_backup or self.commissioned_system is not None
 
 
 def _detect_entity_type(template: dict[str, Any]) -> str:
@@ -362,6 +368,7 @@ class ConfigStore:
             recorder_entity=template.get("recorder_entity"),
             user_modified=bool(template.get("user_modified")),
             never_backup=bool(template.get("never_backup")),
+            commissioned_system=template.get("commissioned_system"),
         )
 
     def list_entities(self) -> list[EntityView]:

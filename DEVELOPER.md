@@ -344,6 +344,11 @@ circuit_templates: # Reusable template definitions
       # priority: OFF_GRID; the emitter rejects any other pairing.
       # Independent of relay_behavior, and NOT priority == "NEVER",
       # which is an ordinary settable value meaning "never shed".
+    commissioned_system:
+      str # "pv" | "backup": the circuit a SPAN panel adds for a commissioned
+      # system. Locked relay and priority permanently NEVER, neither settable, so it
+      # requires priority: NEVER and relay_behavior: non_controllable, and a
+      # firmware_version naming release 202639 or later, or none. A clone sets it.
     device_type: str # "circuit" | "evse" | "pv" (default: "circuit")
     breaker_rating: int # Amps (derived from power_range if not set)
 
@@ -519,6 +524,7 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 - Panel identity (`sim-{serial}-clone`), main breaker rating, panel size
 - The panel's firmware version, so the clone publishes as that SPAN release does
 - All circuits: name, tab position, breaker rating, relay behavior, priority
+- Commissioned PV and battery system circuits, recognised by name and both locks, as `commissioned_system`
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)
 - Energy accumulators seeded from the panel's imported/exported energy values
 - Battery behavior with sensible schedule defaults

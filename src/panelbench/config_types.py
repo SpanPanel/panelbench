@@ -211,6 +211,11 @@ class CircuitTemplateExtended(CircuitTemplate, total=False):
     # ordinary settable value meaning "never shed", not this. The emitter rejects the
     # pair when `priority` is anything but `OFF_GRID`.
     never_backup: bool
+    # The circuit a SPAN panel adds for a commissioned PV or battery system:
+    # its relay is locked and `load-shed/priority` is permanently NEVER, neither
+    # settable. A different lock from `never_backup`, which is permanently OFF_GRID on
+    # an otherwise controllable relay; validation refuses a template claiming both.
+    commissioned_system: Literal["pv", "backup"]
 
 
 class CircuitDefinition(TypedDict):

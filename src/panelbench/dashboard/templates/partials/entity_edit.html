@@ -22,17 +22,19 @@
       </label>
       {% endif %}
       {% if e.entity_type not in ('pv', 'battery') %}
-      {#- A never-backup circuit publishes load-shed/priority without $settable, so no
+      {#- A priority-locked circuit publishes load-shed/priority without $settable, so no
           consumer is offered the write and PUT /entities/<id> refuses a change to it.
           `disabled` submits no value, which is what keeps the form's other fields
           saveable instead of 409-ing the whole edit. -#}
       <label>Priority:
-        <select name="priority" {{ 'disabled' if e.never_backup }}>
+        <select name="priority" {{ 'disabled' if e.priority_locked }}>
           {% for p in priorities %}
           <option value="{{ p }}" {{ 'selected' if p == e.priority }}>{{ p }}</option>
           {% endfor %}
         </select>
-        {% if e.never_backup %}
+        {% if e.commissioned_system %}
+        <small>Commissioned {{ e.commissioned_system }} system — permanently {{ e.priority }} with a locked relay, not settable.</small>
+        {% elif e.never_backup %}
         <small>Commissioned never-backup — permanently {{ e.priority }}, not settable.</small>
         {% endif %}
       </label>

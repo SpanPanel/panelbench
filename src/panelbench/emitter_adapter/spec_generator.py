@@ -148,15 +148,18 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
         tabs = c.get("tabs") or [0]
         template_name = c.get("template", "")
         template: CircuitTemplateExtended | None = templates.get(template_name)
+        commissioned_system: str | None
         if template is None:
             relay_behavior_raw = "controllable"
             priority = "NICE_TO_HAVE"
             breaker_rating = 20.0
             never_backup = False
+            commissioned_system = None
         else:
             relay_behavior_raw = str(template.get("relay_behavior", "controllable"))
             priority = str(template.get("priority", "NICE_TO_HAVE")).upper()
             never_backup = bool(template.get("never_backup", False))
+            commissioned_system = template.get("commissioned_system")
             # ``breaker_rating_a`` is the producer-side legacy key; the typed
             # ``breaker_rating`` (no units suffix) is the canonical YAML field.
             # Read both so manifests built from older clones still work.
@@ -200,6 +203,12 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     # `always-on` above, which the relay predicate ORs and so must always
                     # be written.
                     **({"never-backup": "true"} if never_backup else {}),
+                    # The emitter locks the relay and fixes the priority at NEVER from
+                    # this key alone; validation has already required the config to say
+                    # both, so the published tree and the config cannot disagree.
+                    **(
+                        {"commissioned-system": commissioned_system} if commissioned_system else {}
+                    ),
                 },
             ),
         )
