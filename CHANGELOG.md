@@ -36,9 +36,10 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
   solar circuit was listed first**; a `pv.feed` that names no solar circuit's `id` is now refused, as is a config with several solar circuits and no `pv.feed`
   whose `firmware_version` names a release before 202639.
 - **A solar rating set in the dashboard now replaces the stale copy a clone of the shipped MAIN 40 or MAIN 32 template kept**, at the template's top level or
-  in the solar circuit's `overrides`, and the log warns with both values and the file.
-- **A `pv.nameplate_capacity_w` that disagrees with its circuit template's `energy_profile` rating is now refused, naming both**, where the two could each win
-  somewhere different; an equal or lone legacy rating moves into the template's `energy_profile`.
+  in the solar circuit's `overrides`, and the log warns with both values and the file until the config is saved in the dashboard.
+- **A `pv.nameplate_capacity_w`, or a circuit's `overrides` rating on a template other circuits share, that disagrees with the template's `energy_profile`
+  rating is now refused, naming both**, where the two could each win somewhere different; an equal or lone legacy rating moves into the template's
+  `energy_profile`.
 - **Every solar device is now named after its own device id**, as SPAN firmware names an inverter, where it was named "Solar", "Solar 2" and so on in circuit
   order.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report

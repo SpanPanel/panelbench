@@ -1800,11 +1800,17 @@ async def handle_clone(request: web.Request) -> web.Response:
         yaml_content = _store(request).export_yaml()
 
     # Refused before anything is written: a copy of a config the panel would not
-    # load is not a clone of anything.
+    # load is not a clone of anything. A clone is a write the user asked for, so it
+    # is written as the loader reads it, a stale rating copy already gone, rather
+    # than warning every reader after; content the loader changes nothing in keeps
+    # its text, comments and all.
+    clone = ConfigStore()
     try:
-        ConfigStore().load_from_yaml(yaml_content, source=str(output_path))
+        clone.load_from_yaml(yaml_content, source=str(output_path))
     except (ValueError, TypeError, yaml.YAMLError) as exc:
         raise web.HTTPBadRequest(text=f"Not cloned: {exc}") from exc
+    if yaml.safe_load(clone.export_yaml()) != yaml.safe_load(yaml_content):
+        yaml_content = clone.export_yaml()
     output_path.write_text(yaml_content, encoding="utf-8")
     _LOGGER.info("Config cloned to %s", output_path)
 

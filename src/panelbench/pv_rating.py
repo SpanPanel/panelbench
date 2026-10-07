@@ -22,11 +22,13 @@ Where a stated profile and a legacy value disagree, which one is the user's depe
 on who could have written it. Every released dashboard wrote a nameplate edit to the
 profile alone, and no released writer ever wrote the template's top level or a
 circuit's override; the shipped MAIN 40 and MAIN 32 templates carried one of those
-two, and a template clone copied it. So against either of those the profile wins,
-the stale copy is dropped, and a WARNING names both values and the file. Only a
-hand edit puts a rating in the ``pv`` section, or two legacy ratings where the
-profile states none, so a disagreement there is refused, naming both keys and both
-values, because picking either would be a guess. The ``pv`` section's rating stays
+two, and a template clone copied it. So against the template's top level, or an
+override on the template's only circuit (the MAIN 32 shape), the profile wins, the
+stale copy is dropped, and a WARNING names both values and the file. Only a hand
+edit puts a rating in the ``pv`` section, an override on a template other circuits
+share, or two legacy ratings where the profile states none, so a disagreement there
+is refused, naming both keys and both values, because picking either would be a
+guess. The ``pv`` section's rating stays
 where it is only for an inverter with no PV circuit, one upstream of the panel,
 where it is the sole source.
 """
@@ -61,8 +63,8 @@ class _Claim:
     # override does not leave `overrides: {}` behind.
     empties: tuple[dict[str, object], str] | None = None
     # Whether a released writer could have left this behind beside a dashboard edit:
-    # true of the template's top level and a circuit's override, never of the `pv`
-    # section, which only a hand edit fills.
+    # true of the template's top level and of an override on the template's only
+    # circuit, never of the `pv` section, which only a hand edit fills.
     stale_beside_an_edit: bool = True
 
 
@@ -193,6 +195,10 @@ def _claims(
                     overrides,
                     circuit_id,
                     empties=(circuit, "overrides"),
+                    # Stale beside an edit only on the template's sole circuit, the
+                    # shape the released MAIN 32 had. Beside other circuits it is a
+                    # deliberate per-circuit rating, which only a hand edit makes.
+                    stale_beside_an_edit=len(circuits) == 1,
                 )
             )
     rates_one_of_these = any(str(circuit.get("id")) == bound for circuit in circuits)
@@ -238,7 +244,8 @@ def _template_plan(
         dropped = tuple(
             f"{claim.where} is {_shown(claim.value)} but {canonical_key}, which the "
             f"dashboard edits, is {_shown(stated)}: rating the circuit {_shown(stated)} "
-            f"and dropping the stale {claim.where}"
+            f"and dropping the stale {claim.where}; save the config in the dashboard to "
+            "remove it from the file"
             for claim in stale
         )
         removed = tuple(

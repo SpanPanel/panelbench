@@ -21,12 +21,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
+from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.clone import TYPE_PV
+from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.wire_capture import discovered_devices, recorded_panel
-from tests._helpers import write_config
+from tests._helpers import default_config, write_config
 
 if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
@@ -120,7 +122,10 @@ async def test_a_released_edit_loads_and_is_the_rating(
     assert produced == (await _rating(control))[1]
     warned = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert any(
-        str(path) in message and str(stale) in message and str(watts) in message
+        str(path) in message
+        and str(stale) in message
+        and str(watts) in message
+        and "save the config in the dashboard to remove it from the file" in message
         for message in warned
     ), warned
 
@@ -149,3 +154,44 @@ async def test_a_released_edit_survives_a_save_and_reload(
         _without_the_stale_copy(_edited(name, template, watts), template),
     )
     assert produced == (await _rating(control))[1]
+
+
+@pytest.mark.parametrize(("name", "template", "stale", "watts"), _PANELS)
+@pytest.mark.asyncio
+async def test_a_template_clone_writes_the_stale_copy_out_once(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    name: str,
+    template: str,
+    stale: float,
+    watts: float,
+) -> None:
+    """Cloning is a write the user asked for, so the clone holds the rating once and
+    the stale copy is warned about once, not by every reader after."""
+    write_config(tmp_path / "edited.yaml", _edited(name, template, watts))
+    write_config(tmp_path / "active.yaml", default_config())
+    app = create_dashboard_app(
+        DashboardContext(
+            config_dir=tmp_path,
+            config_filter="active.yaml",
+            get_panel_configs=lambda: {},
+            get_panel_ports=lambda: {},
+            request_reload=lambda: None,
+        )
+    )
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        async with TestClient(TestServer(app)) as client:
+            cloned = await client.post(
+                "/clone", data={"filename": "copy.yaml", "source_file": "edited.yaml"}
+            )
+
+    assert cloned.status == 200
+    assert _stale_copies(yaml.safe_load((tmp_path / "copy.yaml").read_text()), template) == []
+    warned = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "stale" in r.getMessage()
+    ]
+    assert len(warned) == 1, warned

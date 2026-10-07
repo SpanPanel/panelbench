@@ -280,3 +280,25 @@ def test_a_pv_section_rating_on_a_shared_template_is_told_to_split_it() -> None:
 
     assert "give the rated circuit its own template" in str(refused.value)
     assert "make the two agree" not in str(refused.value)
+
+
+def test_a_disagreeing_override_on_a_shared_template_is_refused() -> None:
+    """An override stale beside a dashboard edit is the released MAIN 32 shape: the
+    template's only circuit. Beside other circuits on the template it is a deliberate
+    per-circuit rating that only a hand edit makes, so which is meant is a guess."""
+    config = _panel(profile=10000.0, override=3800.0)
+    circuits = config["circuits"]
+    assert isinstance(circuits, list)
+    circuits.append({"id": "solar_twin", "name": "Twin", "template": "solar", "tabs": [24]})
+    pv = config["pv"]
+    assert isinstance(pv, dict)
+    pv["feed"] = _SOLAR
+    normalize_config(config, source="test")
+
+    with pytest.raises(ValueError, match="shared with 'solar_twin'") as refused:
+        validate_yaml_config(config)
+
+    assert "circuits[solar_inverter].overrides.nameplate_capacity_w is 3800.0" in str(
+        refused.value
+    )
+    assert "give the rated circuit its own template" in str(refused.value)
