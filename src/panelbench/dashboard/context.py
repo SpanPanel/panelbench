@@ -51,5 +51,14 @@ class DashboardContext:
     history_provider: HistoryProvider | None = None
     panel_browser: Any = None  # PanelBrowser | None — mDNS discovery for standalone mode
     # Why the active config could not be opened when the dashboard started, shown
-    # until another config is loaded.
+    # until the editor moves to another config.
     load_error: str | None = None
+
+    def edit(self, filename: str | None) -> None:
+        """Move the editor to *filename*, or to none.
+
+        The one way the editor changes file, so a load error, which is always about
+        the file the editor last failed to open, goes when it does.
+        """
+        self.config_filter = filename
+        self.load_error = None

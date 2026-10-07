@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 
 from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.const import https_port_for
+from panelbench.dashboard.config_store import ConfigStore
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
     APP_KEY_PENDING_CLONES,
@@ -58,7 +59,7 @@ from panelbench.solar import compute_solar_curve
 from panelbench.weather import fetch_historical_weather, get_cached_weather
 
 if TYPE_CHECKING:
-    from panelbench.dashboard.config_store import ConfigStore, EntityView
+    from panelbench.dashboard.config_store import EntityView
     from panelbench.rates.cache import RateCache
 
 _LOGGER = logging.getLogger(__name__)
@@ -138,6 +139,20 @@ def _available_configs(request: web.Request) -> list[str]:
     for pattern in ("*.yaml", "*.yml"):
         files.extend(p.name for p in ctx.config_dir.glob(pattern))
     return sorted(set(files))
+
+
+def _open_in_editor(request: web.Request, filename: str) -> None:
+    """Load *filename* into the editor and make it the file being edited.
+
+    Answers 400 with the panel's reason when it would refuse the file, and the editor
+    keeps what it had.
+    """
+    ctx = _ctx(request)
+    try:
+        _store(request).load_from_file(ctx.config_dir / filename)
+    except (ValueError, TypeError, yaml.YAMLError) as exc:
+        raise web.HTTPBadRequest(text=f"{filename} was not opened: {exc}") from exc
+    ctx.edit(filename)
 
 
 def _first_default_config(config_dir: Path) -> str | None:
@@ -1714,15 +1729,9 @@ async def handle_load_config(request: web.Request) -> web.Response:
     # Prevent path traversal
     if config_path.resolve().parent != ctx.config_dir.resolve():
         raise web.HTTPBadRequest(text="Invalid config file path")
-    try:
-        _store(request).load_from_file(config_path)
-    except (ValueError, TypeError) as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
-
     # Track which file the editor is working on.  Does NOT affect
     # running engines — use Start/Stop/Restart in the panels list.
-    ctx.config_filter = filename
-    ctx.load_error = None
+    _open_in_editor(request, filename)
 
     # Full page redirect so HTMX replaces the entire document
     return web.Response(status=200, headers={"HX-Redirect": "./"})
@@ -1790,6 +1799,12 @@ async def handle_clone(request: web.Request) -> web.Response:
     else:
         yaml_content = _store(request).export_yaml()
 
+    # Refused before anything is written: a copy of a config the panel would not
+    # load is not a clone of anything.
+    try:
+        ConfigStore().load_from_yaml(yaml_content, source=str(output_path))
+    except (ValueError, TypeError, yaml.YAMLError) as exc:
+        raise web.HTTPBadRequest(text=f"Not cloned: {exc}") from exc
     output_path.write_text(yaml_content, encoding="utf-8")
     _LOGGER.info("Config cloned to %s", output_path)
 
@@ -1809,8 +1824,7 @@ async def handle_clone(request: web.Request) -> web.Response:
 
     # Auto-switch the editor to the newly cloned config so the entity
     # list, runtime controls, and modeling view all reflect the clone.
-    _store(request).load_from_file(output_path)
-    ctx.config_filter = filename
+    _open_in_editor(request, filename)
 
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
@@ -1944,8 +1958,7 @@ async def handle_start_panel(request: web.Request) -> web.Response:
     ctx = _ctx(request)
     ctx.start_panel(filename)
     # Auto-switch the editor to this panel so entity list stays in sync.
-    _store(request).load_from_file(ctx.config_dir / filename)
-    ctx.config_filter = filename
+    _open_in_editor(request, filename)
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -1956,8 +1969,7 @@ async def handle_stop_panel(request: web.Request) -> web.Response:
         return err
     ctx = _ctx(request)
     ctx.stop_panel(filename)
-    _store(request).load_from_file(ctx.config_dir / filename)
-    ctx.config_filter = filename
+    _open_in_editor(request, filename)
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -1968,8 +1980,7 @@ async def handle_restart_panel(request: web.Request) -> web.Response:
         return err
     ctx = _ctx(request)
     ctx.restart_panel(filename)
-    _store(request).load_from_file(ctx.config_dir / filename)
-    ctx.config_filter = filename
+    _open_in_editor(request, filename)
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -2112,9 +2123,10 @@ async def handle_delete_config(request: web.Request) -> web.Response:
     # the first default template (read-only).
     if filename == ctx.config_filter:
         first_default = _first_default_config(ctx.config_dir)
-        ctx.config_filter = first_default
         if first_default:
-            _store(request).load_from_file(ctx.config_dir / first_default)
+            _open_in_editor(request, first_default)
+        else:
+            ctx.edit(None)
         return web.Response(
             status=200,
             headers={"HX-Redirect": "./"},
@@ -2223,9 +2235,7 @@ async def _finalize_clone(
     clone_path = write_clone_config(config, ctx.config_dir, origin_serial, filename=filename)
 
     # Load the clone config into the dashboard editor
-    store = _store(request)
-    store.load_from_file(clone_path)
-    ctx.config_filter = clone_path.name
+    _open_in_editor(request, clone_path.name)
 
     _LOGGER.info("Panel cloned from %s -> %s", host, clone_path.name)
 
@@ -2284,7 +2294,7 @@ async def _finalize_clone(
 
     if profiles_imported:
         # Re-read config after profile application
-        store.load_from_file(clone_path)
+        _open_in_editor(request, clone_path.name)
 
     # Redirect to refresh the full dashboard with the new config
     return web.Response(status=200, headers={"HX-Redirect": "./"})

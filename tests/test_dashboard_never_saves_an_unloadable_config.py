@@ -9,6 +9,7 @@ crashed while creating the dashboard, so the user had no screen to fix it from.
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,11 +23,10 @@ from panelbench.validation import validate_yaml_config
 from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, default_config, write_config
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from panelbench.config_types import SimulationConfig
 
 _FILE = "panel.yaml"
+_SHIPPED = Path(__file__).resolve().parents[1] / "configs"
 
 
 def _with_inverters(firmware: str, *extra: str, feed: str | None) -> SimulationConfig:
@@ -52,6 +52,9 @@ def _with_inverters(firmware: str, *extra: str, feed: str | None) -> SimulationC
 
 
 def _app(tmp_path: Path, config: SimulationConfig | dict[str, object]) -> web.Application:
+    """The dashboard, with *config* the active file beside the shipped templates."""
+    for shipped in sorted(_SHIPPED.glob("default_*.yaml")):
+        (tmp_path / shipped.name).write_text(shipped.read_text(encoding="utf-8"), encoding="utf-8")
     write_config(tmp_path / _FILE, config)
     return create_dashboard_app(
         DashboardContext(
@@ -125,12 +128,28 @@ async def test_a_save_the_loader_would_refuse_is_refused_and_writes_nothing(
 
 
 @pytest.mark.asyncio
-async def test_the_dashboard_starts_on_an_unloadable_active_config(tmp_path: Path) -> None:
+async def test_a_refused_save_returns_the_editor_to_the_config_it_last_saved(
+    tmp_path: Path,
+) -> None:
+    """Otherwise every later save, of any circuit, is refused for the first edit."""
     config = default_config()
-    pv = config.get("pv")
-    assert pv is not None
-    pv["feed"] = "no_such_circuit"
+    config["circuits"] = [c for c in config["circuits"] if c["id"] == "solar_inverter"]
     app = _app(tmp_path, config)
+
+    async with TestClient(TestServer(app)) as client:
+        await client.delete("/entities/solar_inverter")
+        refused = await client.post("/save-reload")
+        listed = await (await client.get("/entities")).text()
+        saved = await client.post("/save-reload")
+
+    assert refused.status == 422
+    assert "solar_inverter" in listed, "the refused delete is undone in the editor"
+    assert saved.status == 200
+
+
+@pytest.mark.asyncio
+async def test_the_dashboard_starts_on_an_unloadable_active_config(tmp_path: Path) -> None:
+    app = _app(tmp_path, _unloadable())
 
     async with TestClient(TestServer(app)) as client:
         page = await client.get("/")
@@ -138,6 +157,55 @@ async def test_the_dashboard_starts_on_an_unloadable_active_config(tmp_path: Pat
 
     assert page.status == 200
     assert "pv.feed &#39;no_such_circuit&#39; names no circuit" in html
-    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter is None, (
-        "nothing is open, so nothing can be saved over the file"
-    )
+    # The first shipped template, read-only, rather than an empty panel, and never the
+    # refused file, so nothing can be saved over it.
+    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == "default_MAIN_16.yaml"
+    assert "sim-16t-001" in html
+
+
+@pytest.mark.parametrize(
+    ("path", "form"),
+    [
+        ("/load-config", {"config_file": "default_MAIN_16.yaml"}),
+        ("/clone", {"filename": "copy.yaml", "source_file": "default_MAIN_16.yaml"}),
+        ("/restart-panel", {"filename": "default_MAIN_16.yaml"}),
+    ],
+    ids=["load", "clone", "restart"],
+)
+@pytest.mark.asyncio
+async def test_moving_the_editor_to_another_config_clears_the_load_error(
+    tmp_path: Path, path: str, form: dict[str, str]
+) -> None:
+    app = _app(tmp_path, _unloadable())
+
+    async with TestClient(TestServer(app)) as client:
+        moved = await client.post(path, data=form)
+        html = await (await client.get("/")).text()
+
+    assert moved.status == 200
+    assert app[APP_KEY_DASHBOARD_CONTEXT].load_error is None
+    assert "was not opened" not in html
+
+
+@pytest.mark.asyncio
+async def test_cloning_an_unloadable_config_is_refused_with_the_reason(tmp_path: Path) -> None:
+    write_config(tmp_path / "broken.yaml", _unloadable())
+    app = _app(tmp_path, default_config())
+
+    async with TestClient(TestServer(app)) as client:
+        cloned = await client.post(
+            "/clone", data={"filename": "copy.yaml", "source_file": "broken.yaml"}
+        )
+        reason = await cloned.text()
+
+    assert cloned.status == 400
+    assert "names no circuit" in reason
+    assert not (tmp_path / "copy.yaml").exists()
+
+
+def _unloadable() -> SimulationConfig:
+    config = default_config()
+    pv = config.get("pv")
+    assert pv is not None
+    pv["feed"] = "no_such_circuit"
+    return config

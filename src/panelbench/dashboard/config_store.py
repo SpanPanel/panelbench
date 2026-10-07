@@ -123,6 +123,11 @@ class ConfigStore:
                 "enable_realistic_behaviors": True,
             },
         }
+        # The last state the panel would load, and whether it was unsaved: where a
+        # refused save returns the editor, so one bad edit does not refuse every save
+        # after it.
+        self._last_valid: dict[str, Any] = deepcopy(self._state)
+        self._last_valid_dirty = False
 
     @property
     def dirty(self) -> bool:
@@ -156,6 +161,7 @@ class ConfigStore:
         validate_yaml_config(state)
         self._state = state
         self._dirty = not saved
+        self._remember_valid()
 
     def load_from_file(self, path: Path) -> None:
         """Read a file and load its content."""
@@ -177,12 +183,24 @@ class ConfigStore:
         never write a config nothing will load.
 
         Raises:
-            ValueError: the panel would refuse the config; nothing is written.
+            ValueError: the panel would refuse the config. Nothing is written, and the
+                editor returns to the last state the panel would load, so the edit
+                that broke it is undone rather than refusing every later save too.
         """
-        normalize_config(self._state, source=str(path))
-        validate_yaml_config(self._state)
+        try:
+            normalize_config(self._state, source=str(path))
+            validate_yaml_config(self._state)
+        except ValueError:
+            self._state = deepcopy(self._last_valid)
+            self._dirty = self._last_valid_dirty
+            raise
         path.write_text(self.export_yaml(), encoding="utf-8")
         self._dirty = False
+        self._remember_valid()
+
+    def _remember_valid(self) -> None:
+        self._last_valid = deepcopy(self._state)
+        self._last_valid_dirty = self._dirty
 
     # -- Panel config --
 

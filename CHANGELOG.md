@@ -60,8 +60,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **A cloned panel keeps the source panel's name** instead of the generic "Span Panel".
 - **An imported config counts as unsaved until it is saved**, so switching panels asks before discarding it.
 - **The dashboard now fetches a read-only template's weather**, where a script error on its missing location search stopped it.
-- **The dashboard no longer saves a config the panel would refuse, says why when it refuses, and starts and explains when the active config is one**, where
-  deleting the circuit `pv.feed` named saved such a config and the next add-on start then failed.
+- **The dashboard no longer saves a config the panel would refuse, and starts when the active config is one**, where such a save was written and the panel
+  then failed to restart, and an add-on restart with it active left no dashboard to fix it from; it now says why, and a refused save undoes the edit.
 - **The dashboard's relay control shows a locked relay however its config spells it**, where a circuit written `non-controllable`, as the shipped configs
   write it, showed `controllable` and saving its form unlocked it.
 - **A solar inverter's nameplate edited in the dashboard now survives a restart and is the rating the panel both publishes and produces at**, including in a
