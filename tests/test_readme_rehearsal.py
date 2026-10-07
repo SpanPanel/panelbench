@@ -4,9 +4,10 @@ Each step below is the README's own, applied to a copy of `default_MAIN_40.yaml`
 a template clone copies it. The first config is the panel before the upgrade, with
 its "Commissioned PV System" circuit unlocked; the second is the same panel on
 release 202639, with that circuit locked and, as "A second inverter" describes, a
-two-pole circuit turned into a second inverter: one the first config already models
-as a load, or one added to both configs on two free spaces. If a step stops
-producing the panel the README promises, this fails, rather than a user's rehearsal.
+two-pole circuit turned into a second inverter, its circuit locked the same way: one
+the first config already models as a load, or one added to both configs on two free
+spaces. If a step stops producing the panel the README promises, this fails, rather
+than a user's rehearsal.
 """
 
 from __future__ import annotations
@@ -79,8 +80,9 @@ def _after(before: SimulationConfig, second: str) -> SimulationConfig:
     solar["priority"] = "NEVER"
     solar["relay_behavior"] = "non-controllable"
 
-    # "Give it a PV template": the commissioned template as the first config has it.
-    copied = copy.deepcopy(before["circuit_templates"][original["template"]])
+    # "Give it a commissioned PV template": the commissioned template as this config
+    # has it, locked.
+    copied = copy.deepcopy(solar)
     copied["energy_profile"]["nameplate_capacity_w"] = 3800.0
     copied["energy_profile"]["power_range"] = [-3800.0, 0.0]
     copied["energy_profile"]["typical_power"] = -2280.0
@@ -155,6 +157,8 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
 
     serial = runtime.engine.serial_number
     assert _circuit_state(recorder, serial, _ORIGINAL) == ("NEVER", "false")
+    # Release 202639 locks the circuit feeding each commissioned inverter.
+    assert _circuit_state(recorder, serial, second) == ("NEVER", "false")
     inverters = {
         device.get_property("info", "model"): device for device in _inverters(recorder).values()
     }
@@ -177,6 +181,6 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
     assert [int(t) for t in spaces.split(",")] == first_time["tabs"]
     assert len(first_time["tabs"]) == 2
     assert (circuit_device.description or {}).get("name") == "Solar Inverter 2"
-    assert not any(
-        "one tab" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
-    )
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert not any("one tab" in message for message in warnings)
+    assert not any("commissioned_system: pv" in message for message in warnings)

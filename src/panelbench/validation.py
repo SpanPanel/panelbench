@@ -36,6 +36,11 @@ def validate_yaml_config(config_data: Any) -> None:
         panel_firmware_version(config_data), config_data["circuit_templates"]
     )
     validate_circuits(config_data["circuits"], config_data["circuit_templates"])
+    _warn_uncommissioned_pv_circuits(
+        panel_firmware_version(config_data),
+        config_data["circuits"],
+        config_data["circuit_templates"],
+    )
     validate_pv_section(config_data)
     validate_ratings(config_data)
 
@@ -134,6 +139,50 @@ def _validate_commissioned_firmware(
                 f"Circuit template '{template_name}' is a commissioned-system circuit, which is "
                 f"locked only from SPAN release 202639, but firmware_version is {firmware!r}: "
                 "remove commissioned_system, or name release 202639 or later"
+            )
+
+
+def _warn_uncommissioned_pv_circuits(
+    firmware: str,
+    circuits: list[Mapping[str, object]],
+    circuit_templates: Mapping[str, Mapping[str, object]],
+) -> None:
+    """From SPAN release 202639 a circuit feeding an inverter is a locked one.
+
+    That release publishes every commissioned inverter as its own PV device, named by
+    the circuit feeding it, and locks the circuits the panel adds for a commissioned
+    PV system (SPAN-API-Client-Docs, Release 202639). A circuit names a device it
+    feeds only when that device is commissioned, so on that release a PV circuit
+    without ``commissioned_system: pv`` publishes a switchable, re-prioritisable
+    circuit the release never does.
+
+    Warned, not refused: a config that loaded before must keep loading, such as a
+    template shipped before the key existed, and a panel clone recognises a
+    commissioned circuit only by the name SPAN gives it, so it can produce one. A PV
+    circuit with no tabs, a what-if one, is fed by no breaker.
+
+    *circuits* and *circuit_templates* have already passed validation, so every
+    circuit names a template that exists.
+    """
+    if predates(firmware, SPAN_RELEASE_202639):
+        return
+    for circuit in circuits:
+        template_name = str(circuit["template"])
+        template = circuit_templates[template_name]
+        if (
+            template.get("device_type") == "pv"
+            and template.get("commissioned_system") != "pv"
+            and circuit.get("tabs")
+        ):
+            _LOGGER.warning(
+                "Circuit %r feeds a solar inverter, which SPAN release 202639 and later "
+                "lock as a commissioned PV system, but firmware_version is %r and its "
+                "template %r has no commissioned_system: pv, so its relay and priority "
+                "stay settable; give the template commissioned_system: pv, priority: NEVER "
+                "and relay_behavior: non-controllable",
+                circuit["id"],
+                firmware,
+                template_name,
             )
 
 

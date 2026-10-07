@@ -146,7 +146,7 @@ panel with one keeps its device id.
 ### A second inverter
 
 Before release 202639 a panel publishes one solar device, so a clone holds one PV circuit and models any other inverter's circuit as a load. To rehearse the
-upgrade of a panel with a second inverter, also make that circuit an inverter's in the second config.
+upgrade of a panel with a second inverter, also make that circuit a commissioned inverter's, locked, in the second config.
 
 The second inverter's circuit is a 240 V two-pole circuit, two tabs on opposite legs, as the "Commissioned PV System" circuit is: a grid-tied inverter in a US
 panel, whether a string inverter or a set of microinverters, sits on a two-pole breaker. A clone of your panel already holds it, as a two-pole circuit modelled
@@ -155,13 +155,16 @@ as a load, so pick that circuit. A clone of a template has no second inverter, s
 out of `unmapped_tabs`. PanelBench warns when a solar circuit sits on one tab. Then, in the second config:
 
 - Name the circuit as its inverter's, for example `Solar Inverter 2`, rather than leaving a load's name.
-- Give it a PV template: copy the "Commissioned PV System" circuit's template as the first config has it, unlocked, under a new name. Set the copy's
-  `energy_profile.nameplate_capacity_w` to the inverter's rating, its producer `power_range` to match, such as `[-7600.0, 0.0]`, and its `typical_power` to
-  about 60% of the rating, negative, such as `-4560.0`, and point the circuit's `template` at the copy. Production follows the rating and the time of day, but
-  `typical_power` seeds the energy total the inverter's circuit starts from, so a copy that keeps the original's would start with a total sized for the
-  original inverter. The dashboard's nameplate field sets all three for you.
-- Remove the circuit's own `overrides`. They were the load's: a `power_range` there would cap the inverter's production, and a `typical_power` would replace
-  the template's.
+- Give it a commissioned PV template: copy the "Commissioned PV System" circuit's template as this config has it, locked, under a new name. Release 202639
+  publishes each commissioned inverter fed by its own circuit and locks that circuit as it locks the "Commissioned PV System" one, so the copy keeps
+  `commissioned_system: pv`, `priority: NEVER` and `relay_behavior: non-controllable`; the template, not the name, is what locks it. PanelBench warns when a
+  solar circuit on a config naming release 202639 or later has no `commissioned_system: pv`. Set the copy's `energy_profile.nameplate_capacity_w` to the
+  inverter's rating, its producer `power_range` to match, such as `[-7600.0, 0.0]`, and its `typical_power` to about 60% of the rating, negative, such as
+  `-4560.0`, and point the circuit's `template` at the copy. Production follows the rating and the time of day, but `typical_power` seeds the energy total the
+  inverter's circuit starts from, so a copy that keeps the original's would start with a total sized for the original inverter. The dashboard's nameplate field
+  sets all three for you.
+- Remove the circuit's own `overrides`. They were the load's: a `power_range` there would cap the inverter's production, and a `typical_power` would replace the
+  template's.
 - Give the circuit, under `circuits`, its own inverter's `vendor`, `model` and `serial_number`. It takes `pv.firmware_version` unless it sets its own
   `firmware_version`, which a config with no `pv` section needs.
 - Where the config has a top-level `pv` section, as a clone of a template does, set `pv.feed` to the `id` of the original inverter's circuit. The section
