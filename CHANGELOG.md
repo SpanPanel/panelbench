@@ -5,7 +5,7 @@
 **The shipped templates stay on SPAN release 202633's conventions, and a config or clone that names no SPAN release now publishes release 202639's.** The add-on
 refreshes its shipped templates on every start, so an upgraded install publishes what this release ships. A config or clone whose `firmware_version` names no
 SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 40 template, which named `sim/v0.1.0`. To keep the earlier conventions, set its
-`firmware_version` to a 202633 release such as `spanos3/r202633/02`.
+`firmware_version` to a 202633 release such as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmware.
 
 ### Added
 
@@ -28,8 +28,6 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **The shipped configs now report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows, so they keep SPAN release 202633's conventions and
   integrations released before r202639 support read them correctly; set a clone's `firmware_version` to a 202639 release to emulate the new firmware.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
-- **An existing config or clone whose `firmware_version` names no SPAN release, such as `sim/v0.1.0`, publishes the conventions of SPAN release 202639**; set
-  `firmware_version` to the source panel's firmware, or clone the panel again, to keep its earlier release's conventions.
 - **A config with two or more solar circuits now publishes each inverter as its own solar device, under new device ids**, unless its `firmware_version` names a
   SPAN release before 202639, as SPAN firmware does from that release, and a clone keeps every inverter.
 - **The top-level `pv` section now describes the inverter whose circuit `pv.feed` names by its `id`, or the only solar circuit's, where it followed whichever
@@ -63,6 +61,7 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **The dashboard now fetches a read-only template's weather**, where a script error on its missing location search stopped it.
 - **The dashboard refuses an edit the panel would not load, says why and keeps the config as it was, and starts when the active config is one the panel
   refuses**, where such an edit was saved and the panel then failed to restart, and an add-on restart with it active left no dashboard to fix it from.
+- **The dashboard's Add Entity places a new circuit on the first free space**, where it made a circuit with no space, which the panel refused.
 - **The dashboard's relay control shows a locked relay however its config spells it**, where a circuit written `non-controllable`, as the shipped configs
   write it, showed `controllable` and saving its form unlocked it.
 - **A solar inverter's nameplate edited in the dashboard now survives a restart and is the rating the panel both publishes and produces at**, including in a
