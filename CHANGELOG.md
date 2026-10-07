@@ -35,6 +35,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **The top-level `pv` section now describes the inverter whose circuit `pv.feed` names by its `id`, or the only solar circuit's, where it followed whichever
   solar circuit was listed first**; a `pv.feed` that names no solar circuit's `id` is now refused, as is a config with several solar circuits and no `pv.feed`
   whose `firmware_version` names a release before 202639.
+- **A config that rates a solar circuit in two places with different values is now refused, naming both**, where the template's top level, a circuit's
+  `overrides` or the `pv` section could each win somewhere different; equal or lone legacy ratings move into the template's `energy_profile`.
 - **Every solar device is now named after its own device id**, as SPAN firmware names an inverter, where it was named "Solar", "Solar 2" and so on in circuit
   order.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
@@ -58,8 +60,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **The dashboard now fetches a read-only template's weather**, where a script error on its missing location search stopped it.
 - **The dashboard's relay control shows a locked relay however its config spells it**, where a circuit written `non-controllable`, as the shipped configs
   write it, showed `controllable` and saving its form unlocked it.
-- **A solar inverter's nameplate edited in the dashboard now survives a restart**, where a second copy of the rating, at the template's top level as in the
-  shipped MAIN 40 template or in the circuit's overrides as in the shipped MAIN 32, replaced the edit.
+- **A solar inverter's nameplate edited in the dashboard now survives a restart and is the rating the panel both publishes and produces at**, where a second
+  copy of the rating, at the template's top level, in the circuit's overrides or in the `pv` section, could replace it.
 
 ## 2.5.3 — two simulated panels no longer publish over each other
 

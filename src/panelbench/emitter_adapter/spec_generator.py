@@ -34,6 +34,7 @@ from panelbench.inverter import (
     template_inverter_type,
 )
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
+from panelbench.pv_section import bound_pv_circuit_id
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -307,59 +308,18 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
 def pv_section_circuit(profile: SimulationConfig) -> CircuitDefinitionExtended | None:
     """The PV circuit feeding the inverter the top-level ``pv`` section describes.
 
-    A real panel publishes the inverter its feeding circuit names in
-    ``connection/feeds-device-id``, so the section's identity follows a circuit,
-    never a position in the list: the one ``pv.feed`` names, else the panel's only
-    PV circuit. ``pv.feed`` names a circuit by its ``id`` under ``circuits``. Not by
-    the device id the circuit publishes, which follows the serial the engine settles
-    on after validation (a ``sim-`` prefix, or an override), so a config cannot rely
-    on it.
-
-    With several PV circuits and no ``pv.feed`` the section describes none of them,
-    and each inverter is named by its own circuit. A panel before SPAN release
-    202639 publishes one PV device for all of them, fed by one circuit
-    (SPAN-API-Client-Docs CHANGELOG, Release 202639), so a config naming such a
-    release must say which.
+    ``pv_section.bound_pv_circuit_id`` states the rule, and the loader folds the
+    section's rating by it, so the circuit named here is the one the loader rated.
 
     Raises:
-        ValueError: ``pv.feed`` names no PV circuit, or a config naming a release
-            before 202639 has several PV circuits and no ``pv.feed``.
+        ValueError: as ``bound_pv_circuit_id``.
     """
-    pv_circuits = _circuits_for_device_type(profile, "pv")
-    pv_cfg = profile.get("pv") or {}
-    if "feed" in pv_cfg:
-        return _pv_circuit_named(profile, pv_circuits, str(pv_cfg["feed"]))
-    if len(pv_circuits) == 1:
-        return pv_circuits[0]
-    firmware = panel_firmware_version(profile)
-    if len(pv_circuits) > 1 and predates(firmware, SPAN_RELEASE_202639):
-        ids = ", ".join(repr(circuit["id"]) for circuit in pv_circuits)
-        raise ValueError(
-            f"This panel has PV circuits {ids}, and firmware_version {firmware!r} names a "
-            "release before 202639, which publishes one solar device fed by one of them: "
-            "set pv.feed to the id of the circuit feeding the inverter the pv section describes"
-        )
-    return None
-
-
-def _pv_circuit_named(
-    profile: SimulationConfig, pv_circuits: list[CircuitDefinitionExtended], feed: str
-) -> CircuitDefinitionExtended:
-    """The PV circuit *feed* names by its config ``id``."""
-    named = next(
-        (circuit for circuit in profile.get("circuits") or [] if circuit["id"] == feed), None
+    circuit_id = bound_pv_circuit_id(profile)
+    if circuit_id is None:
+        return None
+    return next(
+        circuit for circuit in profile.get("circuits") or [] if str(circuit["id"]) == circuit_id
     )
-    if named is None:
-        raise ValueError(
-            f"pv.feed {feed!r} names no circuit: set it to the id of the PV circuit feeding "
-            "the inverter the pv section describes"
-        )
-    if not any(circuit is named for circuit in pv_circuits):
-        raise ValueError(
-            f"pv.feed names circuit {named['id']!r}, which is not a PV circuit: its template "
-            "has no device_type: pv"
-        )
-    return named
 
 
 def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
@@ -434,8 +394,10 @@ def _pv_metadata(
 
     *defaults* is the top-level ``pv`` section for the inverter ``pv_section_circuit``
     binds it to and empty for the others. Its declared inverter type wins over
-    *inverter_template*'s, and its nameplate over the circuit template's. The
-    firmware version is not read from *defaults*: see ``_circuit_firmware``.
+    *inverter_template*'s. Its nameplate is read only where there is no circuit:
+    the circuit template's is the one source, and the loader has folded the
+    section's into it. The firmware version is not read from *defaults*: see
+    ``_circuit_firmware``.
     """
     declared_inverter = defaults.get("inverter_type")
     inverter_type = (
@@ -443,8 +405,13 @@ def _pv_metadata(
         if declared_inverter is not None
         else template_inverter_type(inverter_template)
     )
-    nameplate = defaults.get("nameplate_capacity_w") or _circuit_nameplate_w(
-        profile, circuit, 5000.0
+    # The circuit's template is the rating's one source; the loader has folded the
+    # `pv` section's into it (`pv_rating`). Only an inverter with no PV circuit, one
+    # upstream of the panel, is rated by the section itself.
+    nameplate = (
+        _circuit_nameplate_w(profile, circuit, 5000.0)
+        if circuit is not None
+        else defaults.get("nameplate_capacity_w") or 5000.0
     )
     metadata = {
         **_inverter_identity(circuit, defaults),

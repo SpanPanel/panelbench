@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from panelbench.config_defaults import normalize_config
 from panelbench.hvac import hvac_seasonal_factor
 from panelbench.solar import daily_weather_factor, solar_production_factor
 from panelbench.sqlite_history import SCHEMA_SQL
@@ -96,6 +97,9 @@ class SyntheticHistoryGenerator:
         if not isinstance(raw, dict):
             msg = f"Invalid config: {config_path}"
             raise ValueError(msg)
+        # As the engine reads it, so the history is sized by the rating the panel
+        # produces at.
+        normalize_config(raw)
 
         anchor = anchor_time if anchor_time is not None else time.time()
         days_total = (years * 365) if years is not None else _DAYS_TOTAL

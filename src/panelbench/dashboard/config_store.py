@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
+from panelbench.config_defaults import normalize_config
 from panelbench.config_types import BESSConfigYAML
 from panelbench.dashboard.defaults import make_defaults
 from panelbench.dashboard.presets import (
@@ -136,9 +137,15 @@ class ConfigStore:
         self.load_from_mapping(data, saved=saved)
 
     def load_from_mapping(self, data: Mapping[str, object], *, saved: bool = True) -> None:
-        """Validate and replace state from an already-parsed config; *saved* as for
-        ``load_from_yaml``."""
-        state = dict(data)
+        """Normalise, validate and replace state from an already-parsed config; *saved*
+        as for ``load_from_yaml``.
+
+        Normalised as the engine normalises, so the editor holds a circuit's rating in
+        the one place its form reads and writes, and saving the form cannot re-rate it
+        from a key the form never showed.
+        """
+        state = deepcopy(dict(data))
+        normalize_config(state)
         validate_yaml_config(state)
         self._state = state
         self._dirty = not saved
@@ -157,7 +164,8 @@ class ConfigStore:
         )
 
     def save_to_file(self, path: Path) -> None:
-        """Serialize current state to YAML and write to disk."""
+        """Serialize current state to YAML and write to disk, normalised as on load."""
+        normalize_config(self._state)
         path.write_text(self.export_yaml(), encoding="utf-8")
         self._dirty = False
 

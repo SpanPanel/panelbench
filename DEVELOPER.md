@@ -361,7 +361,9 @@ circuit_templates: # Reusable template definitions
       typical_power: float # Base power in watts
       power_variation: float # Fraction (0.1 = +/-10%)
       efficiency: float # 0.0-1.0 (optional, PV/battery)
-      nameplate_capacity_w: float # PV nameplate rating in watts (a template-level key is read only without this one)
+      nameplate_capacity_w:
+        float # The circuit's rating in watts, and its one source. A rating at the template's top level, in a
+        # circuit's overrides or in the pv section is moved here, and a config where one disagrees is refused.
       initial_consumed_energy_wh: float # Seed consumed energy (from clone)
       initial_produced_energy_wh: float # Seed produced energy (from clone)
     relay_behavior: str # "controllable" | "non-controllable" | "always-on" (underscore spellings are read the same)
@@ -434,16 +436,24 @@ circuits:
     # EVSE circuit: its drive's serial (else evse.serial_number or the panel serial, by position)
     firmware_version: str # PV circuit: its inverter's firmware (every inverter: else pv.firmware_version)
     # EVSE circuit: its drive's firmware (every drive: else evse.firmware_version)
-    overrides: # Override any template field
+    overrides: # Override any template field but its rating, which the loader moves into the template
       typical_power: 500.0
 
 unmapped_tabs: [int] # Tab numbers with no circuit assigned
 
 pv: # One inverter's identity, and every inverter's default firmware
+  enabled: bool # Publishes a PV device with no PV circuit, one upstream of the panel
+  instance_id: str # The single PV device's id when no serial_number is set
   vendor: str # Default: Enphase
   product_name: str # Published as info/model
   serial_number: str
   firmware_version: str # Every inverter's default, as a firmware version is not identity
+  inverter_type: str # "hybrid" | "ac-coupled"; else the PV circuit template's inverter_type
+  relative_position: str # "IN_PANEL" (default with a PV circuit) | "UPSTREAM" (default without) | "DOWNSTREAM"
+  nameplate_capacity_w:
+    float # The rating of an inverter with no PV circuit. With one, the rating belongs to that circuit's
+    # template, energy_profile.nameplate_capacity_w: the loader moves this value there, and refuses the
+    # config if the two disagree.
   feed:
     str # The id, under circuits, of the PV circuit feeding the inverter this section describes.
     # Optional with one PV circuit; without it, several PV circuits each name their own inverter,

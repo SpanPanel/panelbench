@@ -29,7 +29,7 @@ from panelbench.behavior_mutable_state import BehaviorEngineMutableState
 from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
-from panelbench.config_defaults import normalize_circuit_templates
+from panelbench.config_defaults import normalize_config
 from panelbench.exceptions import SimulationConfigurationError
 from panelbench.inverter import template_is_hybrid
 
@@ -724,7 +724,7 @@ class DynamicSimulationEngine:
         # Before validation, not after: normalisation is what makes an omitted
         # energy_profile legal, so validating first would reject configs this is
         # meant to accept.
-        normalize_circuit_templates(config_data)
+        normalize_config(config_data)
         validate_yaml_config(config_data)
 
     def _build_circuits(self) -> None:
