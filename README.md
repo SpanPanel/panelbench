@@ -153,7 +153,8 @@ upgrade of a panel with a second inverter, also make that circuit an inverter's 
   about 60% of the rating, negative, such as `-4560.0`, and point the circuit's `template` at the copy. Production follows the rating and the time of day, but
   `typical_power` seeds the energy total the inverter's circuit starts from, so a copy that keeps the original's would start with a total sized for the
   original inverter. The dashboard's nameplate field sets all three for you.
-- Remove any `overrides: power_range` on the circuit itself. It was the load's, and it would cap the inverter's production.
+- Remove the circuit's own `overrides`. They were the load's: a `power_range` there would cap the inverter's production, and a `typical_power` would replace
+  the template's.
 - Give the circuit, under `circuits`, its own inverter's `vendor`, `model` and `serial_number`. It takes `pv.firmware_version` unless it sets its own
   `firmware_version`, which a config with no `pv` section needs.
 - Where the config has a top-level `pv` section, as a clone of a template does, set `pv.feed` to the `id` of the original inverter's circuit. The section
