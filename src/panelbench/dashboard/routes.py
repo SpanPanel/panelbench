@@ -1087,10 +1087,11 @@ async def handle_put_bess_schedule(request: web.Request) -> web.Response:
         mode = str(data.get(key, "idle"))
         hour_modes[h] = mode if mode in ("charge", "discharge", "idle") else "idle"
     store = _store(request)
-    store.update_battery_profile(hour_modes)
-    active = _parse_active_days(data)
-    if active is not None:
-        store.update_bess_active_days(active)
+    with store.edit():
+        store.update_battery_profile(hour_modes)
+        active = _parse_active_days(data)
+        if active is not None:
+            store.update_bess_active_days(active)
     _persist_config(request)
     return _render("partials/bess_card.html", request, _bess_card_context(request, editing=True))
 
@@ -1549,12 +1550,7 @@ async def _rescrape_snapshots(request: web.Request) -> None:
             snapshots[tpl_name] = copy.deepcopy(tpl)
 
     # Persist map and snapshots without touching current templates
-    ps = store._state.setdefault("panel_source", {})
-    if isinstance(ps, dict):
-        if recorder_map:
-            ps["recorder_map"] = recorder_map
-        ps["recorder_snapshots"] = snapshots
-    store._dirty = True
+    store.record_recorder_snapshots(recorder_map, snapshots)
 
 
 # -- Energy projection --
@@ -1903,7 +1899,6 @@ async def handle_get_panel_source(request: web.Request) -> web.Response:
 
 async def handle_sync_panel_source(request: web.Request) -> web.Response:
     """Re-scrape the source panel and overwrite typical_power + energy seeds."""
-    from panelbench.clone import update_config_from_scrape
     from panelbench.scraper import ScrapeError, register_with_panel, scrape_ebus
 
     store = _store(request)
@@ -1926,7 +1921,7 @@ async def handle_sync_panel_source(request: web.Request) -> web.Response:
             content_type="text/html",
         )
 
-    update_config_from_scrape(store._state, scraped)
+    store.update_from_scrape(scraped)
 
     ctx = _panel_source_context(request)
     ctx["sync_message"] = "Updated energy seeds from source panel."

@@ -25,6 +25,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
     from pathlib import Path
 
+    from panelbench.scraper import ScrapedPanel
+
+from panelbench.clone import update_config_from_scrape
 from panelbench.config_defaults import normalize_config
 from panelbench.config_types import BESSConfigYAML
 from panelbench.dashboard.defaults import make_defaults
@@ -219,8 +222,9 @@ class ConfigStore:
         one wraps them in another, and an edit inside an edit is part of it.
 
         Raises:
-            EditRefused: the panel would not load the result; the state and the
-                unsaved-changes flag are as they were.
+            EditRefused: the panel would not load the result, or the change itself
+                refused its input (an odd tab count, a field that is not a number);
+                the state and the unsaved-changes flag are as they were.
         """
         if self._editing:
             yield
@@ -229,10 +233,12 @@ class ConfigStore:
         self._state = deepcopy(original)
         self._editing = True
         try:
-            yield
-            normalize_config(self._state, source=_EDITED)
             try:
+                yield
+                normalize_config(self._state, source=_EDITED)
                 validate_yaml_config(self._state)
+            except EditRefused:
+                raise
             except ValueError as exc:
                 raise EditRefused(str(exc)) from exc
         except BaseException:
@@ -381,6 +387,30 @@ class ConfigStore:
             if isinstance(rm, dict):
                 return dict(rm)
         return {}
+
+    @_one_edit
+    def record_recorder_snapshots(
+        self, recorder_map: dict[str, str], snapshots: dict[str, object]
+    ) -> None:
+        """Keep a re-scrape's recorder mapping and template snapshots in ``panel_source``,
+        without touching the current templates."""
+        ps = self._state.setdefault("panel_source", {})
+        if isinstance(ps, dict):
+            if recorder_map:
+                ps["recorder_map"] = recorder_map
+            ps["recorder_snapshots"] = snapshots
+        self._dirty = True
+
+    @_one_edit
+    def update_from_scrape(self, scraped: ScrapedPanel) -> bool:
+        """Refresh the energy seeds from a scrape of the source panel.
+
+        Returns whether anything changed; a change is unsaved, as any edit is.
+        """
+        changed = update_config_from_scrape(self._state, scraped)
+        if changed:
+            self._dirty = True
+        return changed
 
     @_one_edit
     def restore_recorder(self, entity_id: str) -> bool:

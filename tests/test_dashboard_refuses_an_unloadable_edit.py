@@ -12,6 +12,7 @@ panels.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -20,10 +21,14 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard import config_store as config_store_module
+from panelbench.dashboard.config_store import ConfigStore
 from panelbench.dashboard.keys import APP_KEY_STORE
 from tests._helpers import default_config, write_config
 
 _FILE = "panel.yaml"
+# What htmx sends with every request it makes, which is how the dashboard's forms
+# reach these routes.
+_HTMX = {"HX-Request": "true"}
 
 
 @pytest.fixture
@@ -55,6 +60,7 @@ def _refuse_everything(monkeypatch: pytest.MonkeyPatch) -> None:
     [
         ("PUT", "/panel-config", {"serial_number": "renamed"}),
         ("PUT", "/sim-params", {"update_interval": "7"}),
+        ("POST", "/entities", {"entity_type": "circuit"}),
         ("POST", "/entities", {"entity_type": "evse"}),
         ("DELETE", "/entities/living_room_lights", {}),
         ("PUT", "/entities/pool_pump/profile", {"hour_0": "0.5"}),
@@ -66,17 +72,32 @@ def _refuse_everything(monkeypatch: pytest.MonkeyPatch) -> None:
             {"charge_start": "1", "charge_duration": "4"},
         ),
         ("POST", "/entities/span_drive_garage/evse-schedule/preset", {"preset": "night"}),
+        ("POST", "/bess", {}),
+        ("DELETE", "/bess", {}),
+        ("PUT", "/bess", {"nameplate_capacity_kwh": "20"}),
+        ("PUT", "/bess/schedule", {"hour_0": "charge"}),
+        ("POST", "/bess/schedule/preset", {"preset": "custom"}),
+        ("PUT", "/bess/charge-mode", {"charge_mode": "backup-only"}),
+        ("PUT", "/bess/active-days", {"days_submitted": "1", "day_0": "on"}),
     ],
     ids=[
         "panel config",
         "sim params",
         "add circuit",
+        "add EV charger",
         "delete circuit",
         "profile",
         "preset",
         "active days",
         "EV schedule",
         "EV preset",
+        "add battery",
+        "remove battery",
+        "battery settings",
+        "battery schedule",
+        "battery preset",
+        "battery charge mode",
+        "battery active days",
     ],
 )
 @pytest.mark.asyncio
@@ -92,7 +113,7 @@ async def test_every_kind_of_edit_is_refused_whole(
     _refuse_everything(monkeypatch)
 
     async with TestClient(TestServer(app)) as client:
-        refused = await client.request(method, path, data=form)
+        refused = await client.request(method, path, data=form, headers=_HTMX)
         reason = await refused.text()
 
     assert refused.status == 422
@@ -145,3 +166,90 @@ async def test_a_new_circuit_takes_the_first_free_space(app: web.Application) ->
 
     assert added.status == 200
     assert free[0] not in store.get_unmapped_tabs()
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "form", "reason"),
+    [
+        ("PUT", "/panel-config", {"total_tabs": "41"}, "even number"),
+        ("PUT", "/entities/pool_pump", {"typical_power": "lots"}, "could not convert"),
+    ],
+    ids=["odd tabs", "non-numeric field"],
+)
+@pytest.mark.asyncio
+async def test_an_edit_its_own_input_refuses_answers_422_with_the_reason(
+    app: web.Application, method: str, path: str, form: dict[str, str], reason: str
+) -> None:
+    store = app[APP_KEY_STORE]
+    before = store.export_yaml()
+
+    async with TestClient(TestServer(app)) as client:
+        refused = await client.request(method, path, data=form, headers=_HTMX)
+        text = await refused.text()
+
+    assert refused.status == 422
+    assert reason in text
+    assert store.export_yaml() == before
+
+
+def test_every_public_mutator_is_one_gated_edit() -> None:
+    """Structural, so a mutator added later cannot skip the gate: every public method
+    that is not a reader carries the gate's wrapper."""
+    readers = ("get_", "list_", "has_", "load_from_", "compute_")
+    exempt = {"edit", "export_yaml", "save_to_file", "dirty"}
+    public = {
+        name: member
+        for name, member in vars(ConfigStore).items()
+        if not name.startswith("_") and callable(member) and name not in exempt
+    }
+    ungated = sorted(
+        name
+        for name, member in public.items()
+        if not name.startswith(readers) and not hasattr(member, "__wrapped__")
+    )
+
+    assert ungated == []
+    assert len(public) > 20, "the scan found the store's methods"
+
+
+@pytest.mark.asyncio
+async def test_a_battery_schedule_and_its_days_are_one_edit(
+    app: web.Application, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The schedule form saves the hours and the days together, so a refusal of the
+    days leaves the hours as they were too."""
+    store = app[APP_KEY_STORE]
+    before = store.export_yaml()
+    real = config_store_module.validate_yaml_config
+
+    def refuse_the_days(config: dict[str, object]) -> None:
+        bess = config.get("bess")
+        if isinstance(bess, dict) and bess.get("active_days") == [0]:
+            raise ValueError("refused for the test")
+        real(config)
+
+    monkeypatch.setattr(config_store_module, "validate_yaml_config", refuse_the_days)
+    async with TestClient(TestServer(app)) as client:
+        refused = await client.put(
+            "/bess/schedule",
+            data={"hour_0": "charge", "days_submitted": "1", "day_0": "on"},
+            headers=_HTMX,
+        )
+
+    assert refused.status == 422
+    assert store.export_yaml() == before
+
+
+def test_nothing_outside_the_store_writes_its_state() -> None:
+    """The gate holds only if every write goes through the store's own methods, so no
+    other module reaches into a store's private state."""
+    package = Path(config_store_module.__file__).resolve().parents[1]
+    reaches = [
+        f"{path.relative_to(package)}:{number}"
+        for path in sorted(package.rglob("*.py"))
+        if path.name != "config_store.py"
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if re.search(r"\bstore\._\w", line)
+    ]
+
+    assert reaches == []
