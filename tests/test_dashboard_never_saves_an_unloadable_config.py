@@ -266,3 +266,20 @@ async def test_an_unloadable_config_is_still_stopped(tmp_path: Path) -> None:
     assert context.load_error is not None
     assert context.load_error.startswith("Stopped broken.yaml; it was not opened in the editor:")
     assert "Stopped broken.yaml" in page
+
+
+@pytest.mark.parametrize("verb", ["start", "restart"])
+@pytest.mark.asyncio
+async def test_a_loadable_config_is_started_or_restarted_and_opened(
+    tmp_path: Path, verb: str
+) -> None:
+    calls: list[tuple[str, str]] = []
+    app = _lifecycle_app(tmp_path, calls)
+    write_config(tmp_path / "good.yaml", default_config())
+
+    async with TestClient(TestServer(app)) as client:
+        answered = await client.post(f"/{verb}-panel", data={"filename": "good.yaml"})
+
+    assert answered.status == 200
+    assert calls == [(verb, "good.yaml")]
+    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == "good.yaml", "the editor moves"
