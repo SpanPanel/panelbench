@@ -209,3 +209,60 @@ def _unloadable() -> SimulationConfig:
     assert pv is not None
     pv["feed"] = "no_such_circuit"
     return config
+
+
+def _lifecycle_app(tmp_path: Path, calls: list[tuple[str, str]]) -> web.Application:
+    """The dashboard editing a good config, beside an unloadable `broken.yaml`, with
+    each panel action recorded in *calls*."""
+    write_config(tmp_path / "broken.yaml", _unloadable())
+    write_config(tmp_path / _FILE, default_config())
+    return create_dashboard_app(
+        DashboardContext(
+            config_dir=tmp_path,
+            config_filter=_FILE,
+            get_panel_configs=lambda: {},
+            get_panel_ports=lambda: {},
+            request_reload=lambda: None,
+            start_panel=lambda name: calls.append(("start", name)),
+            stop_panel=lambda name: calls.append(("stop", name)),
+            restart_panel=lambda name: calls.append(("restart", name)),
+        )
+    )
+
+
+@pytest.mark.parametrize("verb", ["start", "restart"])
+@pytest.mark.asyncio
+async def test_an_unloadable_config_is_not_started_or_restarted(tmp_path: Path, verb: str) -> None:
+    """Starting it would make it the config the next add-on boot tries; restarting it
+    would take a running panel down for a start the engine refuses."""
+    calls: list[tuple[str, str]] = []
+    app = _lifecycle_app(tmp_path, calls)
+
+    async with TestClient(TestServer(app)) as client:
+        answered = await client.post(f"/{verb}-panel", data={"filename": "broken.yaml"})
+        reason = await answered.text()
+
+    assert answered.status == 400
+    assert "names no circuit" in reason
+    assert calls == []
+    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == _FILE
+
+
+@pytest.mark.asyncio
+async def test_an_unloadable_config_is_still_stopped(tmp_path: Path) -> None:
+    """Stopping does not need the file, so it happens, and the page says the file was
+    not opened."""
+    calls: list[tuple[str, str]] = []
+    app = _lifecycle_app(tmp_path, calls)
+
+    async with TestClient(TestServer(app)) as client:
+        answered = await client.post("/stop-panel", data={"filename": "broken.yaml"})
+        page = await (await client.get("/")).text()
+
+    context = app[APP_KEY_DASHBOARD_CONTEXT]
+    assert answered.status == 200
+    assert calls == [("stop", "broken.yaml")]
+    assert context.config_filter == _FILE, "the editor stays where it was"
+    assert context.load_error is not None
+    assert context.load_error.startswith("Stopped broken.yaml; it was not opened in the editor:")
+    assert "Stopped broken.yaml" in page

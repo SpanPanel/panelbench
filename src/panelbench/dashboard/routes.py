@@ -166,12 +166,19 @@ def _open_in_editor(request: web.Request, filename: str) -> None:
     Answers 400 with the panel's reason when it would refuse the file, and the editor
     keeps what it had.
     """
-    ctx = _ctx(request)
+    reason = _try_open_in_editor(request, filename)
+    if reason is not None:
+        raise web.HTTPBadRequest(text=f"{filename} was not opened: {reason}")
+
+
+def _try_open_in_editor(request: web.Request, filename: str) -> str | None:
+    """``_open_in_editor``, answering why the panel would refuse the file instead."""
     try:
-        _store(request).load_from_file(ctx.config_dir / filename)
+        _store(request).load_from_file(_ctx(request).config_dir / filename)
     except (ValueError, TypeError, yaml.YAMLError) as exc:
-        raise web.HTTPBadRequest(text=f"{filename} was not opened: {exc}") from exc
-    ctx.edit(filename)
+        return str(exc)
+    _ctx(request).edit(filename)
+    return None
 
 
 def _first_default_config(config_dir: Path) -> str | None:
@@ -1981,9 +1988,10 @@ async def handle_start_panel(request: web.Request) -> web.Response:
     if err is not None:
         return err
     ctx = _ctx(request)
-    ctx.start_panel(filename)
-    # Auto-switch the editor to this panel so entity list stays in sync.
+    # Opened first: the engine refuses what the editor refuses, and a requested start
+    # also becomes the config the next boot tries.
     _open_in_editor(request, filename)
+    ctx.start_panel(filename)
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -1993,8 +2001,12 @@ async def handle_stop_panel(request: web.Request) -> web.Response:
     if err is not None:
         return err
     ctx = _ctx(request)
+    # Stopping does not need the file, so a panel whose file has gone bad still stops,
+    # and the page says the editor did not open it.
     ctx.stop_panel(filename)
-    _open_in_editor(request, filename)
+    reason = _try_open_in_editor(request, filename)
+    if reason is not None:
+        ctx.load_error = f"Stopped {filename}; it was not opened in the editor: {reason}"
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -2004,8 +2016,9 @@ async def handle_restart_panel(request: web.Request) -> web.Response:
     if err is not None:
         return err
     ctx = _ctx(request)
-    ctx.restart_panel(filename)
+    # Opened first: a running panel is not taken down for a start the engine refuses.
     _open_in_editor(request, filename)
+    ctx.restart_panel(filename)
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
