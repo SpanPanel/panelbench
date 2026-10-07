@@ -777,6 +777,9 @@ class DynamicSimulationEngine:
         producer scales with its rating. Read-only: the behaviour engine's
         tick-local state, such as a cycling circuit's phase, is restored after.
 
+        Call it on the engine's event loop. It is not thread-safe: from another
+        thread mid-tick, the restore would undo that tick's cycle updates.
+
         Raises:
             KeyError: the panel has no circuit *circuit_id*.
             RuntimeError: the engine has not been initialised.
