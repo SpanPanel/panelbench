@@ -6,6 +6,7 @@ dashboard can validate configs without circular imports.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from panelbench.emitter_adapter.spec_generator import relay_locked
@@ -15,6 +16,8 @@ from panelbench.pv_section import bound_pv_circuit_id
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def validate_yaml_config(config_data: Any) -> None:
@@ -174,6 +177,17 @@ def validate_single_circuit(index: int, circuit: Any, circuit_templates: dict[st
 
     if len(tabs) == 2:
         validate_double_pole_tabs(index, circuit.get("name", f"circuit {index}"), tabs)
+    if len(tabs) == 1 and (
+        template.get("device_type") == "pv" or template.get("commissioned_system") == "pv"
+    ):
+        # Warned, not refused: a 120 V PV circuit is unusual rather than impossible,
+        # and a config that loaded before must keep loading.
+        _LOGGER.warning(
+            "Circuit %r feeds a solar inverter from one tab (%s); a grid-tied inverter in "
+            "a US panel is 240 V on a two-pole breaker, two tabs on opposite legs",
+            circuit["id"],
+            tabs[0],
+        )
 
 
 def validate_pv_section(config_data: Mapping[str, object]) -> None:
