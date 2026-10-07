@@ -1,5 +1,108 @@
 # Changelog
 
+## 2.6.0 — 2026-10-06
+
+SPAN firmware release 202639 arrives for any config that names it, while the shipped templates stay on release 202633's conventions. A config or clone that
+names no SPAN release, including a clone of the earlier MAIN 40 template, now publishes release 202639's; to keep the earlier conventions, set its
+`firmware_version` to a 202633 release such as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmware.
+
+### Added
+
+- **The dashboard can set the health of the panel's link to its battery**, which a SPAN panel requires before it honours Home Assistant's dominant power source
+  control.
+- **Commissioned PV and battery system circuits are modelled and kept by a clone**, locked as release 202639 locks them, and a config naming an earlier release
+  is refused if it asks for one.
+- **From release 202639, a panel's status endpoint reports its hardware version**: `1.2` or `2.0` from the config's `hardware_version`, and `UNKNOWN` otherwise.
+- **The dashboard's Import accepts a panel definition file**, such as one `panel-sim-capture` wrote from a live panel, and turns it into a PanelBench config.
+- **The dashboard can export a saved config as a panel definition file**, the makeup other eBus tools read.
+
+### Changed
+
+- **Home Assistant's dominant power source control is ignored while the panel's link to its battery is healthy**, as a SPAN panel ignores it.
+- **From release 202639, the battery's own power reading is positive while discharging**, as SPAN firmware publishes it.
+- **From release 202639, a SPAN Drive's user charge limit is not published until a user sets one**, as on SPAN firmware.
+- **The shipped configs report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows, and the shipped MAIN 32 reports hardware version
+  `1.2`.
+- **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
+- **From release 202639, a config with two or more solar circuits publishes each inverter as its own solar device**, under new device ids, and a clone keeps
+  every inverter.
+- **Every solar device is named after its own device id**, as SPAN firmware names an inverter, where it was named "Solar", "Solar 2" and so on in circuit order.
+- **The `pv` section describes the inverter whose circuit `pv.feed` names by its `id`, or the only solar circuit's**, where it followed whichever was listed
+  first, and a config whose `pv.feed` names no solar circuit, or with several solar circuits and no `pv.feed` before release 202639, is refused.
+- **A solar rating set in the dashboard replaces the stale copy a clone of the shipped MAIN 40 or MAIN 32 template kept**, and the log warns about it until the
+  config is saved in the dashboard.
+- **A `pv.nameplate_capacity_w`, or a circuit override on a shared template, that disagrees with the template's rating is refused**, naming both values.
+- **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial**, which gives the battery and its MID new device ids
+  when such a panel is cloned again.
+
+### Fixed
+
+- **An upgraded add-on refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down.
+- **The panel's HTTP status, Homie schema endpoint and mDNS advertisement report the same firmware version it publishes over MQTT.**
+- **A cloned panel keeps the source panel's name, firmware version and hardware version.**
+- **A cloned panel keeps each solar inverter's identity, its battery's model, and each SPAN Drive's serial number and firmware version.**
+- **The dashboard refuses an edit the panel would not load, says why and keeps the config as it was**, where such an edit was saved and the panel then failed to
+  restart.
+- **The dashboard starts when the active config is one the panel refuses**, showing why, where the add-on had no dashboard to fix it from.
+- **A solar nameplate edited in the dashboard survives a restart and is the rating the panel both publishes and produces at.**
+- **The dashboard's relay control shows a locked relay however its config spells it**, where saving the form could unlock it.
+- **The dashboard's Add Entity places a new circuit on the first free space**, where it made a circuit with no space, which the panel refused.
+- **The dashboard shows a panel as islandable when any of its solar inverters is hybrid**, where only the first solar circuit listed decided it.
+- **An imported config counts as unsaved until it is saved**, so switching panels asks before discarding it.
+- **The dashboard fetches a read-only template's weather**, where a script error stopped it.
+
+## 2.5.3 — 2026-08-28
+
+**A simulated panel already added to Home Assistant has to be removed and re-added**, because its circuits get new device ids.
+
+### Fixed
+
+- **Two simulated panels running in one add-on no longer overwrite each other's circuit readings.**
+
+## 2.5.2 — 2026-08-28
+
+### Fixed
+
+- **Discovery gives Home Assistant the panel's address rather than an internal add-on hostname**, so a panel added by IP keeps verifying its certificate.
+
+## 2.5.1 — 2026-08-28
+
+### Fixed
+
+- **The certificate and the mDNS advertisement carry this host's own address**, so Home Assistant can reach the panel and verify it, and an existing install
+  corrects itself on the next start.
+- **Discovery entries are removed when the add-on stops**, where stale ones accumulated across restarts.
+- **The add-on image builds again.**
+
+## 2.5.0 — 2026-08-28
+
+**The certificate authority now ships with the app and matches the SPAN Panel Simulator's**, so swapping the simulator for PanelBench on one panel rehearses a
+firmware upgrade rather than a panel replacement; upgrade the simulator to 1.1.0 first, and the swap raises no certificate repair in Home Assistant.
+
+### Fixed
+
+- **A changed address or hostname re-signs only the server certificate**, where it rotated the certificate authority too.
+- **An expired, corrupt or superseded server certificate is replaced at startup**, where it failed handshakes or put the add-on into a restart loop.
+- **Certificate files are written atomically, and the authority's private key is no longer written to the certificate directory.**
+
+## 2.4.0 — 2026-08-26
+
+### Changed
+
+- **Locked circuits no longer offer a relay command**, as a real panel publishes them, and the dashboard refuses a relay toggle on one.
+- **The dashboard refuses a shed-priority change on a never-backup circuit**, which would have saved a config the panel could not start from.
+
+### Added
+
+- **Cloning a panel reproduces its never-backup circuits.**
+
+## 2.3.0 — 2026-08-26
+
+### Added
+
+- **Every panel serves its API over TLS as well as plaintext**, on a port 1000 above its bootstrap port, which Home Assistant's setup needs.
+- **Discovery publishes both ports, and the dashboard shows the pair beside each running panel** for adding one to Home Assistant by hand.
+
 ## 2.2.0 — 2026-08-23
 
 ### Fixed
