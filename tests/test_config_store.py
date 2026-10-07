@@ -39,6 +39,14 @@ MINIMAL_YAML = dedent("""\
 """)
 
 
+_SECOND_CIRCUIT = """    tabs: [1]
+  - id: light_2
+    name: Light 2
+    template: lighting
+    tabs: [2]
+"""
+
+
 class TestDirtyFlag:
     def test_starts_clean(self) -> None:
         store = ConfigStore()
@@ -75,8 +83,9 @@ class TestDirtyFlag:
         assert store.dirty is True
 
     def test_delete_entity_sets_dirty(self) -> None:
+        """Of two circuits, since the panel refuses a config with none."""
         store = ConfigStore()
-        store.load_from_yaml(MINIMAL_YAML)
+        store.load_from_yaml(MINIMAL_YAML.replace("    tabs: [1]\n", _SECOND_CIRCUIT))
         store.delete_entity("light_1")
         assert store.dirty is True
 

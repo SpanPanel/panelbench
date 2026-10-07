@@ -2,20 +2,27 @@
 
 Holds the full simulator config as a mutable dict tree (matching the
 YAML schema).  Changes only persist when the user explicitly saves.
+
+Every change goes through ``ConfigStore.edit``: it is made on a copy, normalised and
+validated as the panel will validate it, and kept only if the panel would load it.
+So the store never holds a config the panel would refuse, and a save cannot be
+refused for an edit.
 """
 
 from __future__ import annotations
 
+import functools
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Concatenate, cast
 
 import yaml
 
 from panelbench.inverter import AC_COUPLED, normalise_inverter_type, template_inverter_type
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Iterator, Mapping
     from pathlib import Path
 
 from panelbench.config_defaults import normalize_config
@@ -29,7 +36,6 @@ from panelbench.dashboard.presets import (
     get_preset,
 )
 from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior, relay_locked
-from panelbench.pv_section import bound_pv_circuit_id
 from panelbench.solar import compute_solar_curve
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
@@ -99,6 +105,24 @@ def _detect_entity_type(template: dict[str, Any]) -> str:
 
 
 _IMPORTED = "the imported config"
+_EDITED = "the dashboard's edit"
+
+
+class EditRefused(ValueError):
+    """An edit the panel would not load. The store is as it was before it."""
+
+
+def _one_edit[**P, R](
+    method: Callable[Concatenate[ConfigStore, P], R],
+) -> Callable[Concatenate[ConfigStore, P], R]:
+    """Make *method* one ``ConfigStore.edit``: all of its change or none of it."""
+
+    @functools.wraps(method)
+    def edit(store: ConfigStore, /, *args: P.args, **kwargs: P.kwargs) -> R:
+        with store.edit():
+            return method(store, *args, **kwargs)
+
+    return edit
 
 
 class ConfigStore:
@@ -123,11 +147,7 @@ class ConfigStore:
                 "enable_realistic_behaviors": True,
             },
         }
-        # The last state the panel would load, and whether it was unsaved: where a
-        # refused save returns the editor, so one bad edit does not refuse every save
-        # after it.
-        self._last_valid: dict[str, Any] = deepcopy(self._state)
-        self._last_valid_dirty = False
+        self._editing = False
 
     @property
     def dirty(self) -> bool:
@@ -161,7 +181,6 @@ class ConfigStore:
         validate_yaml_config(state)
         self._state = state
         self._dirty = not saved
-        self._remember_valid()
 
     def load_from_file(self, path: Path) -> None:
         """Read a file and load its content."""
@@ -179,34 +198,55 @@ class ConfigStore:
     def save_to_file(self, path: Path) -> None:
         """Serialize current state to YAML and write to disk, normalised as on load.
 
-        Validated first, as the panel will validate it, so a dashboard action can
-        never write a config nothing will load.
+        Validated first, as the panel will validate it. Every edit already was, so
+        this only guards a store changed some other way: nothing is written then.
 
         Raises:
-            ValueError: the panel would refuse the config. Nothing is written, and the
-                editor returns to the last state the panel would load, so the edit
-                that broke it is undone rather than refusing every later save too.
+            ValueError: the panel would refuse the config; nothing is written.
         """
-        try:
-            normalize_config(self._state, source=str(path))
-            validate_yaml_config(self._state)
-        except ValueError:
-            self._state = deepcopy(self._last_valid)
-            self._dirty = self._last_valid_dirty
-            raise
+        normalize_config(self._state, source=str(path))
+        validate_yaml_config(self._state)
         path.write_text(self.export_yaml(), encoding="utf-8")
         self._dirty = False
-        self._remember_valid()
 
-    def _remember_valid(self) -> None:
-        self._last_valid = deepcopy(self._state)
-        self._last_valid_dirty = self._dirty
+    @contextmanager
+    def edit(self) -> Iterator[None]:
+        """Make the changes inside one edit the panel would load, or none of them.
+
+        The changes are made on a copy of the state, which is normalised and
+        validated as the panel will validate it and kept only if the panel would load
+        it. Every public mutator is one edit; a handler that makes several changes as
+        one wraps them in another, and an edit inside an edit is part of it.
+
+        Raises:
+            EditRefused: the panel would not load the result; the state and the
+                unsaved-changes flag are as they were.
+        """
+        if self._editing:
+            yield
+            return
+        original, was_dirty = self._state, self._dirty
+        self._state = deepcopy(original)
+        self._editing = True
+        try:
+            yield
+            normalize_config(self._state, source=_EDITED)
+            try:
+                validate_yaml_config(self._state)
+            except ValueError as exc:
+                raise EditRefused(str(exc)) from exc
+        except BaseException:
+            self._state, self._dirty = original, was_dirty
+            raise
+        finally:
+            self._editing = False
 
     # -- Panel config --
 
     def get_panel_config(self) -> dict[str, Any]:
         return dict(self._state.get("panel_config", {}))
 
+    @_one_edit
     def update_panel_config(self, data: dict[str, Any]) -> None:
         cfg = self._state.setdefault("panel_config", {})
         for key in ("serial_number", "total_tabs", "main_size"):
@@ -252,6 +292,7 @@ class ConfigStore:
         bess = self._state.get("bess")
         return isinstance(bess, dict) and bool(bess.get("enabled"))
 
+    @_one_edit
     def update_bess_config(self, data: dict[str, Any]) -> None:
         """Update top-level BESS settings from form data.
 
@@ -271,6 +312,7 @@ class ConfigStore:
                 bess[yaml_key] = float(data[form_key])
         self._dirty = True
 
+    @_one_edit
     def add_bess(self) -> None:
         """Add a default BESS configuration."""
         self._state["bess"] = {
@@ -287,6 +329,7 @@ class ConfigStore:
         }
         self._dirty = True
 
+    @_one_edit
     def remove_bess(self) -> None:
         """Remove the BESS configuration."""
         self._state.pop("bess", None)
@@ -297,6 +340,7 @@ class ConfigStore:
     def get_simulation_params(self) -> dict[str, Any]:
         return dict(self._state.get("simulation_params", {}))
 
+    @_one_edit
     def update_simulation_params(self, data: dict[str, Any]) -> None:
         params = self._state.setdefault("simulation_params", {})
         for key in ("update_interval", "time_acceleration", "noise_factor"):
@@ -338,6 +382,7 @@ class ConfigStore:
                 return dict(rm)
         return {}
 
+    @_one_edit
     def restore_recorder(self, entity_id: str) -> bool:
         """Restore a template to its original recorder state.
 
@@ -379,6 +424,7 @@ class ConfigStore:
         self._dirty = True
         return True
 
+    @_one_edit
     def toggle_user_modified(self, entity_id: str) -> bool:
         """Toggle the user_modified flag on a template. Returns the new value.
 
@@ -449,6 +495,7 @@ class ConfigStore:
             raise KeyError(f"Entity not found: {entity_id}")
         return self._merge_entity(circuit)
 
+    @_one_edit
     def update_entity(self, entity_id: str, data: dict[str, Any]) -> None:
         """Update circuit and template fields from form data.
 
@@ -542,9 +589,22 @@ class ConfigStore:
             self._mark_user_modified(template_name)
         self._dirty = True
 
+    @_one_edit
     def add_entity(self, entity_type: str) -> EntityView:
-        """Create a new entity with type-appropriate defaults."""
+        """Create a new entity with type-appropriate defaults.
+
+        A circuit is placed on the first unmapped space, since the panel refuses a
+        circuit with none.
+
+        Raises:
+            EditRefused: a circuit was asked for and no space is free.
+        """
         entity_id, template_name, template_dict, circuit_dict = make_defaults(entity_type)
+        if entity_type == "circuit" and not circuit_dict.get("tabs"):
+            free = self.get_unmapped_tabs()
+            if not free:
+                raise EditRefused("No unmapped space is left for a circuit")
+            circuit_dict["tabs"] = [free[0]]
 
         existing_ids = {c["id"] for c in self._circuits()}
         base_id = entity_id
@@ -567,6 +627,7 @@ class ConfigStore:
             used.update(circ.get("tabs", []))
         return sorted(t for t in range(1, total_tabs + 1) if t not in used)
 
+    @_one_edit
     def add_entity_from_tabs(self, tabs: list[int]) -> EntityView:
         """Create a new circuit entity assigned to the given tabs.
 
@@ -608,35 +669,27 @@ class ConfigStore:
         self._dirty = True
         return self._merge_entity(circuit_dict)
 
+    @_one_edit
     def delete_entity(self, entity_id: str) -> None:
         """Remove an entity and its template if no other circuit uses it.
 
         A ``pv.feed`` naming the circuit goes with it, and then the ``pv`` section
         binds by the sole-circuit rule as usual (``pv_section.bound_pv_circuit_id``).
-        Where that rule refuses what is left -- before SPAN release 202639, several
-        PV circuits and no ``pv.feed`` -- the delete is refused with its reason and
-        nothing changes, rather than leaving a config the panel will not load.
+        Where the panel would refuse what is left -- before SPAN release 202639,
+        several PV circuits and no ``pv.feed``, or no circuit at all -- the edit is
+        refused and nothing changes.
 
         Raises:
             KeyError: no circuit has *entity_id*.
-            ValueError: the config left behind binds no inverter it can publish.
+            EditRefused: the panel would not load the config left behind.
         """
         circuits = self._circuits()
         index = next((i for i, c in enumerate(circuits) if c.get("id") == entity_id), None)
         if index is None:
             raise KeyError(f"Entity not found: {entity_id}")
-        pv = self._state.get("pv")
-        drops_feed = isinstance(pv, dict) and "feed" in pv and str(pv["feed"]) == str(entity_id)
-        after: dict[str, object] = {
-            **self._state,
-            "circuits": circuits[:index] + circuits[index + 1 :],
-        }
-        if drops_feed and isinstance(pv, dict):
-            after["pv"] = {key: value for key, value in pv.items() if key != "feed"}
-        bound_pv_circuit_id(after)
-
         circuit = circuits.pop(index)
-        if drops_feed and isinstance(pv, dict):
+        pv = self._state.get("pv")
+        if isinstance(pv, dict) and str(pv.get("feed")) == str(entity_id):
             pv.pop("feed")
         template_name = circuit["template"]
         still_used = any(c.get("template") == template_name for c in circuits)
@@ -656,6 +709,7 @@ class ConfigStore:
         days: list[int] = tod.get("active_days", [])
         return [d for d in days if isinstance(d, int) and 0 <= d <= 6]
 
+    @_one_edit
     def update_active_days(self, entity_id: str, days: list[int]) -> None:
         """Write active weekdays into the entity's template."""
         circuit = self._find_circuit(entity_id)
@@ -683,6 +737,7 @@ class ConfigStore:
         days: list[int] = bess.get("active_days", [])
         return [d for d in days if isinstance(d, int) and 0 <= d <= 6]
 
+    @_one_edit
     def update_bess_active_days(self, days: list[int]) -> None:
         """Write active weekdays into BESS config."""
         bess = self._state.setdefault("bess", {"enabled": True})
@@ -734,6 +789,7 @@ class ConfigStore:
 
         return multipliers
 
+    @_one_edit
     def update_entity_profile(self, entity_id: str, multipliers: dict[int, float]) -> None:
         """Write 24-hour multipliers into the entity's template."""
         circuit = self._find_circuit(entity_id)
@@ -757,6 +813,7 @@ class ConfigStore:
         self._mark_user_modified(template_name)
         self._dirty = True
 
+    @_one_edit
     def apply_preset(
         self,
         entity_id: str,
@@ -806,6 +863,7 @@ class ConfigStore:
             return raw
         return "self-consumption"
 
+    @_one_edit
     def update_battery_charge_mode(
         self,
         mode: str,
@@ -849,6 +907,7 @@ class ConfigStore:
                 profile[h] = "idle"
         return profile
 
+    @_one_edit
     def update_battery_profile(self, hour_modes: dict[int, str]) -> None:
         """Write per-hour charge/discharge/idle schedule into BESS config."""
         bess = self._state.setdefault("bess", {"enabled": True})
@@ -856,6 +915,7 @@ class ConfigStore:
         bess["discharge_hours"] = sorted(h for h, m in hour_modes.items() if m == "discharge")
         self._dirty = True
 
+    @_one_edit
     def apply_battery_preset(self, preset_name: str) -> dict[int, str]:
         """Apply a named battery preset and return the schedule."""
         hour_modes = get_battery_preset(preset_name)
@@ -918,6 +978,7 @@ class ConfigStore:
             "profile": profile,
         }
 
+    @_one_edit
     def update_evse_schedule(self, entity_id: str, start_hour: int, duration_hours: int) -> None:
         """Update EVSE charging schedule from start hour and duration."""
         circuit = self._find_circuit(entity_id)
@@ -936,6 +997,7 @@ class ConfigStore:
         self._mark_user_modified(template_name)
         self._dirty = True
 
+    @_one_edit
     def apply_evse_preset(self, entity_id: str, preset_name: str) -> dict[int, float]:
         """Apply an EVSE charging preset and return the schedule factors."""
         factors = get_evse_preset(preset_name)

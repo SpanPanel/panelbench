@@ -54,6 +54,14 @@ class DashboardContext:
     # until the editor moves to another config.
     load_error: str | None = None
 
+    # Why the last edit was refused, shown once on the page that reloads after it.
+    notice: str | None = None
+
+    def take_notice(self) -> str | None:
+        """The notice to show, once."""
+        notice, self.notice = self.notice, None
+        return notice
+
     def edit(self, filename: str | None) -> None:
         """Move the editor to *filename*, or to none.
 

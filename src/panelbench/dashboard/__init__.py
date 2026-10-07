@@ -24,7 +24,7 @@ from panelbench.dashboard.keys import (
     APP_KEY_STORE,
 )
 from panelbench.dashboard.presets import init_presets
-from panelbench.dashboard.routes import setup_routes
+from panelbench.dashboard.routes import refuse_unloadable_edits, setup_routes
 from panelbench.rates.cache import RateCache
 
 __all__ = ["DashboardContext", "create_dashboard_app"]
@@ -42,7 +42,7 @@ def _view_first_default(context: DashboardContext, store: ConfigStore) -> None:
 
 def create_dashboard_app(context: DashboardContext) -> web.Application:
     """Create and return the dashboard aiohttp application."""
-    app = web.Application()
+    app = web.Application(middlewares=[refuse_unloadable_edits])
 
     store = ConfigStore()
 

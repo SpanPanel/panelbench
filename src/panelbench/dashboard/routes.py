@@ -16,6 +16,7 @@ from aiohttp import web
 from ebus_panel_sim import EmitterError
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from pathlib import Path
 
     import multidict
@@ -27,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.const import https_port_for
-from panelbench.dashboard.config_store import ConfigStore
+from panelbench.dashboard.config_store import ConfigStore, EditRefused
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
     APP_KEY_PENDING_CLONES,
@@ -141,6 +142,24 @@ def _available_configs(request: web.Request) -> list[str]:
     return sorted(set(files))
 
 
+@web.middleware
+async def refuse_unloadable_edits(
+    request: web.Request, handler: Callable[[web.Request], Awaitable[web.StreamResponse]]
+) -> web.StreamResponse:
+    """Answer an edit the panel would not load, from any handler, in one way.
+
+    The store has already refused it and is as it was, so the answer is 422 with the
+    reason and a page reload: the page then shows what the store holds, and the
+    reason, rather than an edit the store does not.
+    """
+    try:
+        return await handler(request)
+    except EditRefused as exc:
+        ctx = _ctx(request)
+        ctx.notice = f"Not changed: {exc}"
+        return web.Response(status=422, text=ctx.notice, headers={"HX-Refresh": "true"})
+
+
 def _open_in_editor(request: web.Request, filename: str) -> None:
     """Load *filename* into the editor and make it the file being edited.
 
@@ -228,6 +247,7 @@ def _dashboard_context(request: web.Request) -> dict[str, Any]:
         "readonly": _is_readonly(ctx),
         "bess_config": store.get_bess_config(),
         "load_error": ctx.load_error,
+        "notice": ctx.take_notice(),
     }
 
 
@@ -832,8 +852,8 @@ def _persist_config(request: web.Request) -> None:
 def _save_or_refuse(store: ConfigStore, output_path: Path) -> None:
     """Save *store* to *output_path*, or answer 422 with why the panel would refuse it.
 
-    The store validates before it writes, so a refused save leaves the file as the
-    panel last loaded it.
+    Every edit is validated as it is made, so this answers only for a store changed
+    some other way; nothing is written then.
     """
     try:
         store.save_to_file(output_path)
@@ -940,10 +960,7 @@ async def handle_put_entity(request: web.Request) -> web.Response:
 
 async def handle_delete_entity(request: web.Request) -> web.Response:
     entity_id = request.match_info["id"]
-    try:
-        _store(request).delete_entity(entity_id)
-    except ValueError as exc:
-        raise web.HTTPConflict(text=f"Not deleted: {exc}") from exc
+    _store(request).delete_entity(entity_id)
     return _render("partials/entity_list.html", request, _entity_list_context(request))
 
 
@@ -986,10 +1003,11 @@ async def handle_put_profile(request: web.Request) -> web.Response:
         if key in data:
             multipliers[h] = float(str(data[key]))
     store = _store(request)
-    store.update_entity_profile(entity_id, multipliers)
-    active = _parse_active_days(data)
-    if active is not None:
-        store.update_active_days(entity_id, active)
+    with store.edit():
+        store.update_entity_profile(entity_id, multipliers)
+        active = _parse_active_days(data)
+        if active is not None:
+            store.update_active_days(entity_id, active)
     return _render("partials/profile_editor.html", request, _profile_context(request, entity_id))
 
 
@@ -1144,10 +1162,11 @@ async def handle_put_evse_schedule(request: web.Request) -> web.Response:
     start = int(str(data.get("charge_start", "0")))
     duration = int(str(data.get("charge_duration", "6")))
     store = _store(request)
-    store.update_evse_schedule(entity_id, start, duration)
-    active = _parse_active_days(data)
-    if active is not None:
-        store.update_active_days(entity_id, active)
+    with store.edit():
+        store.update_evse_schedule(entity_id, start, duration)
+        active = _parse_active_days(data)
+        if active is not None:
+            store.update_active_days(entity_id, active)
     return _render(
         "partials/evse_schedule.html",
         request,

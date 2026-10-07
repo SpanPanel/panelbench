@@ -18,6 +18,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
+from panelbench.dashboard import config_store as config_store_module
 from panelbench.dashboard.keys import APP_KEY_DASHBOARD_CONTEXT
 from panelbench.validation import validate_yaml_config
 from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, default_config, write_config
@@ -102,49 +103,48 @@ async def test_a_delete_that_leaves_an_unloadable_config_is_refused(tmp_path: Pa
         reason = await deleted.text()
         listed = await (await client.get("/entities")).text()
 
-    assert deleted.status == 409
+    assert deleted.status == 422
     assert "set pv.feed" in reason
     assert "solar_inverter" in listed, "the circuit is still there"
 
 
 @pytest.mark.asyncio
-async def test_a_save_the_loader_would_refuse_is_refused_and_writes_nothing(
-    tmp_path: Path,
-) -> None:
-    """A panel needs at least one circuit, so deleting the last one cannot be saved."""
+async def test_deleting_the_last_circuit_is_refused(tmp_path: Path) -> None:
+    """A panel needs at least one circuit, so the delete is refused, not a later save."""
     config = default_config()
     config["circuits"] = [c for c in config["circuits"] if c["id"] == "solar_inverter"]
     app = _app(tmp_path, config)
-    before = (tmp_path / _FILE).read_text(encoding="utf-8")
 
     async with TestClient(TestServer(app)) as client:
-        await client.delete("/entities/solar_inverter")
+        deleted = await client.delete("/entities/solar_inverter")
+        reason = await deleted.text()
+        listed = await (await client.get("/entities")).text()
+
+    assert deleted.status == 422
+    assert "At least one circuit must be defined" in reason
+    assert "solar_inverter" in listed
+
+
+@pytest.mark.asyncio
+async def test_a_save_still_refuses_a_config_the_panel_would_not_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every edit is validated as it is made, so this is a guard for a store changed
+    some other way: the save answers 422 and writes nothing."""
+    app = _app(tmp_path, default_config())
+    before = (tmp_path / _FILE).read_text(encoding="utf-8")
+
+    def refuse(_config: object) -> None:
+        raise ValueError("refused for the test")
+
+    monkeypatch.setattr(config_store_module, "validate_yaml_config", refuse)
+    async with TestClient(TestServer(app)) as client:
         saved = await client.post("/save-reload")
         reason = await saved.text()
 
     assert saved.status == 422
-    assert "At least one circuit must be defined" in reason
+    assert "refused for the test" in reason
     assert (tmp_path / _FILE).read_text(encoding="utf-8") == before
-
-
-@pytest.mark.asyncio
-async def test_a_refused_save_returns_the_editor_to_the_config_it_last_saved(
-    tmp_path: Path,
-) -> None:
-    """Otherwise every later save, of any circuit, is refused for the first edit."""
-    config = default_config()
-    config["circuits"] = [c for c in config["circuits"] if c["id"] == "solar_inverter"]
-    app = _app(tmp_path, config)
-
-    async with TestClient(TestServer(app)) as client:
-        await client.delete("/entities/solar_inverter")
-        refused = await client.post("/save-reload")
-        listed = await (await client.get("/entities")).text()
-        saved = await client.post("/save-reload")
-
-    assert refused.status == 422
-    assert "solar_inverter" in listed, "the refused delete is undone in the editor"
-    assert saved.status == 200
 
 
 @pytest.mark.asyncio

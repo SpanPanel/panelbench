@@ -11,6 +11,7 @@
 </div>
 <div id="flash-area">
   {%- if load_error %}<div class="flash error">{{ load_error }}</div>{% endif -%}
+  {%- if notice %}<div class="flash error">{{ notice }}</div>{% endif -%}
 </div>
 <div id="runtime-section">
   {% include "partials/running_panels.html" %}
