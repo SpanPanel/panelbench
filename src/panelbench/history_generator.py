@@ -99,7 +99,7 @@ class SyntheticHistoryGenerator:
             raise ValueError(msg)
         # As the engine reads it, so the history is sized by the rating the panel
         # produces at.
-        normalize_config(raw)
+        normalize_config(raw, source=str(config_path))
 
         anchor = anchor_time if anchor_time is not None else time.time()
         days_total = (years * 365) if years is not None else _DAYS_TOTAL

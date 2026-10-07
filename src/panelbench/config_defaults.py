@@ -124,7 +124,7 @@ def default_energy_profile(device_type: str) -> dict[str, Any]:
     return deepcopy(profile)
 
 
-def normalize_config(config: Mapping[str, object]) -> None:
+def normalize_config(config: Mapping[str, object], *, source: str) -> None:
     """Make *config* say what its templates mean, in place, before validation.
 
     The one normaliser every loader runs -- the engine, the dashboard on load and on
@@ -138,7 +138,8 @@ def normalize_config(config: Mapping[str, object]) -> None:
     2. Every legacy rating folds into its template's
        ``energy_profile.nameplate_capacity_w``, the one source of a circuit's
        rating (``pv_rating``). A default from step 1 is not a rating the config
-       stated, so a legacy one replaces it.
+       stated, so a legacy one replaces it. A stale copy dropped beside a stated
+       profile is logged against *source*, the file or config being read.
     """
     templates = config.get("circuit_templates")
     if not isinstance(templates, dict):
@@ -152,4 +153,4 @@ def normalize_config(config: Mapping[str, object]) -> None:
             device_type = str(template.get("device_type", _DEFAULT_DEVICE_TYPE))
             template["energy_profile"] = default_energy_profile(device_type)
             defaulted.add(str(name))
-    fold_legacy_ratings(config, unstated=frozenset(defaulted))
+    fold_legacy_ratings(config, unstated=frozenset(defaulted), source=source)

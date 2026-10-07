@@ -5,9 +5,10 @@ also hold a rating: the template's top level, a circuit's ``overrides``, and the
 ``pv`` section, which rates the inverter of the circuit it binds. The one
 normaliser the engine, the dashboard and the history generator all run folds each
 of them into the profile. A legacy value equal to the profile's, or one where the
-profile states none, folds silently; one that disagrees with the profile is
-refused by validation, naming both keys and both values, because picking either
-would be a guess.
+profile states none, folds silently. Against a stated profile, a stale top-level or
+override copy gives way with a WARNING, because only a released template put it
+there; a disagreeing ``pv`` section rating is refused, naming both keys and both
+values, because only a hand edit puts it there and picking either would be a guess.
 
 Each published rating here is checked against what the engine produces, because
 the bug these tests pin was a panel that published one rating and produced at
@@ -17,6 +18,7 @@ another.
 from __future__ import annotations
 
 import copy
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -129,28 +131,38 @@ async def test_a_legacy_rating_equal_to_the_profile_folds_silently(
 
 
 @pytest.mark.parametrize(
-    ("legacy", "key"),
-    [
-        ({"top_level": 9000.0}, "circuit_templates.solar.nameplate_capacity_w"),
-        ({"override": 9000.0}, "circuits[solar_inverter].overrides.nameplate_capacity_w"),
-        ({"section": 9000.0}, "pv.nameplate_capacity_w"),
-    ],
-    ids=["top level", "circuit override", "pv section"],
+    "legacy",
+    [{"top_level": 9000.0}, {"override": 9000.0}],
+    ids=["top level", "circuit override"],
 )
-def test_a_legacy_rating_that_disagrees_with_the_profile_is_refused(
-    legacy: dict[str, float], key: str
+@pytest.mark.asyncio
+async def test_a_stale_copy_beside_a_profile_rating_gives_way_to_it(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, legacy: dict[str, float]
 ) -> None:
-    config = _panel(profile=3800.0, **legacy)
-    normalize_config(config)
+    """No released writer wrote these two, and every released dashboard edit wrote the
+    profile, so the profile is the user's and the copy is dropped, with a WARNING."""
+    with caplog.at_level(logging.WARNING):
+        await _assert_rated(tmp_path, _panel(profile=3800.0, **legacy), 3800.0)
+
+    assert any(
+        "9000.0" in record.getMessage() and "3800.0" in record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    )
+
+
+def test_a_pv_section_rating_that_disagrees_with_the_profile_is_refused() -> None:
+    """Only a hand edit fills the ``pv`` section's rating, so which value is meant is a
+    guess."""
+    config = _panel(profile=3800.0, section=9000.0)
+    normalize_config(config, source="test")
 
     with pytest.raises(ValueError, match="nameplate") as refused:
         validate_yaml_config(config)
 
     message = str(refused.value)
-    assert key in message
-    assert "circuit_templates.solar.energy_profile.nameplate_capacity_w" in message
-    assert "9000.0" in message
-    assert "3800.0" in message
+    assert "pv.nameplate_capacity_w is 9000.0" in message
+    assert "circuit_templates.solar.energy_profile.nameplate_capacity_w is 3800.0" in message
 
 
 def test_a_pv_section_rating_that_rates_no_inverter_is_refused() -> None:
@@ -172,7 +184,7 @@ def test_a_pv_section_rating_that_rates_no_inverter_is_refused() -> None:
         {"id": "solar_garage", "name": "Garage", "template": "solar_garage", "tabs": [24]}
     )
     config["firmware_version"] = "spanos3/r202639/03"
-    normalize_config(config)
+    normalize_config(config, source="test")
 
     with pytest.raises(ValueError, match=r"pv\.nameplate_capacity_w is 7600\.0"):
         validate_yaml_config(config)
@@ -187,7 +199,7 @@ def test_a_circuit_override_of_a_shared_template_is_refused() -> None:
     pv = config["pv"]
     assert isinstance(pv, dict)
     pv["feed"] = _SOLAR
-    normalize_config(config)
+    normalize_config(config, source="test")
 
     with pytest.raises(ValueError, match=r"shared with 'solar_twin'"):
         validate_yaml_config(config)
@@ -200,7 +212,7 @@ def test_the_top_level_key_still_wins_over_a_default_profile() -> None:
         "circuit_templates": {"solar": {"device_type": "pv", "nameplate_capacity_w": 7600.0}},
     }
 
-    normalize_config(config)
+    normalize_config(config, source="test")
 
     solar = _template(config, "solar")
     energy_profile = solar["energy_profile"]
@@ -249,3 +261,22 @@ async def test_a_dashboard_nameplate_edit_survives_a_reload(tmp_path: Path) -> N
     _, expected = await _rating(write_config(tmp_path / "control.yaml", _panel(profile=3800.0)))
     assert published == "3800.0"
     assert produced == expected
+
+
+def test_a_pv_section_rating_on_a_shared_template_is_told_to_split_it() -> None:
+    """Making the two agree would re-rate the other circuit on the template too, so the
+    advice is a template of the rated circuit's own."""
+    config = _panel(profile=3800.0, section=9000.0)
+    circuits = config["circuits"]
+    assert isinstance(circuits, list)
+    circuits.append({"id": "solar_twin", "name": "Twin", "template": "solar", "tabs": [24]})
+    pv = config["pv"]
+    assert isinstance(pv, dict)
+    pv["feed"] = _SOLAR
+    normalize_config(config, source="test")
+
+    with pytest.raises(ValueError, match="shared with 'solar_twin'") as refused:
+        validate_yaml_config(config)
+
+    assert "give the rated circuit its own template" in str(refused.value)
+    assert "make the two agree" not in str(refused.value)

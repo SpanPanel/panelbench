@@ -98,6 +98,9 @@ def _detect_entity_type(template: dict[str, Any]) -> str:
     return "circuit"
 
 
+_IMPORTED = "the imported config"
+
+
 class ConfigStore:
     """In-memory config state: load, mutate, validate, export."""
 
@@ -126,34 +129,37 @@ class ConfigStore:
         """Whether in-memory state has unsaved changes."""
         return self._dirty
 
-    def load_from_yaml(self, content: str, *, saved: bool = True) -> None:
+    def load_from_yaml(self, content: str, *, saved: bool = True, source: str = _IMPORTED) -> None:
         """Parse, validate, and replace state from YAML string.
 
         *saved* says whether *content* is what the loaded file holds; an import
         is not, so it loads unsaved and leaving it prompts like any other edit.
+        *source* names it in what the loader logs: the file, or an import.
         """
         data = yaml.safe_load(content)
         if not isinstance(data, dict):
             raise ValueError("YAML content must be a mapping")
-        self.load_from_mapping(data, saved=saved)
+        self.load_from_mapping(data, saved=saved, source=source)
 
-    def load_from_mapping(self, data: Mapping[str, object], *, saved: bool = True) -> None:
+    def load_from_mapping(
+        self, data: Mapping[str, object], *, saved: bool = True, source: str = _IMPORTED
+    ) -> None:
         """Normalise, validate and replace state from an already-parsed config; *saved*
-        as for ``load_from_yaml``.
+        and *source* as for ``load_from_yaml``.
 
         Normalised as the engine normalises, so the editor holds a circuit's rating in
         the one place its form reads and writes, and saving the form cannot re-rate it
         from a key the form never showed.
         """
         state = deepcopy(dict(data))
-        normalize_config(state)
+        normalize_config(state, source=source)
         validate_yaml_config(state)
         self._state = state
         self._dirty = not saved
 
     def load_from_file(self, path: Path) -> None:
         """Read a file and load its content."""
-        self.load_from_yaml(path.read_text(encoding="utf-8"))
+        self.load_from_yaml(path.read_text(encoding="utf-8"), source=str(path))
 
     def export_yaml(self) -> str:
         """Serialize current state to YAML."""
@@ -173,7 +179,7 @@ class ConfigStore:
         Raises:
             ValueError: the panel would refuse the config; nothing is written.
         """
-        normalize_config(self._state)
+        normalize_config(self._state, source=str(path))
         validate_yaml_config(self._state)
         path.write_text(self.export_yaml(), encoding="utf-8")
         self._dirty = False

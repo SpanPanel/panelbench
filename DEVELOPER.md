@@ -363,7 +363,9 @@ circuit_templates: # Reusable template definitions
       efficiency: float # 0.0-1.0 (optional, PV/battery)
       nameplate_capacity_w:
         float # The circuit's rating in watts, and its one source. A rating at the template's top level, in a
-        # circuit's overrides or in the pv section is moved here, and a config where one disagrees is refused.
+        # circuit's overrides or in the pv section is moved here. Where this one is stated and another disagrees,
+        # a top-level or override copy is dropped with a warning (released templates left them stale beside a
+        # dashboard edit), and a pv section rating is refused.
       initial_consumed_energy_wh: float # Seed consumed energy (from clone)
       initial_produced_energy_wh: float # Seed produced energy (from clone)
     relay_behavior: str # "controllable" | "non-controllable" | "always-on" (underscore spellings are read the same)

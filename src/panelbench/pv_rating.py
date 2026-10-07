@@ -16,14 +16,24 @@ rating and produce at another:
 ``fold_legacy_ratings`` moves each into the profile and ``rating_conflicts`` names
 what cannot be moved, both from one plan, so the loader and validation cannot
 disagree about which is which. A legacy value equal to the profile's, or one where
-the profile states none, folds silently. One that disagrees is refused, naming both
-keys and both values, because picking either would be a guess. The ``pv`` section's
-rating stays where it is only for an inverter with no PV circuit, one upstream of the
-panel, where it is the sole source.
+the profile states none, folds silently.
+
+Where a stated profile and a legacy value disagree, which one is the user's depends
+on who could have written it. Every released dashboard wrote a nameplate edit to the
+profile alone, and no released writer ever wrote the template's top level or a
+circuit's override; the shipped MAIN 40 and MAIN 32 templates carried one of those
+two, and a template clone copied it. So against either of those the profile wins,
+the stale copy is dropped, and a WARNING names both values and the file. Only a
+hand edit puts a rating in the ``pv`` section, or two legacy ratings where the
+profile states none, so a disagreement there is refused, naming both keys and both
+values, because picking either would be a guess. The ``pv`` section's rating stays
+where it is only for an inverter with no PV circuit, one upstream of the panel,
+where it is the sole source.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -33,6 +43,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 NAMEPLATE = "nameplate_capacity_w"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,6 +60,10 @@ class _Claim:
     # A mapping left empty once the claim is removed, and where it hangs, so a folded
     # override does not leave `overrides: {}` behind.
     empties: tuple[dict[str, object], str] | None = None
+    # Whether a released writer could have left this behind beside a dashboard edit:
+    # true of the template's top level and a circuit's override, never of the `pv`
+    # section, which only a hand edit fills.
+    stale_beside_an_edit: bool = True
 
 
 @dataclass(frozen=True)
@@ -57,6 +73,8 @@ class _Fold:
     profile: dict[str, object]
     rating: float | None
     claims: tuple[_Claim, ...]
+    # Why a stale copy was dropped rather than folded, for the WARNING each gets.
+    dropped: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,15 +83,20 @@ class _Plan:
     conflicts: tuple[str, ...]
 
 
-def fold_legacy_ratings(config: Mapping[str, object], *, unstated: frozenset[str]) -> None:
+def fold_legacy_ratings(
+    config: Mapping[str, object], *, unstated: frozenset[str], source: str
+) -> None:
     """Move every legacy rating in *config* into its template's profile, in place.
 
     *unstated* names the templates whose profile the loader filled in from a default:
     the default's rating is not one the config stated, so a legacy rating replaces it.
-    What disagrees with a stated profile is left where it is, for ``rating_conflicts``
-    to refuse.
+    A stale copy beside a stated profile is dropped, with a WARNING naming *source*,
+    the file or config it came from. What else disagrees is left where it is, for
+    ``rating_conflicts`` to refuse.
     """
     for fold in _plan(config, unstated=unstated).folds:
+        for reason in fold.dropped:
+            _LOGGER.warning("%s: %s", source, reason)
         if fold.rating is not None:
             fold.profile[NAMEPLATE] = fold.rating
         for claim in fold.claims:
@@ -174,7 +197,15 @@ def _claims(
             )
     rates_one_of_these = any(str(circuit.get("id")) == bound for circuit in circuits)
     if section is not None and bound is not None and rates_one_of_these:
-        claims.append(_Claim(f"pv.{NAMEPLATE}", section[NAMEPLATE], section, bound))
+        claims.append(
+            _Claim(
+                f"pv.{NAMEPLATE}",
+                section[NAMEPLATE],
+                section,
+                bound,
+                stale_beside_an_edit=False,
+            )
+        )
     return claims
 
 
@@ -202,14 +233,25 @@ def _template_plan(
 
     if stated is not None:
         canonical = _watts(stated)
-        agreed = tuple(claim for claim in claims if _watts(claim.value) == canonical)
-        refused = tuple(
-            f"{claim.where} is {_shown(claim.value)} but {canonical_key} is {_shown(stated)}: "
-            f"a rating has one source, so remove {claim.where} or make the two agree"
-            for claim in claims
-            if _watts(claim.value) != canonical
+        disagreeing = [claim for claim in claims if _watts(claim.value) != canonical]
+        stale = [claim for claim in disagreeing if claim.stale_beside_an_edit]
+        dropped = tuple(
+            f"{claim.where} is {_shown(claim.value)} but {canonical_key}, which the "
+            f"dashboard edits, is {_shown(stated)}: rating the circuit {_shown(stated)} "
+            f"and dropping the stale {claim.where}"
+            for claim in stale
         )
-        return _Fold(profile, None, agreed), refused
+        removed = tuple(
+            claim
+            for claim in claims
+            if _watts(claim.value) == canonical or claim.stale_beside_an_edit
+        )
+        refused = tuple(
+            _disagreement(name, claim, canonical_key, stated, circuits)
+            for claim in disagreeing
+            if not claim.stale_beside_an_edit
+        )
+        return _Fold(profile, None, removed, dropped), refused
 
     ratings = {_watts(claim.value) for claim in claims}
     if len(ratings) > 1:
@@ -233,6 +275,34 @@ def _template_plan(
             )
     [rating] = ratings
     return _Fold(profile, rating, tuple(claims)), ()
+
+
+def _disagreement(
+    name: str,
+    claim: _Claim,
+    canonical_key: str,
+    stated: object,
+    circuits: list[dict[str, object]],
+) -> str:
+    """Why *claim* is refused beside a profile that states *stated*.
+
+    Making the two agree re-rates every circuit on the template, so where it rates one
+    circuit of several the advice is the template of its own instead.
+    """
+    disagree = f"{claim.where} is {_shown(claim.value)} but {canonical_key} is {_shown(stated)}"
+    others = [
+        str(circuit.get("id"))
+        for circuit in circuits
+        if str(circuit.get("id")) != claim.circuit_id
+    ]
+    if claim.circuit_id is not None and others:
+        shared = ", ".join(repr(circuit_id) for circuit_id in others)
+        return (
+            f"{disagree}, and circuit template {name!r} is shared with {shared}: give the "
+            f"rated circuit its own template, set its energy_profile.{NAMEPLATE} and remove "
+            f"{claim.where}"
+        )
+    return f"{disagree}: a rating has one source, so remove {claim.where} or make the two agree"
 
 
 def _watts(value: object) -> float | None:

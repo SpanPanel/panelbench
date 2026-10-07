@@ -724,7 +724,10 @@ class DynamicSimulationEngine:
         # Before validation, not after: normalisation is what makes an omitted
         # energy_profile legal, so validating first would reject configs this is
         # meant to accept.
-        normalize_config(config_data)
+        normalize_config(
+            config_data,
+            source=str(self._config_path) if self._config_path else "the engine's config",
+        )
         validate_yaml_config(config_data)
 
     def _build_circuits(self) -> None:
