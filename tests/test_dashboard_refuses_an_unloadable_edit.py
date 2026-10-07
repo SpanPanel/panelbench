@@ -22,7 +22,11 @@ from aiohttp.test_utils import TestClient, TestServer
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard import config_store as config_store_module
 from panelbench.dashboard.config_store import ConfigStore
-from panelbench.dashboard.keys import APP_KEY_STORE
+from panelbench.dashboard.keys import (
+    APP_KEY_DASHBOARD_CONTEXT,
+    APP_KEY_RATE_CACHE,
+    APP_KEY_STORE,
+)
 from tests._helpers import default_config, write_config
 
 _FILE = "panel.yaml"
@@ -130,7 +134,7 @@ async def test_an_earlier_unsaved_edit_survives_a_later_refused_one(
     """Tabs 1 and 4 are not a double-pole pair, so the panel refuses that edit alone."""
     async with TestClient(TestServer(app)) as client:
         renamed = await client.put("/panel-config", data={"serial_number": "sim-renamed"})
-        refused = await client.put("/entities/bedroom_lights", data={"tabs": "1,4"})
+        refused = await client.put("/entities/bedroom_lights", data={"tabs": "1,4"}, headers=_HTMX)
         reason = await refused.text()
         dirty = await (await client.get("/check-dirty")).json()
         page = await (await client.get("/")).text()
@@ -253,3 +257,58 @@ def test_nothing_outside_the_store_writes_its_state() -> None:
     ]
 
     assert reaches == []
+
+
+def _custom_battery_app(tmp_path: Path) -> web.Application:
+    """The dashboard, editing a panel whose battery follows a utility rate."""
+    config = default_config()
+    bess = config.get("bess")
+    assert bess is not None
+    bess["charge_mode"] = "custom"
+    write_config(tmp_path / _FILE, config)
+    return create_dashboard_app(
+        DashboardContext(
+            config_dir=tmp_path,
+            config_filter=_FILE,
+            get_panel_configs=lambda: {},
+            get_panel_ports=lambda: {},
+            request_reload=lambda: None,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_refused_rate_choice_keeps_the_current_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rate dialog calls this with fetch, not htmx, so the refusal comes back in
+    the response for the dialog to show, and nothing else changes: not the battery's
+    rate, not the simulator-wide current rate, and no notice left for a later page."""
+    app = _custom_battery_app(tmp_path)
+    store = app[APP_KEY_STORE]
+    rates = app[APP_KEY_RATE_CACHE]
+    before = store.export_yaml()
+    _refuse_everything(monkeypatch)
+
+    async with TestClient(TestServer(app)) as client:
+        refused = await client.put("rates/current", json={"label": "rate-b"})
+        reason = await refused.text()
+
+    assert refused.status == 422
+    assert "refused for the test" in reason
+    assert "HX-Refresh" not in refused.headers
+    assert store.export_yaml() == before
+    assert rates.get_current_rate_label() is None
+    assert app[APP_KEY_DASHBOARD_CONTEXT].notice is None
+
+
+@pytest.mark.asyncio
+async def test_a_rate_choice_reaches_the_battery_and_the_current_rate(tmp_path: Path) -> None:
+    app = _custom_battery_app(tmp_path)
+
+    async with TestClient(TestServer(app)) as client:
+        chosen = await client.put("rates/current", json={"label": "rate-b"})
+
+    assert chosen.status == 200
+    assert app[APP_KEY_RATE_CACHE].get_current_rate_label() == "rate-b"
+    assert app[APP_KEY_STORE].get_bess_config().get("rate_label") == "rate-b"

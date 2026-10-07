@@ -149,15 +149,18 @@ async def refuse_unloadable_edits(
     """Answer an edit the panel would not load, from any handler, in one way.
 
     The store has already refused it and is as it was, so the answer is 422 with the
-    reason and a page reload: the page then shows what the store holds, and the
-    reason, rather than an edit the store does not.
+    reason. An htmx request also reloads the page, which then shows what the store
+    holds and the reason, rather than an edit the store does not. A script's request
+    gets the reason in the response, for it to show where it asked.
     """
     try:
         return await handler(request)
     except EditRefused as exc:
-        ctx = _ctx(request)
-        ctx.notice = f"Not changed: {exc}"
-        return web.Response(status=422, text=ctx.notice, headers={"HX-Refresh": "true"})
+        reason = f"Not changed: {exc}"
+        if request.headers.get("HX-Request") != "true":
+            return web.Response(status=422, text=reason)
+        _ctx(request).notice = reason
+        return web.Response(status=422, text=reason, headers={"HX-Refresh": "true"})
 
 
 def _open_in_editor(request: web.Request, filename: str) -> None:
@@ -549,12 +552,14 @@ async def handle_put_current_rate(request: web.Request) -> web.Response:
     label = body.get("label", "").strip()
     if not label:
         return web.json_response({"error": "label is required"}, status=400)
-    _rate_cache(request).set_current_rate_label(label)
 
+    # The battery's edit first: if the panel would refuse it, the current rate stays
+    # as it was too.
     store = _store(request)
     if store.get_battery_charge_mode() == "custom":
         store.update_battery_charge_mode("custom", rate_label=label)
         _persist_config(request)
+    _rate_cache(request).set_current_rate_label(label)
 
     return web.json_response({"ok": True})
 
