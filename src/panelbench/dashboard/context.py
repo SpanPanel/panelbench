@@ -50,3 +50,6 @@ class DashboardContext:
     ha_client: Any = None  # HAClient | None — optional, set when HA API is available
     history_provider: HistoryProvider | None = None
     panel_browser: Any = None  # PanelBrowser | None — mDNS discovery for standalone mode
+    # Why the active config could not be opened when the dashboard started, shown
+    # until another config is loaded.
+    load_error: str | None = None

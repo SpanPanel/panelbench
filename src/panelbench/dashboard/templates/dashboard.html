@@ -9,7 +9,9 @@
     <li><strong>Purge</strong> removes recorder history written by the simulated panel's sensors if you added the simulated panel to Home Assistant's integration.</li>
   </ol>
 </div>
-<div id="flash-area"></div>
+<div id="flash-area">
+  {%- if load_error %}<div class="flash error">{{ load_error }}</div>{% endif -%}
+</div>
 <div id="runtime-section">
   {% include "partials/running_panels.html" %}
   {% include "partials/clone_panel.html" %}

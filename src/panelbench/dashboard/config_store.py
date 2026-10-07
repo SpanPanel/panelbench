@@ -29,6 +29,7 @@ from panelbench.dashboard.presets import (
     get_preset,
 )
 from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior, relay_locked
+from panelbench.pv_section import bound_pv_circuit_id
 from panelbench.solar import compute_solar_curve
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
@@ -164,8 +165,16 @@ class ConfigStore:
         )
 
     def save_to_file(self, path: Path) -> None:
-        """Serialize current state to YAML and write to disk, normalised as on load."""
+        """Serialize current state to YAML and write to disk, normalised as on load.
+
+        Validated first, as the panel will validate it, so a dashboard action can
+        never write a config nothing will load.
+
+        Raises:
+            ValueError: the panel would refuse the config; nothing is written.
+        """
         normalize_config(self._state)
+        validate_yaml_config(self._state)
         path.write_text(self.export_yaml(), encoding="utf-8")
         self._dirty = False
 
@@ -576,16 +585,35 @@ class ConfigStore:
         return self._merge_entity(circuit_dict)
 
     def delete_entity(self, entity_id: str) -> None:
-        """Remove an entity and its template if no other circuit uses it."""
-        circuits = self._circuits()
-        circuit = None
-        for i, c in enumerate(circuits):
-            if c.get("id") == entity_id:
-                circuit = circuits.pop(i)
-                break
-        if circuit is None:
-            raise KeyError(f"Entity not found: {entity_id}")
+        """Remove an entity and its template if no other circuit uses it.
 
+        A ``pv.feed`` naming the circuit goes with it, and then the ``pv`` section
+        binds by the sole-circuit rule as usual (``pv_section.bound_pv_circuit_id``).
+        Where that rule refuses what is left -- before SPAN release 202639, several
+        PV circuits and no ``pv.feed`` -- the delete is refused with its reason and
+        nothing changes, rather than leaving a config the panel will not load.
+
+        Raises:
+            KeyError: no circuit has *entity_id*.
+            ValueError: the config left behind binds no inverter it can publish.
+        """
+        circuits = self._circuits()
+        index = next((i for i, c in enumerate(circuits) if c.get("id") == entity_id), None)
+        if index is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+        pv = self._state.get("pv")
+        drops_feed = isinstance(pv, dict) and "feed" in pv and str(pv["feed"]) == str(entity_id)
+        after: dict[str, object] = {
+            **self._state,
+            "circuits": circuits[:index] + circuits[index + 1 :],
+        }
+        if drops_feed and isinstance(pv, dict):
+            after["pv"] = {key: value for key, value in pv.items() if key != "feed"}
+        bound_pv_circuit_id(after)
+
+        circuit = circuits.pop(index)
+        if drops_feed and isinstance(pv, dict):
+            pv.pop("feed")
         template_name = circuit["template"]
         still_used = any(c.get("template") == template_name for c in circuits)
         if not still_used:

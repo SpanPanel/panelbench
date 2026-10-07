@@ -212,6 +212,7 @@ def _dashboard_context(request: web.Request) -> dict[str, Any]:
         "panels": _all_panels(request),
         "readonly": _is_readonly(ctx),
         "bess_config": store.get_bess_config(),
+        "load_error": ctx.load_error,
     }
 
 
@@ -808,9 +809,21 @@ def _persist_config(request: web.Request) -> None:
     if not filename or filename.startswith("default_"):
         return
     output_path = ctx.config_dir / filename
-    _store(request).save_to_file(output_path)
+    _save_or_refuse(_store(request), output_path)
     _LOGGER.info("Config saved to %s", output_path)
     ctx.start_panel(filename)
+
+
+def _save_or_refuse(store: ConfigStore, output_path: Path) -> None:
+    """Save *store* to *output_path*, or answer 422 with why the panel would refuse it.
+
+    The store validates before it writes, so a refused save leaves the file as the
+    panel last loaded it.
+    """
+    try:
+        store.save_to_file(output_path)
+    except ValueError as exc:
+        raise web.HTTPUnprocessableEntity(text=f"Not saved: {exc}") from exc
 
 
 def _persist_config_live_bess(request: web.Request) -> None:
@@ -824,7 +837,7 @@ def _persist_config_live_bess(request: web.Request) -> None:
         return
     output_path = ctx.config_dir / filename
     store = _store(request)
-    store.save_to_file(output_path)
+    _save_or_refuse(store, output_path)
     _LOGGER.info("Config saved to %s (live BESS apply)", output_path)
     bess_yaml = store.get_bess_config()
     if not ctx.apply_bess_config_live(filename, bess_yaml):
@@ -912,7 +925,10 @@ async def handle_put_entity(request: web.Request) -> web.Response:
 
 async def handle_delete_entity(request: web.Request) -> web.Response:
     entity_id = request.match_info["id"]
-    _store(request).delete_entity(entity_id)
+    try:
+        _store(request).delete_entity(entity_id)
+    except ValueError as exc:
+        raise web.HTTPConflict(text=f"Not deleted: {exc}") from exc
     return _render("partials/entity_list.html", request, _entity_list_context(request))
 
 
@@ -1706,6 +1722,7 @@ async def handle_load_config(request: web.Request) -> web.Response:
     # Track which file the editor is working on.  Does NOT affect
     # running engines — use Start/Stop/Restart in the panels list.
     ctx.config_filter = filename
+    ctx.load_error = None
 
     # Full page redirect so HTMX replaces the entire document
     return web.Response(status=200, headers={"HX-Redirect": "./"})

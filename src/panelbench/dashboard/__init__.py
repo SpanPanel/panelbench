@@ -11,6 +11,7 @@ from pathlib import Path
 
 import aiohttp_jinja2
 import jinja2
+import yaml
 from aiohttp import web
 
 from panelbench.dashboard.config_store import ConfigStore
@@ -35,11 +36,17 @@ def create_dashboard_app(context: DashboardContext) -> web.Application:
 
     store = ConfigStore()
 
-    # Load the active config into the editor/viewer.
+    # Load the active config into the editor/viewer. One the panel would refuse is
+    # not opened, so nothing can be saved over it; the dashboard still starts, says
+    # why, and lets the user pick or fix a config.
     if context.config_filter:
         config_path = context.config_dir / context.config_filter
         if config_path.exists():
-            store.load_from_file(config_path)
+            try:
+                store.load_from_file(config_path)
+            except (ValueError, TypeError, yaml.YAMLError) as exc:
+                context.load_error = f"{context.config_filter} was not opened: {exc}"
+                context.config_filter = None
     else:
         # No active config — show first default template (read-only).
         defaults = sorted(context.config_dir.glob("default_*.yaml"))
