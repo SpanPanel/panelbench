@@ -729,7 +729,7 @@ def _translate_circuit(
     mode = _device_role_to_mode(device_role)
 
     # Relay behavior
-    relay_behavior = "controllable" if relay_controllable else "non_controllable"
+    relay_behavior = "controllable" if relay_controllable else "non-controllable"
 
     # Power range and typical power
     max_power = breaker_rating * voltage
@@ -786,7 +786,7 @@ def _translate_circuit(
         template["never_backup"] = True
 
     # A commissioned-system circuit, as capture's rule recognises it. Written with
-    # the locks it implies already present above (relay non_controllable, priority
+    # the locks it implies already present above (relay non-controllable, priority
     # NEVER), so the cloned template validates.
     if commissioned_system is not None:
         template["commissioned_system"] = commissioned_system

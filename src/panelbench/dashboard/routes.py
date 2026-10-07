@@ -1400,7 +1400,7 @@ async def handle_set_relay(request: web.Request) -> web.Response:
         raise web.HTTPConflict(
             text=(
                 f"{entity.name} has a locked relay (relay_behavior="
-                f"{entity.relay_behavior!r}), so it publishes switch/relay without "
+                f"{entity.relay_behavior_option!r}), so it publishes switch/relay without "
                 "$settable and relay-controllable=false. Set relay_behavior to "
                 "'controllable' to command it."
             )

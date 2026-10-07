@@ -11,13 +11,18 @@ select an option only on an exact match, so a circuit spelt the shipped way show
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 import pytest
+from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.validation import validate_single_template
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _CONFIG = """\
 panel_config:
@@ -58,7 +63,7 @@ _OPTION = re.compile(r'<option value="([^"]*)"\s*(selected)?\s*>([^<]*)</option>
 
 
 @pytest.fixture
-def app(tmp_path):
+def app(tmp_path: Path) -> web.Application:
     cfg_dir = tmp_path / "cfg"
     cfg_dir.mkdir()
     (cfg_dir / "panel.yaml").write_text(_CONFIG, encoding="utf-8")
@@ -82,7 +87,9 @@ async def _relay_options(client: TestClient, entity_id: str) -> list[tuple[str, 
 
 @pytest.mark.parametrize("entity_id", ["shipped", "underscored"])
 @pytest.mark.asyncio
-async def test_the_edit_form_selects_a_locked_relay_however_it_is_spelt(app, entity_id) -> None:
+async def test_the_edit_form_selects_a_locked_relay_however_it_is_spelt(
+    app: web.Application, entity_id: str
+) -> None:
     async with TestClient(TestServer(app)) as client:
         options = await _relay_options(client, entity_id)
 
@@ -93,7 +100,7 @@ async def test_the_edit_form_selects_a_locked_relay_however_it_is_spelt(app, ent
 
 
 @pytest.mark.asyncio
-async def test_the_edit_form_keeps_an_always_on_relay_selected(app) -> None:
+async def test_the_edit_form_keeps_an_always_on_relay_selected(app: web.Application) -> None:
     """Not offered as a choice, but shown as the current value rather than replaced."""
     async with TestClient(TestServer(app)) as client:
         options = await _relay_options(client, "always")
@@ -104,7 +111,9 @@ async def test_the_edit_form_keeps_an_always_on_relay_selected(app) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_commissioned_circuit_accepts_its_relay_back_in_either_spelling(app) -> None:
+async def test_a_commissioned_circuit_accepts_its_relay_back_in_either_spelling(
+    app: web.Application,
+) -> None:
     async with TestClient(TestServer(app)) as client:
         resp = await client.put(
             "/entities/backup_system",
@@ -133,3 +142,14 @@ def test_a_pv_circuit_added_from_the_dashboard_is_spelt_as_shipped() -> None:
     added = store.add_entity("pv")
 
     assert added.relay_behavior == "non-controllable"
+
+
+@pytest.mark.asyncio
+async def test_the_entity_list_names_a_locked_relay_as_shipped(app: web.Application) -> None:
+    async with TestClient(TestServer(app)) as client:
+        listed = await (await client.get("/entities")).text()
+
+    assert "Relay locked (non-controllable)" in listed
+    assert "Relay locked (always-on)" in listed
+    assert "non_controllable" not in listed
+    assert "always_on" not in listed

@@ -134,7 +134,7 @@ async def test_a_clone_keeps_the_commissioned_system(tmp_path: Path) -> None:
     commissioned = [t for t in templates.values() if t.get("commissioned_system") == "pv"]
     assert len(commissioned) == 1
     assert commissioned[0]["priority"] == "NEVER"
-    assert commissioned[0]["relay_behavior"] == "non_controllable"
+    assert commissioned[0]["relay_behavior"] == "non-controllable"
     assert "never_backup" not in commissioned[0]
     validate_yaml_config(config)
 
@@ -182,5 +182,5 @@ async def test_a_never_backup_circuit_with_the_name_stays_never_backup(tmp_path:
     locked = [t for t in templates.values() if t.get("never_backup")]
     assert len(locked) == 1
     assert locked[0]["priority"] == "OFF_GRID"
-    assert locked[0]["relay_behavior"] == "non_controllable"
+    assert locked[0]["relay_behavior"] == "non-controllable"
     validate_yaml_config(cloned)

@@ -332,7 +332,8 @@ class TestTranslateScrapedPanel:
         assert ep["mode"] == "consumer"
 
     def test_non_controllable_relay(self) -> None:
-        """A circuit whose relay is not controllable maps to non_controllable.
+        """A circuit whose relay is not controllable maps to non-controllable, the
+        spelling the shipped configs write.
 
         v1.0 publishes `switch/relay-controllable` directly; the flat schema inferred
         this from `always-on`.
@@ -343,7 +344,7 @@ class TestTranslateScrapedPanel:
         # Solar inverter (positions 7,9) is not relay-controllable.
         t = templates["clone_7"]
         assert isinstance(t, dict)
-        assert t["relay_behavior"] == "non_controllable"
+        assert t["relay_behavior"] == "non-controllable"
 
     def test_controllable_relay(self) -> None:
         """Circuit with always-on=false gets controllable relay behavior."""
