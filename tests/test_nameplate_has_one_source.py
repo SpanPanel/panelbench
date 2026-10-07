@@ -90,12 +90,7 @@ async def _rating(path: Path) -> tuple[str | None, float]:
     await emitter_runtime.publish_tick(runtime)
     devices = discovered_devices(recorder.retained)
     [pv] = [d for d in devices.values() if (d.description or {}).get("type") == TYPE_PV]
-    engine = runtime.engine
-    behavior = engine._behavior_engine
-    assert behavior is not None
-    produced = engine._collect_circuit_powers_at_ts(
-        _NOON, behavior, {_SOLAR}, use_recorder_baseline=False
-    )[_SOLAR]
+    produced = runtime.engine.modelled_circuit_power(_SOLAR, _NOON)
     assert produced > 0, "noon in June, so the inverter is producing"
     return pv.get_property("info", "nominal-power"), produced
 

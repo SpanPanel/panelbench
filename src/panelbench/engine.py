@@ -753,6 +753,46 @@ class DynamicSimulationEngine:
         self._clock.set_time(start_time_str)
 
     # ------------------------------------------------------------------
+    # One circuit, read-only
+    # ------------------------------------------------------------------
+
+    def circuit_template(self, circuit_id: str) -> CircuitTemplateExtended:
+        """A copy of the template the engine runs *circuit_id* from, overrides applied.
+
+        A copy, so a caller reading it cannot change what the circuit does.
+
+        Raises:
+            KeyError: the panel has no circuit *circuit_id*.
+        """
+        return copy.deepcopy(self._circuits[circuit_id].template)
+
+    def modelled_circuit_power(self, circuit_id: str, ts: float) -> float:
+        """What *circuit_id* draws or produces at *ts*, in watts, as modelling sees it.
+
+        The deterministic path the what-if model takes for its After pass: the
+        circuit's template at *ts*, with no noise and no recorder baseline, so a
+        producer scales with its rating. Read-only: the behaviour engine's
+        tick-local state, such as a cycling circuit's phase, is restored after.
+
+        Raises:
+            KeyError: the panel has no circuit *circuit_id*.
+            RuntimeError: the engine has not been initialised.
+        """
+        behavior = self._behavior_engine
+        if behavior is None:
+            raise RuntimeError("The engine is not initialised")
+        if circuit_id not in self._circuits:
+            raise KeyError(circuit_id)
+        checkpoint = behavior.capture_mutable_state()
+        try:
+            powers = self._collect_circuit_powers_at_ts(
+                ts, behavior, {circuit_id}, use_recorder_baseline=False
+            )
+        finally:
+            behavior.restore_mutable_state(checkpoint)
+        return powers[circuit_id]
+
+    # ------------------------------------------------------------------
     # Grid control
     # ------------------------------------------------------------------
 

@@ -139,11 +139,7 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
     assert added.get_property("info", "serial-number") == "sim-inv-0002"
 
     engine = runtime.engine
-    behavior = engine._behavior_engine
-    assert behavior is not None
-    typical = engine._circuits[second].template["energy_profile"]["typical_power"]
+    typical = engine.circuit_template(second)["energy_profile"]["typical_power"]
     assert typical == -2280.0, "the inverter's typical power, not the load's, seeds its energy"
-    produced = engine._collect_circuit_powers_at_ts(
-        _NOON, behavior, {second}, use_recorder_baseline=False
-    )[second]
+    produced = engine.modelled_circuit_power(second, _NOON)
     assert 0 < produced <= 3800.0
