@@ -4,13 +4,15 @@ Each step below is the README's own, applied to a copy of `default_MAIN_40.yaml`
 a template clone copies it. The first config is the panel before the upgrade, with
 its "Commissioned PV System" circuit unlocked; the second is the same panel on
 release 202639, with that circuit locked and, as "A second inverter" describes, a
-load circuit turned into a second inverter. If a step stops producing the panel the
-README promises, this fails, rather than a user's rehearsal.
+two-pole circuit turned into a second inverter: one the first config already models
+as a load, or one added to both configs on two free spaces. If a step stops
+producing the panel the README promises, this fails, rather than a user's rehearsal.
 """
 
 from __future__ import annotations
 
 import copy
+import logging
 from typing import TYPE_CHECKING
 
 import pytest
@@ -31,22 +33,43 @@ if TYPE_CHECKING:
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
 _ORIGINAL = "solar_inverter"
+# The second inverter's circuit as "A second inverter" adds it to a clone of a
+# template: a two-pole circuit on two free spaces on opposite legs.
+_ADDED = "solar_inverter_2"
+_ADDED_TABS = [24, 26]
 
 
-def _before() -> SimulationConfig:
+def _before(second: str | None = None) -> SimulationConfig:
     """Step 1, on a clone of a template: its PV circuit plays the "Commissioned PV
-    System", renamed with its `id` kept, and its template unlocked."""
+    System", renamed with its `id` kept, and its template unlocked.
+
+    With *second* `_ADDED`, the second inverter's two-pole circuit is added too, as a
+    load, on two free spaces taken out of `unmapped_tabs`.
+    """
     config = default_config()
     [circuit] = [c for c in config["circuits"] if c["id"] == _ORIGINAL]
     circuit["name"] = "Commissioned PV System"
     solar = config["circuit_templates"][circuit["template"]]
     solar["relay_behavior"] = "controllable"
     solar["priority"] = "OFF_GRID"
+    if second == _ADDED:
+        templates = config["circuit_templates"]
+        templates[_ADDED] = copy.deepcopy(templates["new_circuit_tpl"])
+        config["circuits"].append(
+            {
+                "id": _ADDED,
+                "name": "Solar Inverter 2",
+                "template": _ADDED,
+                "tabs": list(_ADDED_TABS),
+                "breaker_rating": 20,
+            }
+        )
+        config["unmapped_tabs"] = [t for t in config["unmapped_tabs"] if t not in _ADDED_TABS]
     return config
 
 
 def _after(before: SimulationConfig, second: str) -> SimulationConfig:
-    """Step 2, then "A second inverter" for the load circuit *second*."""
+    """Step 2, then "A second inverter" for the two-pole circuit *second*."""
     config = copy.deepcopy(before)
     config["firmware_version"] = "spanos3/r202639/03"
     templates = config["circuit_templates"]
@@ -63,6 +86,8 @@ def _after(before: SimulationConfig, second: str) -> SimulationConfig:
     copied["energy_profile"]["typical_power"] = -2280.0
     templates["solar_2"] = copied
     [circuit] = [c for c in config["circuits"] if c["id"] == second]
+    # "Name the circuit as its inverter's."
+    circuit["name"] = "Solar Inverter 2"
     circuit["template"] = "solar_2"
     # "Remove the circuit's own `overrides`."
     circuit.pop("overrides", None)
@@ -112,17 +137,21 @@ async def test_the_first_config_is_the_panel_before_the_upgrade(tmp_path: Path) 
 
 @pytest.mark.parametrize(
     "second",
-    # A load whose override caps its power, and one whose override sets its typical
-    # power: whatever the load carried has to go.
-    ["new_circuit", "living_room_lights"],
+    # The circuit a template clone adds on two free spaces, and a two-pole load the
+    # clone already holds, whose override sets its typical power: whatever the load
+    # carried has to go.
+    [_ADDED, "main_hvac"],
 )
 @pytest.mark.asyncio
 async def test_the_second_config_is_the_same_panel_on_release_202639(
-    tmp_path: Path, second: str
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, second: str
 ) -> None:
-    runtime, recorder = await _started(
-        write_config(tmp_path / "after.yaml", _after(_before(), second))
-    )
+    before = _before(second)
+    [first_time] = [c for c in before["circuits"] if c["id"] == second]
+    with caplog.at_level(logging.WARNING):
+        runtime, recorder = await _started(
+            write_config(tmp_path / "after.yaml", _after(before, second))
+        )
 
     serial = runtime.engine.serial_number
     assert _circuit_state(recorder, serial, _ORIGINAL) == ("NEVER", "false")
@@ -140,3 +169,14 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
     assert typical == -2280.0, "the inverter's typical power, not the load's, seeds its energy"
     produced = engine.modelled_circuit_power(second, NOON)
     assert 0 < produced <= 3800.0
+
+    # A grid-tied inverter is 240 V on a two-pole breaker, on the same spaces and with
+    # the same id in both configs, and is named as an inverter's circuit.
+    circuit_device = discovered_devices(recorder.retained)[stable_circuit_uuid(serial, second)]
+    spaces = str(circuit_device.get_property("info", "spaces"))
+    assert [int(t) for t in spaces.split(",")] == first_time["tabs"]
+    assert len(first_time["tabs"]) == 2
+    assert (circuit_device.description or {}).get("name") == "Solar Inverter 2"
+    assert not any(
+        "one tab" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+    )

@@ -146,8 +146,15 @@ panel with one keeps its device id.
 ### A second inverter
 
 Before release 202639 a panel publishes one solar device, so a clone holds one PV circuit and models any other inverter's circuit as a load. To rehearse the
-upgrade of a panel with a second inverter, also make that circuit an inverter's in the second config:
+upgrade of a panel with a second inverter, also make that circuit an inverter's in the second config.
 
+The second inverter's circuit is a 240 V two-pole circuit, two tabs on opposite legs, as the "Commissioned PV System" circuit is: a grid-tied inverter in a US
+panel, whether a string inverter or a set of microinverters, sits on a two-pole breaker. A clone of your panel already holds it, as a two-pole circuit modelled
+as a load, so pick that circuit. A clone of a template has no second inverter, so add its circuit to both configs on two free spaces on opposite legs, such as
+`24` and `26`, with the same `id` and `tabs` in both, a two-pole `breaker_rating` such as `20`, and a load's template in the first config; take the two spaces
+out of `unmapped_tabs`. PanelBench warns when a solar circuit sits on one tab. Then, in the second config:
+
+- Name the circuit as its inverter's, for example `Solar Inverter 2`, rather than leaving a load's name.
 - Give it a PV template: copy the "Commissioned PV System" circuit's template as the first config has it, unlocked, under a new name. Set the copy's
   `energy_profile.nameplate_capacity_w` to the inverter's rating, its producer `power_range` to match, such as `[-7600.0, 0.0]`, and its `typical_power` to
   about 60% of the rating, negative, such as `-4560.0`, and point the circuit's `template` at the copy. Production follows the rating and the time of day, but
