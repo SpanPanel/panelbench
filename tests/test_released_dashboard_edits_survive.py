@@ -8,33 +8,28 @@ behind. No released writer ever wrote either copy, so where the two disagree the
 profile is the user's edit and the copy is stale: the profile wins, the copy is
 dropped, and a WARNING names both values and the file.
 
-The fixtures are those two files exactly as 2.5.3 shipped them.
+The fixtures are those two files exactly as 2.5.3 shipped them, byte for byte:
+``git show 4ad9dd4:configs/<file>``, the commit the 2.5.3 version was built from.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
 from aiohttp.test_utils import TestClient, TestServer
 
-from panelbench.clone import TYPE_PV
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard.config_store import ConfigStore
-from panelbench.emitter_adapter import runtime as emitter_runtime
-from panelbench.emitter_adapter.wire_capture import discovered_devices, recorded_panel
-from tests._helpers import default_config, write_config
+from tests._helpers import default_config, pv_rating, write_config
 
 if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
 
 _RELEASED = Path(__file__).parent / "fixtures" / "released_2_5_3"
-_NOON = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("America/Los_Angeles")).timestamp()
 
 _PANELS = [
     # file, solar template, its stale copy's value, the dashboard edit
@@ -89,18 +84,6 @@ def _without_the_stale_copy(config: SimulationConfig, template: str) -> dict[str
     return control
 
 
-async def _rating(path: Path) -> tuple[str | None, float]:
-    """The panel at *path*'s published ``info/nominal-power``, and what its solar
-    circuit produces at noon."""
-    runtime, recorder = await recorded_panel(path)
-    await emitter_runtime.publish_tick(runtime)
-    devices = discovered_devices(recorder.retained)
-    [pv] = [d for d in devices.values() if (d.description or {}).get("type") == TYPE_PV]
-    produced = runtime.engine.modelled_circuit_power("solar_inverter", _NOON)
-    assert produced > 0, "noon in June, so the inverter is producing"
-    return pv.get_property("info", "nominal-power"), produced
-
-
 @pytest.mark.parametrize(("name", "template", "stale", "watts"), _PANELS)
 @pytest.mark.asyncio
 async def test_a_released_edit_loads_and_is_the_rating(
@@ -116,10 +99,10 @@ async def test_a_released_edit_loads_and_is_the_rating(
     control = write_config(tmp_path / "control.yaml", _without_the_stale_copy(config, template))
 
     with caplog.at_level(logging.WARNING):
-        published, produced = await _rating(path)
+        published, produced = await pv_rating(path)
 
     assert published == str(watts)
-    assert produced == (await _rating(control))[1]
+    assert produced == (await pv_rating(control))[1]
     warned = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert any(
         str(path) in message
@@ -147,13 +130,13 @@ async def test_a_released_edit_survives_a_save_and_reload(
     reloaded = ConfigStore()
     reloaded.load_from_file(path)
     assert reloaded.get_entity("solar_inverter").energy_profile["nameplate_capacity_w"] == watts
-    published, produced = await _rating(path)
+    published, produced = await pv_rating(path)
     assert published == str(watts)
     control = write_config(
         tmp_path / "control.yaml",
         _without_the_stale_copy(_edited(name, template, watts), template),
     )
-    assert produced == (await _rating(control))[1]
+    assert produced == (await pv_rating(control))[1]
 
 
 @pytest.mark.parametrize(("name", "template", "stale", "watts"), _PANELS)
@@ -195,3 +178,20 @@ async def test_a_template_clone_writes_the_stale_copy_out_once(
         if r.levelno == logging.WARNING and "stale" in r.getMessage()
     ]
     assert len(warned) == 1, warned
+
+
+@pytest.mark.parametrize(("name", "template", "stale", "watts"), _PANELS)
+@pytest.mark.asyncio
+async def test_a_released_template_clone_still_runs_unedited(
+    tmp_path: Path, name: str, template: str, stale: float, watts: float
+) -> None:
+    """Beside the R1 edit, the files pay for a broader guard: a 2.5.3 template clone,
+    with every key and shape of its era, still loads and starts a panel."""
+    path = tmp_path / "panel.yaml"
+    path.write_text((_RELEASED / name).read_text(encoding="utf-8"), encoding="utf-8")
+    ConfigStore().load_from_file(path)
+
+    published, produced = await pv_rating(path)
+
+    assert published == str(stale), "its stale copy agrees with its profile, so nothing drops"
+    assert produced > 0

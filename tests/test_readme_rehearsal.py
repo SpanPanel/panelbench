@@ -11,9 +11,7 @@ README promises, this fails, rather than a user's rehearsal.
 from __future__ import annotations
 
 import copy
-from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -21,7 +19,7 @@ from panelbench.clone import TYPE_PV
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.wire_capture import discovered_devices, recorded_panel
-from tests._helpers import default_config, published, write_config
+from tests._helpers import NOON, default_config, published, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,7 +31,6 @@ if TYPE_CHECKING:
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
 _ORIGINAL = "solar_inverter"
-_NOON = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("America/Los_Angeles")).timestamp()
 
 
 def _before() -> SimulationConfig:
@@ -141,5 +138,5 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
     engine = runtime.engine
     typical = engine.circuit_template(second)["energy_profile"]["typical_power"]
     assert typical == -2280.0, "the inverter's typical power, not the load's, seeds its energy"
-    produced = engine.modelled_circuit_power(second, _NOON)
+    produced = engine.modelled_circuit_power(second, NOON)
     assert 0 < produced <= 3800.0

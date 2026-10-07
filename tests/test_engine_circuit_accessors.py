@@ -7,19 +7,15 @@ Both are read-only: reading changes nothing the running panel does next.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 import pytest
 
 from panelbench.emitter_adapter.wire_capture import recorded_panel
-from tests._helpers import default_config, write_config
+from tests._helpers import NOON, default_config, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-_NOON = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("America/Los_Angeles")).timestamp()
 
 
 @pytest.mark.asyncio
@@ -49,9 +45,9 @@ async def test_modelled_power_is_deterministic_and_reads_nothing_into_the_panel(
     assert behavior is not None
     state = behavior.capture_mutable_state()
 
-    first = engine.modelled_circuit_power("solar_inverter", _NOON)
-    second = engine.modelled_circuit_power("solar_inverter", _NOON)
-    engine.modelled_circuit_power("pool_pump", _NOON)
+    first = engine.modelled_circuit_power("solar_inverter", NOON)
+    second = engine.modelled_circuit_power("solar_inverter", NOON)
+    engine.modelled_circuit_power("pool_pump", NOON)
 
     assert first == second > 0
     assert behavior.capture_mutable_state() == state
@@ -64,4 +60,4 @@ async def test_an_unknown_circuit_is_a_key_error(tmp_path: Path) -> None:
     with pytest.raises(KeyError):
         runtime.engine.circuit_template("no_such_circuit")
     with pytest.raises(KeyError):
-        runtime.engine.modelled_circuit_power("no_such_circuit", _NOON)
+        runtime.engine.modelled_circuit_power("no_such_circuit", NOON)

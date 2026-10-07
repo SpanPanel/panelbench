@@ -6,9 +6,11 @@ also hold a rating: the template's top level, a circuit's ``overrides``, and the
 normaliser the engine, the dashboard and the history generator all run folds each
 of them into the profile. A legacy value equal to the profile's, or one where the
 profile states none, folds silently. Against a stated profile, a stale top-level or
-override copy gives way with a WARNING, because only a released template put it
-there; a disagreeing ``pv`` section rating is refused, naming both keys and both
-values, because only a hand edit puts it there and picking either would be a guess.
+sole-circuit override copy gives way with a WARNING, because only a released template
+put it there: ``test_released_dashboard_edits_survive.py`` pins that on the released
+files themselves. A disagreeing ``pv`` section rating, or an override on a template
+other circuits share, is refused, naming both keys and both values, because only a
+hand edit puts it there and picking either would be a guess.
 
 Each published rating here is checked against what the engine produces, because
 the bug these tests pin was a panel that published one rating and produced at
@@ -18,21 +20,15 @@ another.
 from __future__ import annotations
 
 import copy
-import logging
-from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
 
-from panelbench.clone import TYPE_PV
 from panelbench.config_defaults import normalize_config
 from panelbench.dashboard.config_store import ConfigStore
-from panelbench.emitter_adapter import runtime as emitter_runtime
-from panelbench.emitter_adapter.wire_capture import discovered_devices, recorded_panel
 from panelbench.validation import validate_yaml_config
-from tests._helpers import default_config, write_config
+from tests._helpers import default_config, pv_rating, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,8 +36,6 @@ if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
 
 _SOLAR = "solar_inverter"
-# Midday in June where the default panel sits, so the inverter is producing.
-_NOON = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("America/Los_Angeles")).timestamp()
 
 
 def _panel(
@@ -85,23 +79,11 @@ def _circuit(config: dict[str, object], circuit_id: str) -> dict[str, object]:
     return circuit
 
 
-async def _rating(path: Path) -> tuple[str | None, float]:
-    """The panel at *path*'s published ``info/nominal-power``, and what its solar
-    circuit produces at noon."""
-    runtime, recorder = await recorded_panel(path)
-    await emitter_runtime.publish_tick(runtime)
-    devices = discovered_devices(recorder.retained)
-    [pv] = [d for d in devices.values() if (d.description or {}).get("type") == TYPE_PV]
-    produced = runtime.engine.modelled_circuit_power(_SOLAR, _NOON)
-    assert produced > 0, "noon in June, so the inverter is producing"
-    return pv.get_property("info", "nominal-power"), produced
-
-
 async def _assert_rated(tmp_path: Path, config: dict[str, object], watts: float) -> None:
     """*config* publishes *watts* and produces exactly what a panel stating only
     ``energy_profile.nameplate_capacity_w: watts`` produces."""
-    published, produced = await _rating(write_config(tmp_path / "panel.yaml", config))
-    _, expected = await _rating(write_config(tmp_path / "control.yaml", _panel(profile=watts)))
+    published, produced = await pv_rating(write_config(tmp_path / "panel.yaml", config))
+    _, expected = await pv_rating(write_config(tmp_path / "control.yaml", _panel(profile=watts)))
     assert published == str(watts)
     assert produced == expected
 
@@ -128,27 +110,6 @@ async def test_a_legacy_rating_equal_to_the_profile_folds_silently(
     tmp_path: Path, legacy: dict[str, float]
 ) -> None:
     await _assert_rated(tmp_path, _panel(profile=3800.0, **legacy), 3800.0)
-
-
-@pytest.mark.parametrize(
-    "legacy",
-    [{"top_level": 9000.0}, {"override": 9000.0}],
-    ids=["top level", "circuit override"],
-)
-@pytest.mark.asyncio
-async def test_a_stale_copy_beside_a_profile_rating_gives_way_to_it(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, legacy: dict[str, float]
-) -> None:
-    """No released writer wrote these two, and every released dashboard edit wrote the
-    profile, so the profile is the user's and the copy is dropped, with a WARNING."""
-    with caplog.at_level(logging.WARNING):
-        await _assert_rated(tmp_path, _panel(profile=3800.0, **legacy), 3800.0)
-
-    assert any(
-        "9000.0" in record.getMessage() and "3800.0" in record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.WARNING
-    )
 
 
 def test_a_pv_section_rating_that_disagrees_with_the_profile_is_refused() -> None:
@@ -257,8 +218,8 @@ async def test_a_dashboard_nameplate_edit_survives_a_reload(tmp_path: Path) -> N
     store.update_entity(_SOLAR, {"nameplate_capacity_w": "3800"})
     store.save_to_file(path)
 
-    published, produced = await _rating(path)
-    _, expected = await _rating(write_config(tmp_path / "control.yaml", _panel(profile=3800.0)))
+    published, produced = await pv_rating(path)
+    _, expected = await pv_rating(write_config(tmp_path / "control.yaml", _panel(profile=3800.0)))
     assert published == "3800.0"
     assert produced == expected
 

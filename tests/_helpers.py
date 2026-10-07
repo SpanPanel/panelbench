@@ -9,12 +9,14 @@ would replay from the broker.
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
+from zoneinfo import ZoneInfo
 
 import yaml
 
-from panelbench.clone import translate_panel_tree
+from panelbench.clone import TYPE_PV, translate_panel_tree
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.runtime import bess_config_from_engine
 from panelbench.emitter_adapter.wire_capture import (
@@ -38,6 +40,9 @@ DEFAULT_CONFIG: Final = Path(__file__).resolve().parents[1] / "configs" / "defau
 # and the EVSE user limit's publication changed.
 EARLIER_FIRMWARE: Final = "spanos2/r202633/02"
 CURRENT_FIRMWARE: Final = "spanos2/r202639/01"
+
+# Midday in June where the shipped panels sit, so an inverter there is producing.
+NOON: Final = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("America/Los_Angeles")).timestamp()
 
 
 def default_config() -> SimulationConfig:
@@ -102,3 +107,19 @@ def discharging_bess_meter(runtime: CloneRuntime, recorder: RecordingTransport) 
     # An idle battery shows no frame at all, so no caller may pass on one.
     assert flow < 0, "the battery discharges at night, so power flows out of it"
     return meter
+
+
+async def pv_rating(path: Path, circuit_id: str = "solar_inverter") -> tuple[str | None, float]:
+    """The panel at *path*'s one PV device's published ``info/nominal-power``, and what
+    its PV circuit *circuit_id* produces at `NOON`.
+
+    Both, because a rating is a contract on the wire and on the power: the bug the
+    callers pin was a panel that published one rating and produced at another.
+    """
+    runtime, recorder = await recorded_panel(path)
+    await emitter_runtime.publish_tick(runtime)
+    devices = discovered_devices(recorder.retained)
+    [pv] = [d for d in devices.values() if (d.description or {}).get("type") == TYPE_PV]
+    produced = runtime.engine.modelled_circuit_power(circuit_id, NOON)
+    assert produced > 0, "noon in June, so the inverter is producing"
+    return pv.get_property("info", "nominal-power"), produced
