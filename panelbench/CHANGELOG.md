@@ -23,6 +23,7 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 - **From release 202639, a SPAN Drive's user charge limit is not published until a user sets one**, as on SPAN firmware.
 - **The shipped configs report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows, and the shipped MAIN 32 reports hardware version
   `1.2`.
+- **The other shipped templates keep hardware version `rev2`**, so from release 202639 their status endpoint reports `UNKNOWN`.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
 - **From release 202639, a config with two or more solar circuits publishes each inverter as its own solar device**, under new device ids, and a clone keeps
   every inverter.

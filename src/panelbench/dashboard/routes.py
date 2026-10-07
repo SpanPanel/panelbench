@@ -1926,10 +1926,14 @@ async def handle_sync_panel_source(request: web.Request) -> web.Response:
             content_type="text/html",
         )
 
-    store.update_from_scrape(scraped)
+    changed = store.update_from_scrape(scraped)
 
     ctx = _panel_source_context(request)
-    ctx["sync_message"] = "Updated energy seeds from source panel."
+    ctx["sync_message"] = (
+        "Updated energy seeds from source panel. Save to keep it."
+        if changed
+        else "The energy seeds already match the source panel."
+    )
     return _render("partials/panel_source.html", request, ctx)
 
 

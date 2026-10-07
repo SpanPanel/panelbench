@@ -19,6 +19,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+from panelbench import scraper
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard import config_store as config_store_module
 from panelbench.dashboard.config_store import ConfigStore
@@ -246,14 +247,14 @@ async def test_a_battery_schedule_and_its_days_are_one_edit(
 
 def test_nothing_outside_the_store_writes_its_state() -> None:
     """The gate holds only if every write goes through the store's own methods, so no
-    other module reaches into a store's private state."""
+    other module reaches into a store's private state, whatever it calls the store."""
     package = Path(config_store_module.__file__).resolve().parents[1]
     reaches = [
         f"{path.relative_to(package)}:{number}"
         for path in sorted(package.rglob("*.py"))
         if path.name != "config_store.py"
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        if re.search(r"\bstore\._\w", line)
+        if re.search(r"\._(state|dirty)\b", line)
     ]
 
     assert reaches == []
@@ -312,3 +313,38 @@ async def test_a_rate_choice_reaches_the_battery_and_the_current_rate(tmp_path: 
     assert chosen.status == 200
     assert app[APP_KEY_RATE_CACHE].get_current_rate_label() == "rate-b"
     assert app[APP_KEY_STORE].get_bess_config().get("rate_label") == "rate-b"
+
+
+@pytest.mark.asyncio
+async def test_a_panel_source_sync_says_the_change_is_unsaved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sync refreshes the energy seeds as an unsaved edit, so it says to save."""
+    config = default_config()
+    config["panel_source"] = {"origin_serial": "nt-0000-tg1", "host": "192.168.1.100"}
+    write_config(tmp_path / _FILE, config)
+    app = create_dashboard_app(
+        DashboardContext(
+            config_dir=tmp_path,
+            config_filter=_FILE,
+            get_panel_configs=lambda: {},
+            get_panel_ports=lambda: {},
+            request_reload=lambda: None,
+        )
+    )
+
+    async def registered(_host: str, _passphrase: str | None) -> tuple[object, str]:
+        return object(), ""
+
+    async def scraped(_creds: object, _ca_pem: str) -> object:
+        return object()
+
+    monkeypatch.setattr(scraper, "register_with_panel", registered)
+    monkeypatch.setattr(scraper, "scrape_ebus", scraped)
+    monkeypatch.setattr(app[APP_KEY_STORE], "update_from_scrape", lambda _scraped: True)
+    async with TestClient(TestServer(app)) as client:
+        synced = await client.post("/sync-panel-source", headers=_HTMX)
+        html = await synced.text()
+
+    assert synced.status == 200
+    assert "Save to keep it" in html
