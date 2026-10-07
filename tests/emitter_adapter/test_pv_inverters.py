@@ -247,13 +247,10 @@ def test_several_pv_circuits_without_pv_feed_bind_the_section_to_none(firmware: 
     )
 
 
-@pytest.mark.parametrize("feed_by", ["circuit id", "circuit device id"])
-def test_pv_feed_names_the_inverter_the_section_describes(feed_by: str) -> None:
-    """`pv.feed` names a circuit by its config `id`, or by the device id it publishes."""
+def test_pv_feed_names_the_inverter_the_section_describes() -> None:
+    """`pv.feed` names a circuit by its config `id`."""
     config = _panel(CURRENT_FIRMWARE, two_inverters=True)
-    _pv_section(config)["feed"] = (
-        "solar_garage" if feed_by == "circuit id" else stable_circuit_uuid(_SERIAL, "solar_garage")
-    )
+    _pv_section(config)["feed"] = "solar_garage"
     _pv_section(config)["serial_number"] = "sim-inv-0002"
     validate_yaml_config(config)
 
@@ -275,20 +272,24 @@ def test_pv_feed_feeds_the_earlier_firmware_device() -> None:
 
 
 def test_pv_feed_on_a_single_inverter_publishes_what_it_did_without() -> None:
-    """Naming the only PV circuit, by either spelling, changes nothing on the wire."""
+    """Naming the only PV circuit changes nothing on the wire."""
     unnamed = _pvs(_panel(CURRENT_FIRMWARE))
     by_id = _panel(CURRENT_FIRMWARE)
     _pv_section(by_id)["feed"] = "solar_inverter"
-    by_device_id = _panel(CURRENT_FIRMWARE)
-    _pv_section(by_device_id)["feed"] = stable_circuit_uuid(_SERIAL, "solar_inverter")
 
     assert _pvs(by_id) == unnamed
-    assert _pvs(by_device_id) == unnamed
 
 
 @pytest.mark.parametrize(
     ("feed", "reason"),
-    [("no_such_circuit", "names no circuit"), ("kitchen_outlets_1", "is not a PV circuit")],
+    [
+        ("no_such_circuit", "names no circuit"),
+        ("kitchen_outlets_1", "is not a PV circuit"),
+        # The device id a circuit publishes depends on the serial the engine settles
+        # on after validation (a `sim-` prefix, or an override), so it is not a name a
+        # config can rely on; no writer ever produced one.
+        (stable_circuit_uuid(_SERIAL, "solar_inverter"), "names no circuit"),
+    ],
 )
 def test_pv_feed_must_name_a_pv_circuit(feed: str, reason: str) -> None:
     config = _panel(CURRENT_FIRMWARE, pv_feed=None)

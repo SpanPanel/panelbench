@@ -445,9 +445,9 @@ pv: # One inverter's identity, and every inverter's default firmware
   serial_number: str
   firmware_version: str # Every inverter's default, as a firmware version is not identity
   feed:
-    str # The id of the PV circuit feeding the inverter this section describes (its published
-    # device id is also accepted). Optional with one PV circuit; without it, several PV circuits
-    # each name their own inverter, and a firmware_version before release 202639 is refused.
+    str # The id, under circuits, of the PV circuit feeding the inverter this section describes.
+    # Optional with one PV circuit; without it, several PV circuits each name their own inverter,
+    # and a firmware_version before release 202639 is refused. A value naming no PV circuit is refused.
 
 simulation_params:
   update_interval: int # Seconds between snapshots (default: 5)

@@ -310,9 +310,10 @@ def pv_section_circuit(profile: SimulationConfig) -> CircuitDefinitionExtended |
     A real panel publishes the inverter its feeding circuit names in
     ``connection/feeds-device-id``, so the section's identity follows a circuit,
     never a position in the list: the one ``pv.feed`` names, else the panel's only
-    PV circuit. ``pv.feed`` names a circuit by its ``id`` under ``circuits``, or by
-    the device id that circuit publishes, which is what the key held before it took
-    an ``id``.
+    PV circuit. ``pv.feed`` names a circuit by its ``id`` under ``circuits``. Not by
+    the device id the circuit publishes, which follows the serial the engine settles
+    on after validation (a ``sim-`` prefix, or an override), so a config cannot rely
+    on it.
 
     With several PV circuits and no ``pv.feed`` the section describes none of them,
     and each inverter is named by its own circuit. A panel before SPAN release
@@ -344,15 +345,9 @@ def pv_section_circuit(profile: SimulationConfig) -> CircuitDefinitionExtended |
 def _pv_circuit_named(
     profile: SimulationConfig, pv_circuits: list[CircuitDefinitionExtended], feed: str
 ) -> CircuitDefinitionExtended:
-    """The PV circuit *feed* names, by its config ``id`` or its published device id."""
-    panel_id = profile["panel_config"]["serial_number"]
+    """The PV circuit *feed* names by its config ``id``."""
     named = next(
-        (
-            circuit
-            for circuit in profile.get("circuits") or []
-            if feed in (circuit["id"], stable_circuit_uuid(panel_id, circuit["id"]))
-        ),
-        None,
+        (circuit for circuit in profile.get("circuits") or [] if circuit["id"] == feed), None
     )
     if named is None:
         raise ValueError(

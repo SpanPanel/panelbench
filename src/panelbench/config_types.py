@@ -157,8 +157,8 @@ class PVConfigYAML(TypedDict, total=False):
     inverter_type: Literal["hybrid", "ac_coupled", "ac-coupled"]
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
-    # The PV circuit feeding the inverter this section describes, by its `id` or the
-    # device id it publishes: see `spec_generator.pv_section_circuit`.
+    # The `id` of the PV circuit feeding the inverter this section describes: see
+    # `spec_generator.pv_section_circuit`.
     feed: str
 
 
