@@ -30,7 +30,8 @@ as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmw
 - **From release 202639, a SPAN Drive's user charge limit is not published until a user sets one**, as on SPAN firmware.
 - **The shipped templates report firmware `spanos3/r202639/03` and publish release 202639's conventions**, and a config naming a 202633 release keeps that
   release's.
-- **The shipped templates' solar circuit is the "Commissioned PV System" circuit, locked as release 202639 locks it**, where it was named "Solar Inverter".
+- **The shipped templates' solar circuit is now named "Commissioned PV System", as SPAN firmware r202639 names it**, and locked as that release locks it,
+  where it was named "Solar Inverter".
 - **The shipped configs, and any config that sets no `hardware_version`, now report hardware version `1.2`**, as a SPAN panel publishes it, where they reported
   `rev2`; a config copied from an earlier template keeps its `rev2`, which the status endpoint reports as `UNKNOWN` from release 202639.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.

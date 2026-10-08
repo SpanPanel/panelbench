@@ -36,8 +36,8 @@ source panel's firmware; a clone of one of these templates also needs `commissio
   earlier release.
 - **The shipped templates now report firmware `spanos3/r202639/03` and publish SPAN release 202639's conventions**, as a SPAN panel after that upgrade
   does, and a config naming a 202633 release, such as a clone of a template set to `spanos3/r202633/02`, keeps that release's conventions.
-- **The shipped templates' solar circuit is now the "Commissioned PV System" circuit, locked as SPAN firmware release 202639 locks it**, with its relay not
-  switchable and its priority fixed at `NEVER`, where it was named "Solar Inverter".
+- **The shipped templates' solar circuit is now named "Commissioned PV System", as SPAN firmware r202639 names it**, and locked as that release locks it, with
+  its relay not switchable and its priority fixed at `NEVER`, where it was named "Solar Inverter".
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
 - **A config with two or more solar circuits now publishes each inverter as its own solar device, under new device ids**, unless its `firmware_version` names a
   SPAN release before 202639, as SPAN firmware does from that release, and a clone keeps every inverter.
