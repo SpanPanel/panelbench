@@ -40,14 +40,12 @@ class PanelConfig(TypedDict):
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
     vendor_name: NotRequired[str]  # info/vendor-name (default "Span"); a clone keeps its panel's
     model: NotRequired[str]  # info/model (default: from total_tabs); a clone keeps its panel's
-    # The panel envelope, as a clone reads it from its panel. Defaults: both links up,
-    # door CLOSED, cloud CONNECTED, and DEFAULT_WIFI_SSID while Wi-Fi is up. A null
-    # wifi_ssid is a panel that publishes none, as one on Ethernet does.
+    # The panel's network configuration, as a clone reads it from its panel. Defaults:
+    # both links up, and DEFAULT_WIFI_SSID while Wi-Fi is up. A null wifi_ssid is a
+    # panel that publishes none, as one on Ethernet does.
     wifi_link: NotRequired[bool]
     ethernet_link: NotRequired[bool]
     wifi_ssid: NotRequired[str | None]
-    door_state: NotRequired[str]
-    cloud_connection: NotRequired[str]
 
 
 class CyclingPattern(TypedDict, total=False):

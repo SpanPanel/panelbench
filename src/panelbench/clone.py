@@ -747,13 +747,11 @@ def _soc_shed_threshold(
         return None
 
 
-# The panel envelope: what the panel says of its own links and status, and the
-# panel_config key each is kept under for the emitter's envelope to publish.
+# The panel envelope's network configuration: the links the panel says it has, and
+# the panel_config key each is kept under for the emitter's envelope to publish. Not
+# its door or cloud state: those are live state, which the emulator simulates, like
+# power, and a copy would freeze them at the moment of the clone.
 _ENVELOPE_FLAGS: Final = (("wifi", "wifi_link"), ("ethernet", "ethernet_link"))
-_ENVELOPE_STATES: Final = (
-    ("door", "state", "door_state"),
-    ("status", "cloud-connection", "cloud_connection"),
-)
 
 
 def _copy_envelope(
@@ -761,7 +759,7 @@ def _copy_envelope(
     panel_device_id: str,
     panel_config: dict[str, object],
 ) -> None:
-    """The panel's link state and status, absences included.
+    """The panel's network configuration, absences included.
 
     A panel on Ethernet publishes Wi-Fi down and no SSID; its clone records both, so
     it publishes neither a Wi-Fi link nor PanelBench's default network. The SSID is
@@ -776,10 +774,6 @@ def _copy_envelope(
         panel_config["wifi_ssid"] = ssid
     elif "wifi_link" in panel_config:
         panel_config["wifi_ssid"] = None
-    for capability, prop, key in _ENVELOPE_STATES:
-        state = _get_prop(devices, panel_device_id, capability, prop)
-        if state:
-            panel_config[key] = state
 
 
 def _copy_site_values(

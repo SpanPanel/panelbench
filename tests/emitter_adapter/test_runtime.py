@@ -4,6 +4,10 @@ integration tests against the in-process amqtt broker fixture."""
 
 from unittest.mock import MagicMock
 
+import yaml
+from ebus_panel_sim import PanelEnvelopeTick
+
+from panelbench.config_types import SimulationConfig
 from panelbench.const import DEFAULT_WIFI_SSID
 from panelbench.emitter_adapter.definition import load_shedding_config
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
@@ -153,11 +157,19 @@ def test_a_panel_with_wifi_down_and_no_ssid_named_gets_no_default_ssid() -> None
     assert _panel_envelope(config).wifi_ssid is None
 
 
-def test_the_door_and_cloud_state_reach_the_envelope() -> None:
-    config = default_config()
-    config["panel_config"]["door_state"] = "UNKNOWN"
-    config["panel_config"]["cloud_connection"] = "UNKNOWN"
+def test_the_door_and_cloud_state_are_the_emulators_own() -> None:
+    """Live state, not configuration: a config that still names them, as a clone made
+    before they stopped being copied does, cannot freeze them."""
+    written = yaml.safe_dump(dict(default_config())).replace(
+        "panel_config:\n", "panel_config:\n  door_state: OPEN\n  cloud_connection: UNKNOWN\n", 1
+    )
+    config: SimulationConfig = yaml.safe_load(written)
+    assert {"door_state", "cloud_connection"} <= config["panel_config"].keys()
+    defaults = PanelEnvelopeTick()
 
     envelope = _panel_envelope(config)
 
-    assert (envelope.door_state, envelope.cloud_connection) == ("UNKNOWN", "UNKNOWN")
+    assert (envelope.door_state, envelope.cloud_connection) == (
+        defaults.door_state,
+        defaults.cloud_connection,
+    )

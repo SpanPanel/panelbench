@@ -287,9 +287,10 @@ async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
 def _panel_envelope(config: SimulationConfig) -> PanelEnvelopeTick:
     """Panel-envelope facts the emitter cannot derive from circuit physics.
 
-    The links, door and cloud state come from the config, which a clone fills from
-    its panel; ``PanelEnvelopeTick``'s defaults (door closed, links up, cloud
-    connected) stand for a config that names none of them.
+    The links come from the config, which a clone fills from its panel;
+    ``PanelEnvelopeTick``'s defaults (links up) stand for a config that names none.
+    The door and cloud state are always the envelope's own (door closed, cloud
+    connected): live state the emulator simulates, not configuration.
 
     The SSID is here rather than in the manifest because the emitter resolves
     ``status/wifi-ssid`` from ``snapshot.status.wifi_ssid``, which it fills from
@@ -308,8 +309,6 @@ def _panel_envelope(config: SimulationConfig) -> PanelEnvelopeTick:
         wlan_link=wifi,
         eth0_link=panel.get("ethernet_link", defaults.eth0_link),
         wifi_ssid=None if ssid is None else str(ssid),
-        door_state=panel.get("door_state", defaults.door_state),
-        cloud_connection=panel.get("cloud_connection", defaults.cloud_connection),
     )
 
 

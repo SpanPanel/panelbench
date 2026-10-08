@@ -71,8 +71,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **A clone takes its size from the panel's model**, where a panel whose highest spaces were empty was cloned as a smaller one.
 - **A clone's energy readings carry on from its panel's**, where they started at zero.
 - **A clone keeps its panel's PCS priorities, vendor name, model, off-grid shed threshold and battery MID identity**, where it gave PanelBench's own.
-- **A clone keeps its panel's network links, Wi-Fi network or the absence of one, door and cloud state**, where a panel on Ethernet cloned as one on Wi-Fi
-  with PanelBench's own network.
+- **A clone keeps its panel's network links and Wi-Fi network or the absence of one**, where a panel on Ethernet cloned as one on Wi-Fi with PanelBench's own
+  network.
 - **A clone's battery charges and discharges at the battery's rated power**, or 5 kW per 13.5 kWh where the battery publishes none, where every battery was
   held to 3.5 kW.
 - **A clone records a breaker rating its panel does not publish as absent**, where it wrote 20 A into the config.

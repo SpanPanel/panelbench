@@ -7,8 +7,9 @@ the literal. A difference fails unless it is one of these, each named below with
 its reason:
 
 - **Time-varying**: measurements and timestamps, which differ between any two
-  moments of the same panel. Never configuration, nor the status a clone copies:
-  its links, door and cloud state are compared like any other value.
+  moments of the same panel, and the panel's door and cloud state, live state the
+  emulator simulates as it does power. Never configuration: the panel's network
+  links and SSID, which a clone copies, are compared like any other value.
 - **By design**: what makes the clone a clone, its own serial and device ids, and
   the postal code, which a clone deliberately does not copy. Device ids are
   compared through the clone's mapping of them, so a reference to the wrong device
@@ -225,6 +226,11 @@ def _description_differences(
 _MEASUREMENTS = frozenset({"power-flows", "soc", "shed-forecast"})
 """Nodes whose every value is a measurement, different between any two moments."""
 
+_LIVE_STATE = frozenset({"value door/state", "value status/cloud-connection"})
+"""The panel's own live state, which the emulator simulates rather than the clone
+copying: a copy would freeze the door opened to register the clone, or a cloud outage
+at that moment, for good."""
+
 _METER_MEASUREMENTS = frozenset(
     {"active-power", "current", "current-a", "current-b", "imported-energy", "exported-energy"}
 )
@@ -232,8 +238,10 @@ _METER_MEASUREMENTS = frozenset(
 
 
 def _time_varying(difference: Difference) -> bool:
-    """A measurement or a timestamp. Never configuration, nor status a clone copies."""
+    """A measurement, a timestamp or the panel's live state. Never configuration."""
     if difference.where in ("value $state", "description version"):
+        return True
+    if difference.role == _PANEL and difference.where in _LIVE_STATE:
         return True
     if not difference.where.startswith("value "):
         return False

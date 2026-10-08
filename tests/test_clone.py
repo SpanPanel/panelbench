@@ -1034,7 +1034,8 @@ class TestMicrogridInterconnect:
 
 
 class TestNetworkAndEnvelope:
-    """The panel's link state and status travel with the clone, absences included.
+    """The panel's network configuration travels with the clone, absences included;
+    its live state does not.
 
     The captured MAIN 32 is on Ethernet: `status/wifi` false, `status/ethernet` true
     and no SSID. A clone that published Wi-Fi up on `sim-wifi` invented a network.
@@ -1059,14 +1060,16 @@ class TestNetworkAndEnvelope:
 
         assert (panel["wifi_link"], panel["wifi_ssid"]) == (True, "example-net")
 
-    def test_the_door_and_cloud_state_are_copied(self) -> None:
+    def test_the_door_and_cloud_state_are_live_state_and_not_copied(self) -> None:
+        """Copied, they would be frozen at the moment of the clone: a door opened to
+        register the clone, or a cloud outage then, reported by the clone for good."""
         devices = _base_devices()
-        devices[_SERIAL].update_property("door", "state", "UNKNOWN")
+        devices[_SERIAL].update_property("door", "state", "OPEN")
         devices[_SERIAL].update_property("status", "cloud-connection", "UNKNOWN")
 
         panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
 
-        assert (panel["door_state"], panel["cloud_connection"]) == ("UNKNOWN", "UNKNOWN")
+        assert not {"door_state", "cloud_connection"} & panel.keys()
 
     def test_a_panel_that_publishes_none_of_it_gets_none_written(self) -> None:
         panel = _panel_config(translate_scraped_panel(_make_scraped()))
