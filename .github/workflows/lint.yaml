@@ -18,9 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # requires-python is >=3.14. The hooks run in environments of their own, which
+      # is why 3.13 worked, but nothing should depend on that.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Install pre-commit
         run: pip install pre-commit
