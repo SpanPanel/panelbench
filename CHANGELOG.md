@@ -13,6 +13,10 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
   source control.
 - **Commissioned PV and battery system circuits**, locked as SPAN firmware release 202639 locks them, are modelled and kept by a clone, and a config naming an
   earlier release is refused if it asks for one.
+- **The log warns about a solar circuit on a breaker whose template lacks `commissioned_system: pv` when the config's `firmware_version` names SPAN release
+  202639 or later, or no SPAN release**, since that release locks such a circuit, though the config still loads.
+- **The log warns about a solar circuit on a single tab**, since a grid-tied inverter is 240 V on a two-pole breaker with two tabs on opposite legs, though the
+  config still loads.
 - **From SPAN firmware release 202639, a panel's status endpoint reports its hardware version**, as SPAN's does: `1.2` or `2.0` from the config's
   `hardware_version`, and `UNKNOWN` for any other value.
 - **The dashboard's Import accepts a panel definition file**, such as one `panel-sim-capture` wrote from a live panel, and turns it into a PanelBench config.
@@ -33,8 +37,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **The top-level `pv` section now describes the inverter whose circuit `pv.feed` names by its `id`, or the only solar circuit's, where it followed whichever
   solar circuit was listed first**; a `pv.feed` that names no solar circuit's `id` is now refused, as is a config with several solar circuits and no `pv.feed`
   whose `firmware_version` names a release before 202639.
-- **A solar rating set in the dashboard now replaces the stale copy a clone of the shipped MAIN 40 or MAIN 32 template kept**, at the template's top level or
-  in the solar circuit's `overrides`, and the log warns with both values and the file until the config is saved in the dashboard.
+- **A solar rating set in the dashboard now replaces the stale copy a clone of the shipped MAIN 40 or MAIN 32 template kept**, at the template's top level or in
+  the solar circuit's `overrides`, and the log warns with both values and the file until the config is saved in the dashboard.
 - **A `pv.nameplate_capacity_w`, or a circuit's `overrides` rating on a template other circuits share, that disagrees with the template's `energy_profile`
   rating is now refused, naming both**, where the two could each win somewhere different; an equal or lone legacy rating moves into the template's
   `energy_profile`.
@@ -62,8 +66,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **The dashboard refuses an edit the panel would not load, says why and keeps the config as it was, and starts when the active config is one the panel
   refuses**, where such an edit was saved and the panel then failed to restart, and an add-on restart with it active left no dashboard to fix it from.
 - **The dashboard's Add Entity places a new circuit on the first free space**, where it made a circuit with no space, which the panel refused.
-- **The dashboard's relay control shows a locked relay however its config spells it**, where a circuit written `non-controllable`, as the shipped configs
-  write it, showed `controllable` and saving its form unlocked it.
+- **The dashboard's relay control shows a locked relay however its config spells it**, where a circuit written `non-controllable`, as the shipped configs write
+  it, showed `controllable` and saving its form unlocked it.
 - **A solar inverter's nameplate edited in the dashboard now survives a restart and is the rating the panel both publishes and produces at**, including in a
   clone of the shipped MAIN 40 or MAIN 32 template, where the template's stale copy of the rating replaced the edit when the panel started.
 

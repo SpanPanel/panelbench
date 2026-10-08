@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.6.0 — 2026-10-06
+## 2.6.0 — 2026-10-07
 
 SPAN firmware release 202639 arrives for any config that names it, while the shipped templates stay on release 202633's conventions. A config or clone that
 names no SPAN release, including a clone of the earlier MAIN 40 template, now publishes release 202639's; to keep the earlier conventions, set its
@@ -12,6 +12,8 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
   control.
 - **Commissioned PV and battery system circuits are modelled and kept by a clone**, locked as release 202639 locks them, and a config naming an earlier release
   is refused if it asks for one.
+- **From release 202639, the log warns about a solar circuit on a breaker whose template lacks `commissioned_system: pv`**, since that release locks it.
+- **The log warns about a solar circuit on a single tab**, since a grid-tied inverter is 240 V on a two-pole breaker.
 - **From release 202639, a panel's status endpoint reports its hardware version**: `1.2` or `2.0` from the config's `hardware_version`, and `UNKNOWN` otherwise.
 - **The dashboard's Import accepts a panel definition file**, such as one `panel-sim-capture` wrote from a live panel, and turns it into a PanelBench config.
 - **The dashboard can export a saved config as a panel definition file**, the makeup other eBus tools read.
