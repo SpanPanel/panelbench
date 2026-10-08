@@ -8,6 +8,10 @@ name: Tests
 # They skip where mosquitto is missing, which is right on a laptop and wrong here:
 # PANELBENCH_REQUIRE_MOSQUITTO turns that skip into a failure, so a runner image
 # that loses the package cannot pass by testing less.
+#
+# --locked, not --frozen: --frozen installs whatever uv.lock says even when
+# pyproject.toml has moved on, so a dependency bound changed without a re-lock
+# would be tested against the old resolution and pass. --locked fails instead.
 
 on:
   pull_request:
@@ -29,9 +33,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mosquitto
 
       - name: Install dependencies
-        run: uv sync --frozen --all-groups
+        run: uv sync --locked --all-groups
 
       - name: Run tests
         env:
           PANELBENCH_REQUIRE_MOSQUITTO: "1"
-        run: uv run --frozen pytest -q -rs
+        run: uv run --locked pytest -q -rs

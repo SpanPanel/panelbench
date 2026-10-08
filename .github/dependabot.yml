@@ -1,6 +1,9 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  # uv, not pip: pip's updater bumps pyproject.toml and leaves uv.lock behind, and
+  # the tests workflow syncs with --locked, so every such PR would fail. uv's
+  # updater moves both together.
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
