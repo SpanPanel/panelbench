@@ -32,7 +32,8 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
 - **From release 202639, a config with two or more solar circuits publishes each inverter as its own solar device**, under new device ids, and a clone keeps
   every inverter.
-- **Every solar device is named after its own device id**, as SPAN firmware names an inverter, where it was named "Solar", "Solar 2" and so on in circuit order.
+- **Every solar device, battery, battery MID and set of lugs is named after its own device id**, as SPAN firmware release 202639 names them, where they were
+  named "Solar", "Battery" and so on.
 - **The `pv` section describes the inverter whose circuit `pv.feed` names by its `id`, or the only solar circuit's**, where it followed whichever was listed
   first, and a config whose `pv.feed` names no solar circuit, or with several solar circuits and no `pv.feed` before release 202639, is refused.
 - **A solar rating set in the dashboard replaces the stale copy a clone of the shipped MAIN 40 or MAIN 32 template kept**, and the log warns about it until the

@@ -137,17 +137,21 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
 
 def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     upstream_id, downstream_id = lugs_device_ids(profile["panel_config"]["serial_number"])
+    # Named after their ids, as SPAN release 202639 names every device it proxies or
+    # synthesizes: the captured MAIN 32 publishes its lugs, battery and MID that way.
+    # A name on the wire is a $description name only for these, so nothing a person
+    # reads is lost; a circuit's name is also its info/name (see _circuit_instances).
     return [
         DeviceInstance(
             entity_class="lugs",
             instance_id=upstream_id,
-            display_name="Upstream lugs",
+            display_name=upstream_id,
             metadata={"direction": "upstream"},
         ),
         DeviceInstance(
             entity_class="lugs",
             instance_id=downstream_id,
-            display_name="Downstream lugs",
+            display_name=downstream_id,
             metadata={"direction": "downstream"},
         ),
     ]
@@ -184,6 +188,10 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             DeviceInstance(
                 entity_class="circuit",
                 instance_id=stable_circuit_uuid(panel_id, c["id"]),
+                # The emitter publishes this as both the device's $description name and
+                # its info/name. SPAN release 202639 names the device after its id and
+                # keeps this in info/name; one display name cannot be both, so the
+                # circuit keeps the name people read until the emitter separates them.
                 display_name=c.get("name", c["id"]),
                 metadata={
                     "tab-numbers": ",".join(str(int(t)) for t in tabs if t),
@@ -274,10 +282,11 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
         bess_meta["feed"] = str(bess_cfg["feed"])
     if "initial_soe_kwh" in bess_cfg:
         bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
+    instance_id = bess_device_id(profile["panel_config"]["serial_number"], bess_cfg)
     return DeviceInstance(
         entity_class="bess",
-        instance_id=bess_device_id(profile["panel_config"]["serial_number"], bess_cfg),
-        display_name="Battery",
+        instance_id=instance_id,
+        display_name=instance_id,  # as SPAN names it; see _lugs_instances
         metadata=bess_meta,
     )
 
@@ -333,10 +342,11 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
     mid_hardware = bess_cfg.get("mid_hardware_version")
     if mid_hardware is not None:
         metadata["hardware-version"] = str(mid_hardware)
+    instance_id = mid_device_id(profile["panel_config"]["serial_number"], bess_cfg)
     return DeviceInstance(
         entity_class="mid",
-        instance_id=mid_device_id(profile["panel_config"]["serial_number"], bess_cfg),
-        display_name="Microgrid Interconnect Device",
+        instance_id=instance_id,
+        display_name=instance_id,  # as SPAN names it; see _lugs_instances
         metadata=metadata,
     )
 

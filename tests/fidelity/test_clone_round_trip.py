@@ -15,9 +15,6 @@ its reason:
 - **Upstream**: what the pinned emitter, ebus-panel-sim, publishes whatever
   PanelBench gives it. Each is a strict expected failure naming the cause, so one
   the emitter fixes turns into a failure here, and the expectation comes out.
-- **PanelBench, to decide**: a convention of PanelBench's own that the source does
-  not share and that consumers may read. A strict expected failure too, so it is
-  seen until it is decided.
 
 Two sources: the pinned release's masked capture of a real MAIN 32 on SPAN release
 202639, and the rehearsal-after config as PanelBench publishes it.
@@ -292,6 +289,12 @@ UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
         "ebus-panel-sim 0.9.0's profiles do not declare connection/count",
         lambda d: d.where == "declaration connection/count",
     ),
+    "a circuit is named for people": (
+        "ebus-panel-sim 0.9.0 publishes one display name as both a circuit's $description "
+        "name and its info/name; SPAN release 202639 names the device after its id and keeps "
+        "the circuit's own name in info/name, which naming the device by id here would lose",
+        lambda d: d.where == "description name" and d.role.startswith("circuit"),
+    ),
     "a property's declared name differs": (
         "ebus-panel-sim 0.9.0's profiles word some declarations differently from SPAN firmware",
         lambda d: (
@@ -304,19 +307,9 @@ UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
     ),
 }
 
-PANELBENCH_TO_DECIDE: dict[str, tuple[str, Callable[[Difference], bool]]] = {
-    "a device is named after its id": (
-        "SPAN release 202639 names each circuit, battery, MID and lugs device after its own "
-        "device id; PanelBench names them for people (the circuit's name, 'Battery'), and the "
-        "integration shows a battery's $description name as the grid-forming entity, so the "
-        "change needs deciding before it is made",
-        lambda d: d.where == "description name",
-    ),
-}
-
 
 def _unexplained(differences: list[Difference]) -> list[Difference]:
-    known = [check for _reason, check in (*UPSTREAM.values(), *PANELBENCH_TO_DECIDE.values())]
+    known = [check for _reason, check in UPSTREAM.values()]
     return [
         d
         for d in differences
@@ -355,17 +348,13 @@ async def test_a_clone_differs_from_its_source_only_as_explained(
     [
         pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=f"upstream: {reason}"))
         for name, (reason, _check) in sorted(UPSTREAM.items())
-    ]
-    + [
-        pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=f"to decide: {reason}"))
-        for name, (reason, _check) in sorted(PANELBENCH_TO_DECIDE.items())
     ],
 )
 async def test_the_captured_main_32_clone_has_no_known_difference(
     group: str, tmp_path: Path
 ) -> None:
     """Each known difference, held as an expectation that fails while it stands."""
-    _reason, check = {**UPSTREAM, **PANELBENCH_TO_DECIDE}[group]
+    _reason, check = UPSTREAM[group]
     theirs, ours = await _captured_main_32(tmp_path)
 
     standing = [d for d in _differences(theirs, ours) if check(d)]

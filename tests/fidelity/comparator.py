@@ -212,6 +212,10 @@ def role_key(device_id: str, devices: dict[str, dict[str, str]]) -> str:
     Drive after its id, as it does every other device it proxies, would misalign it
     the same way.
 
+    Lugs are keyed by the direction they publish, for the same reason: SPAN release
+    202639 names them after their own ids, as PanelBench now does, and upstream's
+    emitter names them "Upstream lugs" and "Downstream lugs".
+
     Every other device keeps its ``role_of``.
     """
     props = devices[device_id]
@@ -222,6 +226,8 @@ def role_key(device_id: str, devices: dict[str, dict[str, str]]) -> str:
         return f"{_declared(props, 'type')} @{_feed_of(device_id, devices)}"
     if device_class == "mid":
         return f"{_declared(props, 'type')} of {_battery_key(device_id, devices)}"
+    if device_class == "lugs":
+        return f"{_declared(props, 'type')} @{props.get('info/direction', device_id)}"
     return role_of(device_id, props)
 
 

@@ -298,3 +298,16 @@ def test_a_clones_energy_seeds_reach_the_emitter() -> None:
 
     assert circuit.metadata["initial-consumed-wh"] == "129126.5"
     assert circuit.metadata["initial-produced-wh"] == "11355.5"
+
+
+def test_the_battery_mid_and_lugs_are_named_after_their_ids() -> None:
+    """As SPAN release 202639 names them on the wire (the captured MAIN 32 does), where
+    PanelBench named them "Battery", "Microgrid Interconnect Device" and "Upstream lugs"."""
+    profile = _profile()
+    profile["bess"]["enabled"] = True
+    manifest = build_manifest(profile)
+
+    devices = [*manifest.of_class("bess"), *manifest.of_class("mid"), *manifest.of_class("lugs")]
+
+    assert len(devices) == 4, "the profile names no battery and MID, so the test proves less"
+    assert all(device.display_name == device.instance_id for device in devices)

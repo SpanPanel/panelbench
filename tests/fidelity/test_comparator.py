@@ -79,7 +79,7 @@ def test_devices_sharing_a_role_stay_distinct() -> None:
 
 
 def test_any_other_repeated_role_is_refused() -> None:
-    lugs = _device("lugs", "Upstream lugs")
+    lugs = _device("lugs", "Upstream lugs", **{"info/direction": "UPSTREAM"})
 
     with pytest.raises(ValueError, match="share the role"):
         by_role({"a": lugs, "b": lugs})
@@ -106,12 +106,13 @@ def test_a_circuit_fed_device_aligns_by_its_circuit_whatever_it_is_named(
 
 def test_a_battery_and_its_mid_align_by_the_lugs_the_battery_feeds() -> None:
     firmware = _upstream_battery("nt-0000-tg1", "nt-0000-tg1", "nt-0000-tg2", "nt-0000-tg2")
+    # Upstream's emitter still names these for people; alignment must not care.
     simulator = _upstream_battery(
         "sim-bess", "Battery", "sim-bess-mid", "Microgrid Interconnect Device"
     )
 
     assert set(by_role(simulator)) == {
-        "energy.ebus.device.lugs::Upstream lugs",
+        "energy.ebus.device.lugs @UPSTREAM",
         "energy.ebus.device.bess @UPSTREAM lugs",
         "energy.ebus.device.mid of energy.ebus.device.bess @UPSTREAM lugs",
     }
@@ -149,7 +150,7 @@ def test_the_absolute_checks_refuse_a_repeated_role_too(
 ) -> None:
     """The checks against the specification key by role as the comparisons do, so a
     repeat would let one device's findings stand for both."""
-    lugs = _device("lugs", "Upstream lugs")
+    lugs = _device("lugs", "Upstream lugs", **{"info/direction": "UPSTREAM"})
     devices = {
         "sim-0001": _device(
             "distribution-enclosure", "Panel", **{"info/serial-number": "sim-0001"}

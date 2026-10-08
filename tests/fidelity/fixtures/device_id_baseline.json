@@ -11,7 +11,7 @@
     "energy.ebus.device.circuit::SPAN Drive - Garage @32,34": "span-drive-garage is not <circuit-uuid>",
     "energy.ebus.device.evse @32,34": "evse is not <proxier-id>-<identifier>",
     "energy.ebus.device.evse @35,37": "evse-2 is not <proxier-id>-<identifier>",
-    "energy.ebus.device.lugs::Downstream lugs": "lugs-downstream is not <panel-serial>-lugs-{up,dn}",
-    "energy.ebus.device.lugs::Upstream lugs": "lugs-upstream is not <panel-serial>-lugs-{up,dn}"
+    "energy.ebus.device.lugs @DOWNSTREAM": "lugs-downstream is not <panel-serial>-lugs-{up,dn}",
+    "energy.ebus.device.lugs @UPSTREAM": "lugs-upstream is not <panel-serial>-lugs-{up,dn}"
   }
 }

@@ -45,8 +45,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 - **A `pv.nameplate_capacity_w`, or a circuit's `overrides` rating on a template other circuits share, that disagrees with the template's `energy_profile`
   rating is now refused, naming both**, where the two could each win somewhere different; an equal or lone legacy rating moves into the template's
   `energy_profile`.
-- **Every solar device is now named after its own device id**, as SPAN firmware names an inverter, where it was named "Solar", "Solar 2" and so on in circuit
-  order.
+- **Every solar device, battery, battery MID and set of lugs is now named after its own device id**, as SPAN firmware release 202639 names them, where they
+  were named "Solar", "Battery", "Microgrid Interconnect Device" and "Upstream lugs"; a circuit keeps its own name.
 - **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
   `UNKNOWN` from release 202639.
 - **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a panel

@@ -71,10 +71,13 @@ async def test_a_clone_republishes_the_battery_identity(tmp_path: Path) -> None:
 
     source, clone = await source_and_clone(tmp_path, config)
 
-    assert _info(clone, TYPE_BESS, "model") == {"Battery": "SPAN Battery"}
+    # One battery each side, named after its own device id, which differs between
+    # a panel and its clone; so compared by value, not by name.
+    assert list(_info(clone, TYPE_BESS, "model").values()) == ["SPAN Battery"]
     for prop in _IDENTITY:
-        assert _info(source, TYPE_BESS, prop)["Battery"], f"the source publishes {prop}"
-        assert _info(clone, TYPE_BESS, prop) == _info(source, TYPE_BESS, prop), prop
+        [published] = _info(source, TYPE_BESS, prop).values()
+        assert published, f"the source publishes {prop}"
+        assert list(_info(clone, TYPE_BESS, prop).values()) == [published], prop
 
 
 @pytest.mark.asyncio
