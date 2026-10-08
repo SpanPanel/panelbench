@@ -45,9 +45,11 @@ cancellation.
 **A failed session leaves without a DISCONNECT.** A clean DISCONNECT tells the
 broker to discard the will, so a broker that recovered after the session failed
 would keep a stale ``ready`` for a panel stopped meanwhile. A session an operation
-failed is left by closing its socket, and the will stands until the reconnect
-republishes the tree. A session the reader saw drop, or one ``disconnect`` ends,
-leaves through aiomqtt's own exit.
+failed is left by closing its socket, however its block ends: a stop that lands
+in the same loop turn as the failure, as one does when the failure is in the
+stop's own drain, ends it with a cancellation, not the session's deadline. The
+will stands until the reconnect republishes the tree. A session the reader saw
+drop, or one ``disconnect`` ends, leaves through aiomqtt's own exit.
 
 **A connect that timed out is withdrawn.** aiomqtt gives up waiting for a CONNACK
 without closing paho's socket, so a broker that answers late connects a client no
@@ -59,6 +61,13 @@ session and discards the will. (An aiomqtt issue, to report upstream.)
 which cancelling the await does not stop. A connect cancelled by ``disconnect``
 is therefore left to resolve, and a client it connected is closed, so no orphan
 connection holds the panel's client id and will.
+
+**The two reaches into paho are pinned, and degrade aloud.** Withdrawing and
+dropping use aiomqtt's private ``_client`` and paho's private ``_sock_close``, so
+pyproject.toml bounds both packages to the range CI proves, and a contract test
+fails on a bump that moves either. An install outside that range that lacks one
+falls back to aiomqtt's own exit, which still closes the connection but sends a
+DISCONNECT, and says so once.
 """
 
 from __future__ import annotations
@@ -125,6 +134,8 @@ class _Session:
     def __init__(self, client: aiomqtt.Client) -> None:
         self.client = client
         self.outage_reported = False
+        # An operation on it failed: it is left without a DISCONNECT, however it ends.
+        self.failed = False
         self._in_flight: set[asyncio.Timeout] = set()
         self._serving: asyncio.Timeout | None = None
 
@@ -143,6 +154,7 @@ class _Session:
 
     def fail(self) -> None:
         """End this session: an operation on it failed, whatever the reader thinks."""
+        self.failed = True
         now = asyncio.get_running_loop().time()
         if self._serving is not None and not self._serving.expired():
             self._serving.reschedule(now)
@@ -316,8 +328,8 @@ class BrokerLink:
         )
 
     @contextlib.asynccontextmanager
-    async def _connected_client(self) -> AsyncIterator[aiomqtt.Client]:
-        """A connected client, left with a clean DISCONNECT.
+    async def _connected_session(self) -> AsyncIterator[_Session]:
+        """A session on a connected client, left as its state says, not its exception.
 
         The connect is shielded: cancelled, it is left to finish in its thread, and a
         client it connected is then closed, so no orphan keeps the panel's id and will.
@@ -332,18 +344,13 @@ class BrokerLink:
             closing.add_done_callback(self._orphans.discard)
             raise
         except aiomqtt.MqttError:
-            _withdraw(client)
+            await _withdraw(client)
             raise
+        session = _Session(client)
         try:
-            yield client
-        except TimeoutError:
-            # The session's own deadline: an operation failed it. See the module docstring.
-            _drop(client)
-            raise
-        except BaseException:
-            await client.__aexit__(None, None, None)
-            raise
-        await client.__aexit__(None, None, None)
+            yield session
+        finally:
+            await _leave(session)
 
     @staticmethod
     async def _close_when_connected(
@@ -352,10 +359,9 @@ class BrokerLink:
         try:
             await attempt
         except Exception:
-            _withdraw(client)  # never connected, but its socket may yet
+            await _withdraw(client)  # never connected, but its socket may yet
             return
-        with contextlib.suppress(Exception):
-            await client.__aexit__(None, None, None)
+        await _exit(client)
 
     async def _supervise(self, connected: asyncio.Future[None]) -> None:
         loop = asyncio.get_running_loop()
@@ -364,9 +370,9 @@ class BrokerLink:
             session: _Session | None = None
             opened_at: float | None = None
             try:
-                async with self._connected_client() as client:
+                async with self._connected_session() as session:
                     opened_at = loop.time()
-                    session = _Session(client)
+                    client = session.client
                     self._session = session
                     try:
                         async with session.serving():
@@ -486,20 +492,81 @@ class BrokerLink:
 
 # aiomqtt offers no way to withdraw a connect it gave up on, nor to leave without a
 # DISCONNECT, so both reach into the paho client it wraps: the one place this module
-# does, kept to these two helpers.
+# does, kept to the helpers below. pyproject.toml pins the range they hold for, and
+# tests/emitter_adapter/test_aiomqtt_contract.py fails on a bump that moves them.
+
+_moved_internals_reported: set[tuple[str, str]] = set()
+
+_WITHDRAW_FALLBACK = (
+    "a connect that timed out is withdrawn through aiomqtt's own exit, which waits for "
+    "a broker that may not answer"
+)
+_DROP_FALLBACK = (
+    "a failed session is left with a DISCONNECT, so the broker discards its will and a "
+    "stopped panel can stay `ready`"
+)
 
 
-def _withdraw(client: aiomqtt.Client) -> None:
+def _report_moved(internal: str, consequence: str) -> None:
+    """Warn, once per process, that *internal* is missing: an install outside the pins."""
+    if (internal, consequence) in _moved_internals_reported:
+        return
+    _moved_internals_reported.add((internal, consequence))
+    _LOG.warning(
+        "%s is missing from the installed aiomqtt and paho-mqtt, which are outside the "
+        "versions PanelBench pins; %s",
+        internal,
+        consequence,
+    )
+
+
+async def _exit(client: aiomqtt.Client) -> None:
+    """Leave through aiomqtt's own exit: a DISCONNECT, then its wait for the broker.
+
+    A broker that has stopped answering makes that wait time out, which says nothing
+    the link has not already reported.
+    """
+    with contextlib.suppress(aiomqtt.MqttError, OSError):
+        await client.__aexit__(None, None, None)
+
+
+async def _leave(session: _Session) -> None:
+    """End *session*'s connection: without a DISCONNECT if an operation failed it."""
+    if session.failed:
+        await _drop(session.client)
+    else:
+        await _exit(session.client)
+
+
+async def _withdraw(client: aiomqtt.Client) -> None:
     """DISCONNECT behind a CONNECT aiomqtt stopped waiting for, so no late CONNACK
     connects a client nobody owns; the broker discards its will and session."""
-    with contextlib.suppress(Exception):
-        client._client.disconnect()
+    try:
+        paho = client._client
+    except AttributeError:
+        _report_moved("aiomqtt.Client._client", _WITHDRAW_FALLBACK)
+        await _exit(client)
+        return
+    with contextlib.suppress(OSError):
+        paho.disconnect()
 
 
-def _drop(client: aiomqtt.Client) -> None:
+async def _drop(client: aiomqtt.Client) -> None:
     """Close the socket with no DISCONNECT, so the broker publishes the will."""
-    with contextlib.suppress(Exception):
-        client._client._sock_close()
+    try:
+        paho = client._client
+    except AttributeError:
+        _report_moved("aiomqtt.Client._client", _DROP_FALLBACK)
+        await _exit(client)
+        return
+    try:
+        sock_close = paho._sock_close
+    except AttributeError:
+        _report_moved("paho.mqtt.client.Client._sock_close", _DROP_FALLBACK)
+        await _exit(client)
+        return
+    with contextlib.suppress(OSError):
+        sock_close()
 
 
 def _code(rc: int | ReasonCode | None) -> int | None:

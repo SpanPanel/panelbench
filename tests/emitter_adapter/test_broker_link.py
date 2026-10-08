@@ -17,13 +17,14 @@ from typing import TYPE_CHECKING
 import aiomqtt
 import pytest
 
+from panelbench.emitter_adapter import broker_link
 from panelbench.emitter_adapter.broker_link import BrokerLink, _Backoff
 from panelbench.emitter_adapter.transport import BrokerUnavailable, LoopBoundTransport
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from tests.emitter_adapter._fake_aiomqtt import FakeBroker
+    from tests.emitter_adapter._fake_aiomqtt import FakeBroker, FakeClient
 
 RELAY_SETS = "ebus/5/+/switch/relay/set"
 PRIORITY_SET = "ebus/5/dev-1/load-shed/priority/set"
@@ -573,3 +574,87 @@ async def test_a_reader_noticed_drop_leaves_cleanly(fake_broker: FakeBroker) -> 
 
     assert first is not None and first.exited and not first.dropped
     await link.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_session_that_fails_as_the_link_stops_still_leaves_without_a_disconnect(
+    fake_broker: FakeBroker,
+) -> None:
+    """``stop_clone`` drains the transport, then disconnects, so a publish that fails in
+    the drain meets the stop in one loop turn: the session's deadline and the stop's
+    cancellation land together, and the cancellation wins. The session failed all the
+    same, so it is left without a DISCONNECT and the broker keeps the will, or the
+    retained `ready` outlives the panel."""
+    link = await connected_link()
+    failing = fake_broker.live
+
+    fake_broker.time_out_operations = True
+    with pytest.raises(BrokerUnavailable):
+        await link.publish("ebus/5/dev-1/$state", b"ready", 1, True)
+    await link.disconnect()
+
+    assert failing is not None and failing.dropped and not failing.exited
+
+
+# -- the aiomqtt and paho internals the link reaches into, moved ----------------
+
+
+def _moved_warnings(caplog: pytest.LogCaptureFixture, attribute: str) -> list[str]:
+    return [w for w in _warnings(caplog) if attribute in w]
+
+
+@pytest.fixture
+def unreported_moves(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh process as far as the once-only warning about a moved internal goes."""
+    monkeypatch.setattr(broker_link, "_moved_internals_reported", set())
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("unreported_moves")
+async def test_a_paho_without_sock_close_leaves_a_failed_session_through_aiomqtt(
+    fake_broker: FakeBroker, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Outside the pinned range, a failed session can no longer be left without a
+    DISCONNECT. It is still left, through aiomqtt's own exit, and the operator is told
+    once what that costs, rather than the socket staying open with no word."""
+    fake_broker.sock_close_moved = True
+    link = await connected_link()
+
+    async def fail_a_session(after: FakeClient | None) -> FakeClient:
+        failing = await fake_broker.wait_for_live(after=after)
+        await eventually(link.is_connected)  # the link has taken the session up
+        fake_broker.time_out_operations = True
+        with pytest.raises(BrokerUnavailable):
+            await link.publish("ebus/5/dev-1/$state", b"ready", 1, True)
+        fake_broker.time_out_operations = False
+        await eventually(lambda: failing.exited)
+        return failing
+
+    first = await fail_a_session(None)
+    second = await fail_a_session(first)
+
+    assert not (first.dropped or second.dropped)
+    [warning] = _moved_warnings(caplog, "_sock_close")
+    assert "will" in warning
+    await link.disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("unreported_moves")
+async def test_an_aiomqtt_without_its_paho_client_still_withdraws_a_timed_out_connect(
+    fake_broker: FakeBroker, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake_broker.paho_client_moved = True
+    link = await connected_link()
+    await outage(fake_broker, link)
+    fake_broker.withhold_connack = True
+    attempts = len(fake_broker.clients)
+    fake_broker.come_up()
+    await eventually(lambda: len(fake_broker.clients) > attempts + 1)
+    await link.disconnect()
+
+    fake_broker.deliver_late_connacks()
+
+    assert all(client.withdrawn for client in fake_broker.clients[attempts:])
+    assert fake_broker.live is None, "a connect the link gave up on came alive"
+    assert len(_moved_warnings(caplog, "_client")) == 1

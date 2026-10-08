@@ -187,3 +187,36 @@ async def test_no_connect_the_link_gave_up_on_comes_alive_after_a_stop(
     gc.collect()
     await asyncio.sleep(0)
     assert "never retrieved" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_session_that_fails_as_the_link_stops_leaves_its_will(
+    mosquitto: Mosquitto,
+) -> None:
+    """A stop whose own drain meets a frozen broker: the publish fails, and the stop
+    lands in the same loop turn as the session's deadline. The failed session must
+    still be left without a DISCONNECT, so once the broker thaws it publishes the
+    will, and the retained `$state` says `lost` for the panel that stopped, not
+    `ready`."""
+    link = BrokerLink(
+        host="127.0.0.1",
+        port=mosquitto.port,
+        client_id="panelbench-stop-frozen-probe",
+        will=aiomqtt.Will(topic="probe/$state", payload="lost", qos=0, retain=True),
+        min_reconnect_delay=0.2,
+        max_reconnect_delay=1.0,
+        operation_timeout=0.5,
+    )
+    await link.connect()
+    await link.publish("probe/$state", b"ready", 1, True)
+    mosquitto.freeze()
+    try:
+        with pytest.raises(BrokerUnavailable):
+            await link.publish("probe/state", b"ready", 1, True)
+        await link.disconnect()
+    finally:
+        mosquitto.thaw()
+
+    async with asyncio.timeout(5):
+        while await retained(mosquitto.port, "probe/$state") != b"lost":
+            await asyncio.sleep(0.1)

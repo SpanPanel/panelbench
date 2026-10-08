@@ -26,8 +26,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 
-class _FakePaho:
-    """The paho client inside an aiomqtt one, as far as the link reaches into it."""
+class _PahoWithoutSockClose:
+    """The paho client inside an aiomqtt one, from a paho that moved ``_sock_close``."""
 
     def __init__(self, owner: FakeClient) -> None:
         self._owner = owner
@@ -36,6 +36,10 @@ class _FakePaho:
         """DISCONNECT, sent behind a CONNECT still waiting for its CONNACK."""
         self._owner.withdrawn = True
         return 0
+
+
+class _FakePaho(_PahoWithoutSockClose):
+    """The paho client inside an aiomqtt one, as far as the link reaches into it."""
 
     def _sock_close(self) -> None:
         """The socket closed with no DISCONNECT, so the broker keeps the will."""
@@ -60,7 +64,11 @@ class FakeClient:
         self.awaiting_connack = False
         self.withdrawn = False
         self.dropped = False
-        self._client = _FakePaho(self)
+        # The paho client the link reaches into, unless a test moved it as an
+        # aiomqtt or paho upgrade outside the pinned range could.
+        if not self.broker.paho_client_moved:
+            paho = _PahoWithoutSockClose if self.broker.sock_close_moved else _FakePaho
+            self._client: _PahoWithoutSockClose = paho(self)
         self._lost = asyncio.Event()
         self._inbox: asyncio.Queue[aiomqtt.Message] = asyncio.Queue()
         self.broker.clients.append(self)
@@ -92,6 +100,10 @@ class FakeClient:
         return self
 
     async def __aexit__(self, *exc: object) -> None:
+        # aiomqtt's own exit sends DISCONNECT whatever the client's state, so it also
+        # withdraws a connect still waiting for its CONNACK.
+        if self.awaiting_connack:
+            self.withdrawn = True
         self.exited = True
 
     async def publish(
@@ -171,6 +183,10 @@ class FakeBroker:
         # Accept each connection, then drop it at once: what a broker does to a
         # client whose id another client has just taken over.
         self.drop_on_connect = False
+        # aiomqtt without its `_client`, or paho without `_sock_close`: an upgrade
+        # outside the range pyproject.toml pins.
+        self.paho_client_moved = False
+        self.sock_close_moved = False
         self.clients: list[FakeClient] = []
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
