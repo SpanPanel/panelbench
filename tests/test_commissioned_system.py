@@ -35,8 +35,8 @@ def _commissioned_config(
     """The default panel at r202639 with its solar circuit named and locked as the
     commissioned PV system.
 
-    r202639, because SPAN locks these circuits only from that release and the
-    shipped default names an earlier one. *system* is written as the template's
+    r202639, because SPAN locks these circuits only from that release, stated here
+    rather than left to the shipped default. *system* is written as the template's
     `commissioned_system` unless it is None, so a test can take the key away and see
     what the rest of the path does without it.
     """
@@ -45,7 +45,9 @@ def _commissioned_config(
     solar = config["circuit_templates"]["solar"]
     solar["priority"] = "NEVER"
     solar["relay_behavior"] = relay_behavior
-    if system is not None:
+    if system is None:
+        solar.pop("commissioned_system", None)
+    else:
         solar["commissioned_system"] = system
     for circuit in config["circuits"]:
         if circuit["id"] == "solar_inverter":

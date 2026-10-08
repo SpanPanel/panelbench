@@ -26,6 +26,7 @@ from tests._helpers import (
     DEFAULT_CONFIG,
     EARLIER_FIRMWARE,
     default_config,
+    name_firmware,
     write_config,
 )
 
@@ -35,7 +36,7 @@ _SERIAL = default_config()["panel_config"]["serial_number"]
 def _panel(*, firmware: str, hardware: str | None) -> SimulationConfig:
     """The default panel at *firmware*, with *hardware* as its hardware version or none."""
     config = default_config()
-    config["firmware_version"] = firmware
+    name_firmware(config, firmware)
     config.pop("hardware_version", None)
     if hardware is not None:
         config["hardware_version"] = hardware
@@ -59,12 +60,13 @@ def test_an_unquoted_yaml_hardware_version_reads_as_written() -> None:
 
 @pytest.mark.parametrize("model", ["MAIN_16", "MAIN_32", "MAIN_40"])
 def test_every_shipped_template_reports_a_documented_hardware_version(model: str) -> None:
-    """Over MQTT and, on release 202639, over REST, and the same value on both."""
+    """Stated in the template, and reported over MQTT and, on the release 202639 the
+    template names, over REST, the same value on both."""
     shipped: SimulationConfig = yaml.safe_load(
         DEFAULT_CONFIG.with_name(f"default_{model}.yaml").read_text(encoding="utf-8")
     )
-    shipped["firmware_version"] = CURRENT_FIRMWARE
 
+    assert shipped.get("hardware_version") == "1.2"
     assert status_hardware_version(shipped) == panel_hardware_version(shipped) == "1.2"
 
 

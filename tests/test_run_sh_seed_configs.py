@@ -19,7 +19,7 @@ from pathlib import Path
 
 _RUN_SH = Path(__file__).parent.parent / "panelbench" / "run.sh"
 
-_CURRENT = "firmware_version: spanos3/r202633/02\n"
+_CURRENT = "firmware_version: spanos3/r202639/03\n"
 _STALE = "panel_config:\n  serial_number: sim-40\n"
 
 

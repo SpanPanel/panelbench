@@ -39,6 +39,7 @@ from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
     default_config,
+    name_firmware,
     source_and_clone,
     write_config,
 )
@@ -56,7 +57,7 @@ def _panel(
     section bound to no circuit.
     """
     config = default_config()
-    config["firmware_version"] = firmware
+    name_firmware(config, firmware)
     if two_inverters:
         used = {tab for circuit in config["circuits"] for tab in circuit["tabs"]}
         free = [tab for tab in config["unmapped_tabs"] if tab not in used][:2]

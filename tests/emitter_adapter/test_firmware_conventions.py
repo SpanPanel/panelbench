@@ -2,7 +2,7 @@
 
 The emitter reads the panel's `firmware-version` once, at construction. A
 `/`-separated segment `r` plus six digits below 202639, such as the shipped
-configs' `spanos3/r202633/02`, keeps the earlier conventions; anything else,
+`spanos3/r202633/02`, keeps the earlier conventions; anything else,
 including a simulator string such as `sim/v0.1.0`, gets the current ones. Two
 conventions differ: the BESS meter's sign, and whether an EVSE's
 `config/user-max-charge-current` is published before a user sets it.
@@ -20,6 +20,7 @@ from tests._helpers import (
     EARLIER_FIRMWARE,
     default_config,
     discharging_bess_meter,
+    name_firmware,
     night_panel,
 )
 
@@ -35,7 +36,7 @@ pytestmark = pytest.mark.asyncio
 async def _ticked(tmp_path: Path, firmware: str) -> tuple[CloneRuntime, RecordingTransport]:
     """The default panel at *firmware*, at night, after one tick."""
     config = default_config()
-    config["firmware_version"] = firmware
+    name_firmware(config, firmware)
     return await night_panel(tmp_path / "panel.yaml", config)
 
 

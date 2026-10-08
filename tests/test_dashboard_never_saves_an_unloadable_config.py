@@ -21,7 +21,13 @@ from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard import config_store as config_store_module
 from panelbench.dashboard.keys import APP_KEY_DASHBOARD_CONTEXT
 from panelbench.validation import validate_yaml_config
-from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, default_config, write_config
+from tests._helpers import (
+    CURRENT_FIRMWARE,
+    EARLIER_FIRMWARE,
+    default_config,
+    name_firmware,
+    write_config,
+)
 
 if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
@@ -34,7 +40,7 @@ def _with_inverters(firmware: str, *extra: str, feed: str | None) -> SimulationC
     """The default panel at *firmware*, with a PV circuit for each of *extra* beside
     its own, and `pv.feed` set to *feed*."""
     config = default_config()
-    config["firmware_version"] = firmware
+    name_firmware(config, firmware)
     templates = config["circuit_templates"]
     free = list(config["unmapped_tabs"])
     for circuit_id in extra:

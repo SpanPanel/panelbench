@@ -28,6 +28,7 @@ from panelbench.emitter_adapter.wire_capture import (
     discovered_devices,
     recorded_panel,
 )
+from panelbench.firmware import SPAN_RELEASE_202639, predates
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -61,6 +62,19 @@ def default_config() -> SimulationConfig:
     """A fresh copy of the shipped default config, to modify and then write."""
     config: SimulationConfig = yaml.safe_load(DEFAULT_CONFIG.read_text(encoding="utf-8"))
     return config
+
+
+def name_firmware(config: SimulationConfig, firmware: str) -> None:
+    """Make *config* name *firmware*, as a user emulating that release edits a clone.
+
+    The shipped templates lock their solar circuit as release 202639 does, and a
+    config naming an earlier release is refused if it asks for that lock, so the
+    lock comes off with the earlier firmware, as the docs tell a user to.
+    """
+    config["firmware_version"] = firmware
+    if predates(firmware, SPAN_RELEASE_202639):
+        for template in config["circuit_templates"].values():
+            template.pop("commissioned_system", None)
 
 
 def write_config(path: Path, config: Mapping[str, object]) -> Path:
@@ -186,15 +200,16 @@ _REHEARSAL_ADDED_TABS: Final = (24, 26)
 
 
 def rehearsal_before(second: str | None = None) -> SimulationConfig:
-    """Step 1, on a clone of a template: its PV circuit plays the "Commissioned PV
-    System", renamed with its `id` kept, and its template unlocked.
+    """Step 1, on a clone of a template: named back to release 202633, its
+    "Commissioned PV System" circuit's template unlocked as that release has it.
 
     With *second* `REHEARSAL_ADDED_INVERTER`, the second inverter's two-pole circuit is
     added too, as a load, on two free spaces taken out of `unmapped_tabs`.
     """
     config = default_config()
+    name_firmware(config, "spanos3/r202633/02")
     [circuit] = [c for c in config["circuits"] if c["id"] == REHEARSAL_ORIGINAL_INVERTER]
-    circuit["name"] = "Commissioned PV System"
+    assert circuit["name"] == "Commissioned PV System"
     solar = config["circuit_templates"][circuit["template"]]
     solar["relay_behavior"] = "controllable"
     solar["priority"] = "OFF_GRID"

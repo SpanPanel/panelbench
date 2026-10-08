@@ -38,6 +38,8 @@ def _solar_on(
     template["priority"] = "NEVER"
     if commissioned:
         template["commissioned_system"] = "pv"
+    else:
+        template.pop("commissioned_system", None)
     return config
 
 

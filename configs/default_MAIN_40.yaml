@@ -26,9 +26,11 @@ panel_config:
   # are. Synthetic, so it attests the mapping rather than what a real network is
   # called.
   wifi_ssid: sim-wifi
-# Stays on SPAN release 202633 conventions so integrations released before r202639 support
-# read it correctly; set a 202639 string, such as `spanos3/r202639/03`, to emulate the new firmware.
-firmware_version: spanos3/r202633/02
+# SPAN release 202639, in the form a panel on it publishes, so this template is a panel
+# after the upgrade. To emulate the earlier firmware, clone it, set a 202633 string such as
+# `spanos3/r202633/02`, and remove `commissioned_system` from its solar template.
+firmware_version: spanos3/r202639/03
+hardware_version: '1.2'
 pv:
   enabled: true
   vendor: Enphase
@@ -582,6 +584,8 @@ circuit_templates:
       nameplate_capacity_w: 10000.0
     relay_behavior: non-controllable
     priority: NEVER
+    # Release 202639 locks the circuit feeding a commissioned inverter.
+    commissioned_system: pv
     # A grid-forming inverter. This is what makes the site islandable, which is what
     # gives the BESS a MID -- the device carrying islanding-state and
     # grid-forming-entity in v1.0. Shipped hybrid so a fresh clone exercises the MID
@@ -839,7 +843,8 @@ circuits:
   - 35
   - 37
 - id: solar_inverter
-  name: Solar Inverter
+  # The name a SPAN panel gives the circuit it adds for a commissioned PV system.
+  name: Commissioned PV System
   template: solar
   tabs:
   - 36

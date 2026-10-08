@@ -8,6 +8,7 @@ which must agree with the emitter's.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ from ebus_panel_sim import ManifestPhysicsView
 from panelbench.clone import translate_panel_tree
 from panelbench.config_types import SimulationConfig
 from panelbench.const import DEFAULT_FIRMWARE_VERSION
+from panelbench.dashboard.config_store import ConfigStore
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.wire_capture import (
     as_capture,
@@ -36,6 +38,7 @@ from tests._helpers import (
     EARLIER_FIRMWARE,
     default_config,
     discharging_bess_meter,
+    name_firmware,
     night_panel,
     write_config,
 )
@@ -55,7 +58,7 @@ def _naming(firmware: str | None) -> SimulationConfig:
     config = default_config()
     config.pop("firmware_version", None)
     if firmware is not None:
-        config["firmware_version"] = firmware
+        name_firmware(config, firmware)
     return config
 
 
@@ -165,14 +168,47 @@ def _evse_limits(recorder: RecordingTransport) -> dict[str, str]:
 
 @pytest.mark.parametrize("path", _SHIPPED, ids=lambda path: path.stem)
 @pytest.mark.asyncio
-async def test_the_shipped_configs_publish_the_earlier_conventions(
-    tmp_path: Path, path: Path
-) -> None:
-    """Every Home Assistant SPAN integration released before r202639 support negates
-    the BESS meter unconditionally, so a default on the current frame shows its users
-    an inverted battery. The defaults stay on release 202633 until that support ships.
+async def test_the_shipped_configs_publish_release_202639(tmp_path: Path, path: Path) -> None:
+    """The templates are a SPAN panel after the upgrade, in the form SPAN publishes
+    the release: the battery's meter positive while discharging, and no SPAN Drive's
+    user limit until a user sets one.
     """
     config = _shipped(path)
+    runtime, recorder = await night_panel(tmp_path / path.name, config)
+
+    assert release_build(panel_firmware_version(config)) == SPAN_RELEASE_202639
+    assert discharging_bess_meter(runtime, recorder) > 0, (
+        "the meter's sign is the battery's own, positive while discharging"
+    )
+    assert _evse_limits(recorder) == {}, "no EVSE's user limit is published until set"
+
+
+@pytest.mark.parametrize("path", _SHIPPED, ids=lambda path: path.stem)
+@pytest.mark.asyncio
+async def test_the_shipped_configs_load_without_a_warning(
+    path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Valid under release 202639's rules as the dashboard opens it and as the panel
+    starts: every solar circuit commissioned on two tabs, nothing left to warn about.
+    """
+    with caplog.at_level(logging.WARNING):
+        ConfigStore().load_from_file(path)
+        await capture_retained(path)
+
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+@pytest.mark.parametrize("path", _SHIPPED, ids=lambda path: path.stem)
+@pytest.mark.asyncio
+async def test_a_shipped_config_named_back_to_202633_publishes_its_conventions(
+    tmp_path: Path, path: Path
+) -> None:
+    """Emulating the firmware before the upgrade, as the docs describe: a clone of a
+    template naming a 202633 release, its solar template's `commissioned_system`
+    removed, which that release refuses.
+    """
+    config = _shipped(path)
+    name_firmware(config, "spanos3/r202633/02")
     runtime, recorder = await night_panel(tmp_path / path.name, config)
     evses = ManifestPhysicsView(build_manifest(config)).all_evse()
 
