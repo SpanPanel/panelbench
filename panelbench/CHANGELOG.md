@@ -2,9 +2,11 @@
 
 ## 2.6.0 — 2026-10-07
 
-SPAN firmware release 202639 arrives for any config that names it, while the shipped templates stay on release 202633's conventions. A config or clone that
-names no SPAN release, including a clone of the earlier MAIN 40 template, now publishes release 202639's; to keep the earlier conventions, set its
-`firmware_version` to a 202633 release such as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmware.
+The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's. The add-on
+refreshes its shipped templates on every start, so an upgraded install's templates publish release 202639's. Use it with SPAN integration 2.1.2 or later,
+since against release 202639 integration 2.1.1 shows the battery's Meter Power with its sign flipped. A config or clone that names no SPAN release, including
+a clone of the earlier MAIN 40 template, publishes release 202639's too; to keep the earlier conventions, set its `firmware_version` to a 202633 release such
+as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmware, and remove `commissioned_system` from a template clone's solar template.
 
 ### Added
 
@@ -26,7 +28,9 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 - **Home Assistant's dominant power source control is ignored while the panel's link to its battery is healthy**, as a SPAN panel ignores it.
 - **From release 202639, the battery's own power reading is positive while discharging**, as SPAN firmware publishes it.
 - **From release 202639, a SPAN Drive's user charge limit is not published until a user sets one**, as on SPAN firmware.
-- **The shipped configs report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows.
+- **The shipped templates report firmware `spanos3/r202639/03` and publish release 202639's conventions**, and a config naming a 202633 release keeps that
+  release's.
+- **The shipped templates' solar circuit is the "Commissioned PV System" circuit, locked as release 202639 locks it**, where it was named "Solar Inverter".
 - **The shipped configs, and any config that sets no `hardware_version`, now report hardware version `1.2`**, as a SPAN panel publishes it, where they reported
   `rev2`; a config copied from an earlier template keeps its `rev2`, which the status endpoint reports as `UNKNOWN` from release 202639.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.

@@ -48,7 +48,7 @@ configs excluded).
 ## Home Assistant App
 
 PanelBench installs as a Home Assistant app from this repository. Images are published for `amd64` and `aarch64`, and the app is not distributed through HACS.
-It requires the `span-panel` integration **v2.1.0 or later**.
+It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish.
 
 1. Go to **Settings > Apps** > **App Store** > three-dot menu > **Repositories**
 2. Add `https://github.com/SpanPanel/panelbench`
@@ -108,17 +108,18 @@ Each panel has a unique serial number, so there is no conflict between the auto-
 ## Rehearsing a SPAN firmware upgrade
 
 A SPAN panel reads its firmware once, when it starts, and an over-the-air upgrade takes it offline and brings it back reporting the new release. PanelBench
-rehearses an upgrade the same way: two configs for one panel, run one after the other. The shipped configs name `spanos3/r202633/02` (see
-[Firmware Version](#firmware-version)), so the upgrade rehearsed here is to SPAN release 202639.
+rehearses an upgrade the same way: two configs for one panel, run one after the other. The upgrade rehearsed here is to SPAN release 202639. The shipped
+templates name `spanos3/r202639/03` (see [Firmware Version](#firmware-version)) and so are panels after it, which is why the first config names an earlier
+release.
 
 A panel with a commissioned PV system has a circuit named "Commissioned PV System" before the upgrade. On a release before 202639 it is unlocked: its relay is
 switchable and not always-on, and its priority is `OFF_GRID` and can be changed, so it sheds like any other circuit. The upgrade to release 202639 locks it.
 
 1. **Before.** Clone your panel from the dashboard while it still runs a release before 202639, or clone one of the shipped templates. A clone keeps its
    source's `firmware_version`, so it publishes what that release publishes, and a panel clone's **Update eBus Energy** button, which refreshes its energy
-   readings from the panel, never changes it. A clone of your panel already holds the "Commissioned PV System" circuit as the panel publishes it. In a clone of
-   a template, its PV circuit plays that part: set the circuit's `name` under `circuits` to `Commissioned PV System`, keeping its `id`, and give its template
-   `relay_behavior: controllable` and `priority: OFF_GRID`.
+   readings from the panel, never changes it. A clone of your panel already holds the "Commissioned PV System" circuit as the panel publishes it. A clone of a
+   template holds it locked, as release 202639 publishes it, so take the clone back to the earlier release: set its `firmware_version` to a 202633 release, for
+   example `spanos3/r202633/02`, and in the circuit's template remove `commissioned_system: pv` and set `relay_behavior: controllable` and `priority: OFF_GRID`.
 2. **After.** Copy the first config's YAML to a second file in the same config directory, under a name that does not start with `default_` (that prefix marks a
    read-only template), and change two things in the copy:
    - Set `firmware_version` to a 202639 release, for example `spanos3/r202639/03`.
@@ -347,12 +348,15 @@ Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts w
 panel emulates: the battery's power sign, whether a SPAN Drive's user charge limit is published before a user sets one, one solar device per inverter, the
 status endpoint's hardware version, and commissioned-system circuits.
 
-The included configs name `spanos3/r202633/02` and so publish release 202633's conventions, which integrations released before r202639 support read correctly.
-Templates are read-only, and a clone of one copies that string, so to emulate r202639 clone a template and set a 202639 firmware string in the clone's YAML
-under `configs/`:
+The included configs name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639: their solar
+circuit is the locked "Commissioned PV System" circuit, and they report hardware version `1.2`. Read them with the `span-panel` integration v2.1.2 or later;
+v2.1.1 shows the battery's Meter Power with its sign flipped.
+
+To emulate the firmware before that upgrade, clone a template, since templates are read-only, and in the clone's YAML under `configs/` name a 202633 release and
+remove `commissioned_system` from its solar template, which PanelBench refuses on an earlier release:
 
 ```yaml
-firmware_version: spanos3/r202639/03
+firmware_version: spanos3/r202633/02
 ```
 
 A config naming no firmware reports `sim/v<package version>`, which names no SPAN release, and publishes r202639's conventions. A clone keeps its source panel's

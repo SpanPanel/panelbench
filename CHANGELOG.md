@@ -1,11 +1,13 @@
 # Changelog
 
-## 2.6.0 — SPAN firmware release 202639, where a config names it
+## 2.6.0 — SPAN firmware release 202639
 
-**The shipped templates stay on SPAN release 202633's conventions, and a config or clone that names no SPAN release now publishes release 202639's.** The add-on
-refreshes its shipped templates on every start, so an upgraded install publishes what this release ships. A config or clone whose `firmware_version` names no
-SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 40 template, which named `sim/v0.1.0`. To keep the earlier conventions, set its
-`firmware_version` to a 202633 release such as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmware.
+**The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's.** The add-on
+refreshes its shipped templates on every start, so an upgraded install's templates publish release 202639's. Use this release with SPAN integration 2.1.2 or
+later, since against release 202639 integration 2.1.1 shows the battery's Meter Power with its sign flipped. A config or clone whose `firmware_version` names
+no SPAN release publishes release 202639's conventions too, so it changes on upgrade, and that includes a clone of the earlier MAIN 40 template, which named
+`sim/v0.1.0`. To keep the earlier conventions, set its `firmware_version` to a 202633 release such as `spanos3/r202633/02`, or, for a clone of a panel, to the
+source panel's firmware; a clone of one of these templates also needs `commissioned_system` removed from its solar template, which an earlier release refuses.
 
 ### Added
 
@@ -32,8 +34,10 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
   earlier release.
 - **A SPAN Drive's user charge limit is no longer published until a user sets one**, as on SPAN firmware r202639, unless the panel's firmware version names an
   earlier release.
-- **The shipped configs now report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows, so they keep SPAN release 202633's conventions and
-  integrations released before r202639 support read them correctly; set a clone's `firmware_version` to a 202639 release to emulate the new firmware.
+- **The shipped templates now report firmware `spanos3/r202639/03` and publish SPAN release 202639's conventions**, as a SPAN panel after that upgrade
+  does, and a config naming a 202633 release, such as a clone of a template set to `spanos3/r202633/02`, keeps that release's conventions.
+- **The shipped templates' solar circuit is now the "Commissioned PV System" circuit, locked as SPAN firmware release 202639 locks it**, with its relay not
+  switchable and its priority fixed at `NEVER`, where it was named "Solar Inverter".
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
 - **A config with two or more solar circuits now publishes each inverter as its own solar device, under new device ids**, unless its `firmware_version` names a
   SPAN release before 202639, as SPAN firmware does from that release, and a clone keeps every inverter.

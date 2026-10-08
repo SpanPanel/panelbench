@@ -482,7 +482,8 @@ simulation_params:
 firmware_version:
   str # Reported over MQTT, HTTP and mDNS (default: sim/v<package version>).
   # A SPAN string naming a release before 202639 keeps that release's BESS sign and EVSE limit.
-  # The shipped configs name spanos3/r202633/02; set a 202639 string to emulate r202639.
+  # The shipped configs name spanos3/r202639/03; to emulate r202633, name a 202633 string
+  # and remove commissioned_system, which an earlier release refuses.
 
 hardware_version:
   str # Published as info/hardware-version (default: 1.2). From release 202639
