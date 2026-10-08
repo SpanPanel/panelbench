@@ -357,3 +357,156 @@ def test_the_reconnect_delay_doubles_to_its_ceiling_and_resets() -> None:
 
     assert delays == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]
     assert backoff.next_delay() == 1.0
+
+
+# -- a broker that stops answering on an open socket ---------------------------
+
+
+def _warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+@pytest.mark.asyncio
+async def test_an_operation_timing_out_on_an_open_socket_ends_the_session(
+    fake_broker: FakeBroker, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A frozen broker keeps the socket open, so the reader sees nothing wrong for up
+    to two keepalive intervals. A timed-out operation must end the session itself,
+    or the link stays on it, reconnects never, and what the timeout dropped stays
+    dropped."""
+    caplog.set_level(logging.DEBUG)
+    link = await connected_link()
+    hooks: list[list[tuple[str, int]]] = []
+    link.on_reconnect(lambda: hooks.append(list(fake_broker.clients[-1].subscribed)))
+    await link.subscribe(RELAY_SETS, Inbox(), 1)
+    frozen = fake_broker.live
+
+    fake_broker.time_out_operations = True
+    with pytest.raises(BrokerUnavailable):
+        await link.publish("ebus/5/dev-1/$state", b"ready", 1, True)
+    assert not link.is_connected(), "the session outlived the operation that failed on it"
+    fake_broker.time_out_operations = False
+    await fake_broker.wait_for_live(after=frozen)
+    await eventually(lambda: hooks)
+
+    assert frozen is not None and frozen.exited
+    assert hooks == [[(RELAY_SETS, 1)]]
+    [warning] = _warnings(caplog)
+    assert "Operation timed out" in warning
+    await link.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_failure_during_a_restore_cuts_it_short(fake_broker: FakeBroker) -> None:
+    """A restore whose subscription waits on a broker that stopped answering would
+    hold the reconnect hostage; a failure from the drainer ends it like any other
+    operation on the session."""
+    link = await connected_link()
+    await link.subscribe(RELAY_SETS, Inbox(), 1)
+    first = fake_broker.live
+
+    fake_broker.hang_subscribes = True
+    await outage(fake_broker, link)
+    fake_broker.come_up()
+    restoring = await fake_broker.wait_for_live(after=first)
+    await eventually(link.is_connected)  # the session is up, and stuck restoring
+    fake_broker.time_out_operations = True
+    with pytest.raises(BrokerUnavailable):
+        await link.publish("ebus/5/dev-1/$state", b"ready", 1, True)
+    fake_broker.time_out_operations = False
+    fake_broker.hang_subscribes = False
+
+    restored = await fake_broker.wait_for_live(after=restoring)
+    await eventually(lambda: restored.subscribed)
+    assert restoring.exited
+    await link.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_connection_is_reported_as_one(
+    fake_broker: FakeBroker, caplog: pytest.LogCaptureFixture
+) -> None:
+    """paho says "[code:128] Unspecified error" for a broker that closed the socket,
+    which tells an operator nothing."""
+    caplog.set_level(logging.WARNING)
+    link = await connected_link()
+
+    await outage(fake_broker, link)
+
+    [warning] = _warnings(caplog)
+    assert "dropped" in warning
+    assert "code" not in warning
+    await link.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_reconnect_hook_leaves_the_link_serving(
+    fake_broker: FakeBroker, caplog: pytest.LogCaptureFixture
+) -> None:
+    link = await connected_link()
+    inbox = Inbox()
+    await link.subscribe(RELAY_SETS, inbox, 1)
+
+    def explode() -> None:
+        raise RuntimeError("a republish bug")
+
+    link.on_reconnect(explode)
+    first = fake_broker.live
+    await outage(fake_broker, link)
+    fake_broker.come_up()
+    await fake_broker.wait_for_live(after=first)
+    await eventually(lambda: "the reconnect hook failed" in caplog.text)
+    fake_broker.send("ebus/5/dev-1/switch/relay/set", b"OPEN")
+    await eventually(lambda: inbox.received)
+
+    assert link.is_connected()
+    await link.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_refused_subscription_is_reported(
+    fake_broker: FakeBroker, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Otherwise the only sign of an ACL refusing a /set filter is commands that
+    never arrive."""
+    caplog.set_level(logging.WARNING)
+    fake_broker.refused_filters.add(RELAY_SETS)
+    link = await connected_link()
+
+    await link.subscribe(RELAY_SETS, Inbox(), 1)
+
+    [warning] = _warnings(caplog)
+    assert "refused" in warning and RELAY_SETS in warning
+    await link.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_link_opens_once(fake_broker: FakeBroker) -> None:
+    """Its routes and hook belong to the panel it served; a reopened link would
+    route on them without ever replaying them."""
+    link = await connected_link()
+    await link.disconnect()
+
+    with pytest.raises(RuntimeError, match="opens once"):
+        await link.connect()
+
+
+@pytest.mark.asyncio
+async def test_a_connect_cancelled_by_disconnect_is_closed_once_it_connects(
+    fake_broker: FakeBroker,
+) -> None:
+    """aiomqtt connects in a thread that cancelling does not stop. A connect left
+    to finish unowned would hold the panel's client id and will."""
+    link = await connected_link()
+    await outage(fake_broker, link)
+    fake_broker.connect_gate = asyncio.Event()
+    attempts = len(fake_broker.clients)
+    fake_broker.come_up()
+    await eventually(lambda: len(fake_broker.clients) > attempts)
+    slow = fake_broker.clients[-1]
+
+    await asyncio.wait_for(link.disconnect(), timeout=1.0)
+    fake_broker.connect_gate.set()
+
+    await eventually(lambda: slow.exited)
+    assert slow.entered, "the connect was abandoned rather than finished"

@@ -7,7 +7,10 @@ what these tests assert: subscriptions restored before the tree is republished,
 nothing published on a client that has been closed.
 
 A severed client behaves the way aiomqtt does when its socket drops: message
-iteration raises ``MqttError``, and so does any later publish or subscribe.
+iteration raises ``MqttError`` from a code that says the connection was lost, and
+any later publish or subscribe raises ``MqttError`` too. A broker that stops
+answering on an open socket is another thing: its client's operations time out,
+and nothing else about it changes.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import aiomqtt
 import pytest
+from paho.mqtt.client import MQTT_ERR_CONN_LOST
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -44,6 +48,9 @@ class FakeClient:
         return self.entered and not self.exited and not self.severed
 
     async def __aenter__(self) -> FakeClient:
+        if self.broker.connect_gate is not None:
+            # A TCP connect that takes its time: a black-holed host, slow DNS.
+            await self.broker.connect_gate.wait()
         if not self.broker.up:
             raise aiomqtt.MqttError("[Errno 61] Connection refused")
         self.entered = True
@@ -61,6 +68,8 @@ class FakeClient:
             raise AssertionError(f"published {topic!r} after the client was closed")
         if self.severed:
             raise aiomqtt.MqttError("Could not publish message")
+        if self.broker.time_out_operations:
+            raise aiomqtt.MqttError("Operation timed out")
         if self.broker.hang_publishes:
             # A QoS 1 publish whose PUBACK never comes, because the socket died
             # under it. aiomqtt waits out its own timeout; this waits forever.
@@ -68,11 +77,17 @@ class FakeClient:
         self.published.append((topic, payload or b"", qos, retain))
         self.log.append(("publish", topic))
 
-    async def subscribe(self, topic: str, qos: int = 0) -> None:
+    async def subscribe(self, topic: str, qos: int = 0) -> tuple[int, ...]:
         if self.severed:
             raise aiomqtt.MqttError("Could not subscribe to topic")
+        if self.broker.time_out_operations:
+            raise aiomqtt.MqttError("Operation timed out")
+        if self.broker.hang_subscribes:
+            await asyncio.Event().wait()
         self.subscribed.append((topic, qos))
         self.log.append(("subscribe", topic))
+        # 0x80 is a SUBACK's refusal, which an ACL produces.
+        return (0x80,) if topic in self.broker.refused_filters else (qos,)
 
     @property
     def messages(self) -> AsyncIterator[aiomqtt.Message]:
@@ -90,7 +105,9 @@ class FakeClient:
             if arrival in done:
                 yield arrival.result()
             else:
-                raise aiomqtt.MqttError("Disconnected during message iteration")
+                raise aiomqtt.MqttError("Disconnected during message iteration") from (
+                    aiomqtt.MqttCodeError(MQTT_ERR_CONN_LOST, "Unexpected disconnection")
+                )
 
     def sever(self) -> None:
         self.severed = True
@@ -106,6 +123,11 @@ class FakeBroker:
     def __init__(self) -> None:
         self.up = True
         self.hang_publishes = False
+        self.hang_subscribes = False
+        # Every operation times out, as on a socket to a frozen broker, which stays open.
+        self.time_out_operations = False
+        self.refused_filters: set[str] = set()
+        self.connect_gate: asyncio.Event | None = None
         # Accept each connection, then drop it at once: what a broker does to a
         # client whose id another client has just taken over.
         self.drop_on_connect = False

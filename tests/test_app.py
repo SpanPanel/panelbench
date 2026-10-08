@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from panelbench.app import SimulatorApp, _discover_configs, _file_hash
 from panelbench.bootstrap import BootstrapHttpServer
 from panelbench.const import DEFAULT_FIRMWARE_VERSION
+from panelbench.emitter_adapter.runtime import start_clone as _real_start_clone
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.panel import PanelInstance
 from panelbench.schema import load_schema
@@ -336,3 +337,51 @@ class TestOneFirmwareString:
             assert panel.status_hardware_version == reported
         finally:
             await panel.stop()
+
+
+class TestDuplicateSerial:
+    """Two configs naming one serial would publish over each other's topics and take
+    each other's broker client id, forever, so the second is refused."""
+
+    @pytest.mark.asyncio
+    async def test_a_second_panel_with_a_running_serial_is_refused(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+    ) -> None:
+        host, port = amqtt_broker
+        first_config = _SIMPLE_CONFIG.replace("total_tabs: 8", "total_tabs: 32")
+        first = tmp_path / "a-first.yaml"
+        first.write_text(first_config.format(serial="SIM-DUP", broker_host=host, broker_port=port))
+        second = tmp_path / "b-second.yaml"
+        second.write_text(first.read_text())
+
+        app = SimulatorApp(config_dir=tmp_path)
+        app._schema = load_schema(_BUNDLED_SCHEMA)
+        app._certs = MagicMock(
+            ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+            ca_cert_path=None,
+        )
+        mock_server = MagicMock()
+        mock_server.start = AsyncMock()
+        mock_server.stop = AsyncMock()
+
+        with (
+            patch("panelbench.app.BootstrapHttpServer", return_value=mock_server),
+            patch("panelbench.panel.emitter_runtime.start_clone") as start_clone,
+        ):
+            start_clone.side_effect = _real_start_clone
+            result = await app.reload()
+
+        try:
+            # Which one wins is the scan's order; that exactly one does is the point.
+            assert result["started"] == ["SIM-DUP"]
+            [(refused, error)] = app._get_panel_start_errors().items()
+            [running] = app._panels
+            assert {refused, running.name} == {first.name, second.name}
+            assert "SIM-DUP" in error and running.name in error
+            assert start_clone.call_count == 1, "the duplicate connected before it was refused"
+        finally:
+            for panel in list(app._panels.values()):
+                with contextlib.suppress(Exception):
+                    await panel.stop()

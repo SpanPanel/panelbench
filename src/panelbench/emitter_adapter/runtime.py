@@ -202,9 +202,15 @@ async def start_clone(
 
     try:
         emitter = Emitter.from_definition(definition, setters, mqttc=transport)
+        # Synchronous, and returns immediately for an injected client rather than
+        # polling is_connected for the connect timeout: the SDK never starts a client
+        # it did not build, so nothing would change during the wait.
+        emitter.start()
     except BaseException:
         # The link supervises itself, so one left open here would keep reconnecting
-        # for a panel that never started.
+        # for a panel that never started. What construction had already queued is
+        # drained first, so a panel that fails here can leave part of its tree
+        # retained; the emitter has no ungraceful stop to withdraw it with.
         if link is not None:
             if isinstance(transport, LoopBoundTransport):
                 await transport.aclose()
@@ -227,10 +233,6 @@ async def start_clone(
         mqtt=link,
     )
 
-    # Synchronous, and returns immediately for an injected client rather than
-    # polling is_connected for the connect timeout: the SDK never starts a client
-    # it did not build, so nothing would change during the wait.
-    emitter.start()
     return runtime
 
 

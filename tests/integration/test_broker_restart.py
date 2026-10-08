@@ -5,9 +5,11 @@ the parts a fake cannot speak for: that aiomqtt notices a broker that went away,
 that a broker restarted without persistence comes back holding nothing, and that
 a command Home Assistant publishes after the restart reaches the panel.
 
-Skipped where mosquitto is not installed. The in-process amqtt broker the other
-tests use cannot stand in here: a restart has to take the process away, sockets
-and retained store with it.
+Skipped where mosquitto is not installed, unless ``PANELBENCH_REQUIRE_MOSQUITTO``
+is set, as CI sets it: there a missing broker fails rather than passing silently.
+The in-process amqtt broker the other tests use cannot stand in here: a restart
+has to take the process away, sockets and retained store with it, and a freeze has
+to stop it answering while its sockets stay open.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import contextlib
 import logging
 import os
 import shutil
+import signal
 import socket
 import subprocess
 from pathlib import Path
@@ -26,8 +29,9 @@ import aiomqtt
 import pytest
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
+from panelbench.emitter_adapter.broker_link import BrokerLink
 from panelbench.emitter_adapter.runtime import BrokerConnection
-from panelbench.emitter_adapter.transport import LoopBoundTransport
+from panelbench.emitter_adapter.transport import BrokerUnavailable, LoopBoundTransport
 from panelbench.engine import DynamicSimulationEngine
 from tests._helpers import DEFAULT_CONFIG, relay_opened_by_command, settable_relays
 
@@ -42,7 +46,11 @@ _MOSQUITTO = shutil.which(
     ),
 )
 
-pytestmark = pytest.mark.skipif(_MOSQUITTO is None, reason="mosquitto is not installed")
+_REQUIRED = bool(os.environ.get("PANELBENCH_REQUIRE_MOSQUITTO"))
+
+pytestmark = pytest.mark.skipif(
+    _MOSQUITTO is None and not _REQUIRED, reason="mosquitto is not installed"
+)
 
 
 class Mosquitto:
@@ -79,17 +87,29 @@ class Mosquitto:
                     return
                 await asyncio.sleep(0.02)
 
+    def freeze(self) -> None:
+        """Stop the broker answering, its sockets left open: a hung broker, as a
+        sleeping host or a dropped link presents to the client."""
+        assert self._process is not None
+        self._process.send_signal(signal.SIGSTOP)
+
+    def thaw(self) -> None:
+        assert self._process is not None
+        self._process.send_signal(signal.SIGCONT)
+
     async def stop(self) -> None:
         process, self._process = self._process, None
         if process is None or process.returncode is not None:
             return
+        process.send_signal(signal.SIGCONT)  # a frozen process cannot act on SIGTERM
         process.terminate()
         await process.wait()
 
 
 @pytest.fixture
 async def mosquitto(tmp_path: Path) -> AsyncIterator[Mosquitto]:
-    assert _MOSQUITTO is not None
+    if _MOSQUITTO is None:
+        pytest.fail("PANELBENCH_REQUIRE_MOSQUITTO is set, but mosquitto is not installed")
     broker = Mosquitto(_MOSQUITTO, tmp_path)
     await broker.start()
     try:
@@ -164,6 +184,45 @@ async def test_a_panel_outlives_a_restart_of_its_broker(
     ours = [r for r in caplog.records if r.name.startswith("panelbench")]
     warnings = [r for r in ours if r.levelno >= logging.WARNING]
     assert len(warnings) == 1, [r.getMessage() for r in warnings]
-    assert "lost the MQTT broker" in warnings[0].getMessage()
+    assert "dropped" in warnings[0].getMessage()
     assert not [r for r in caplog.records if r.exc_info], "a traceback was logged"
     assert any("reconnected to the MQTT broker" in r.getMessage() for r in ours)
+
+
+@pytest.mark.asyncio
+async def test_a_link_leaves_a_broker_that_stops_answering(mosquitto: Mosquitto) -> None:
+    """A frozen broker keeps the socket open, so paho would notice only after two
+    keepalive intervals. The first operation to time out ends the session instead,
+    and the link is back, its subscriptions and hook replayed, once the broker is.
+
+    A short operation timeout keeps the test quick; the panel's link runs on
+    aiomqtt's own ten seconds.
+    """
+    link = BrokerLink(
+        host="127.0.0.1",
+        port=mosquitto.port,
+        client_id="panelbench-freeze-probe",
+        min_reconnect_delay=0.2,
+        max_reconnect_delay=1.0,
+        operation_timeout=1.0,
+    )
+    await link.connect()
+    restored = asyncio.Event()
+    link.on_reconnect(restored.set)
+    commands: list[bytes] = []
+    await link.subscribe("probe/command/set", lambda _t, payload: commands.append(payload), 1)
+    try:
+        mosquitto.freeze()
+        with pytest.raises(BrokerUnavailable):
+            await link.publish("probe/state", b"ready", 1, True)
+        assert not link.is_connected(), "the link stayed on a session that stopped answering"
+
+        mosquitto.thaw()
+        await asyncio.wait_for(restored.wait(), timeout=15)
+        async with aiomqtt.Client("127.0.0.1", mosquitto.port, identifier="home-assistant") as ha:
+            await ha.publish("probe/command/set", b"OPEN", qos=1)
+        await eventually(lambda: bool(commands), within=5)
+    finally:
+        await link.disconnect()
+
+    assert commands == [b"OPEN"]

@@ -318,7 +318,9 @@ class SimulatorApp:
             recorder=recorder,
             broker=broker,
         )
-        serial = await panel.start()
+        serial = await panel.start(
+            running={s: p.config_path for s, p in self._serial_to_panel.items()}
+        )
 
         # Validate panel size and render schema before registering. If the
         # panel's total_tabs is not a SPAN model size, stop the started panel
@@ -333,27 +335,6 @@ class SimulatorApp:
         except Exception:
             await panel.stop()
             raise
-
-        # Ensure unique serial — cloned configs may share the same serial.
-        # Append a suffix to avoid MQTT topic and mDNS name collisions.
-        # Moved below validation — no point renaming a panel we are about to discard.
-        if serial in self._serial_to_panel:
-            base_serial = serial
-            suffix = 2
-            while f"{base_serial}-{suffix}" in self._serial_to_panel:
-                suffix += 1
-            serial = f"{base_serial}-{suffix}"
-            # Serial-override post-cutover requires emitter restart to propagate the
-            # new serial through the manifest + lifecycle. For v0.1.0 of the emitter
-            # integration this is a degraded path: log the duplicate and skip the
-            # rename. Follow-up: implement runtime serial override by tearing down
-            # and restarting the panel's CloneRuntime with the new serial.
-            _LOGGER.warning(
-                "Duplicate serial %s detected — renamed to %s "
-                "(emitter restart required to take effect)",
-                base_serial,
-                serial,
-            )
 
         self._panels[config_path] = panel
         self._serial_to_panel[serial] = panel
