@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 
 [[package]]
@@ -709,12 +709,12 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "aiohttp-jinja2", specifier = ">=1.6" },
-    { name = "aiomqtt", specifier = ">=2.0.0" },
+    { name = "aiomqtt", specifier = ">=2.5.1,<2.6" },
     { name = "cryptography", specifier = ">=42.0.0" },
     { name = "ebus-panel-sim", specifier = "==0.9.0" },
     { name = "ebus-sdk", specifier = "==0.22.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
-    { name = "paho-mqtt", specifier = ">=2.0.0" },
+    { name = "paho-mqtt", specifier = ">=2.1,<2.2" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "timezonefinder", specifier = ">=6.0" },
     { name = "zeroconf", specifier = ">=0.131.0" },

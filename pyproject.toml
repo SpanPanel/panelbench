@@ -8,7 +8,11 @@ version = "2.6.0"
 description = "Standalone eBus simulator for SPAN panels"
 requires-python = ">=3.14"
 dependencies = [
-    "aiomqtt>=2.0.0",
+    # Bounded to the range CI proves: the broker link reaches into aiomqtt's private
+    # `_client` and paho's private `_sock_close`, and the add-on installs from this
+    # list, not the lock. tests/emitter_adapter/test_aiomqtt_contract.py fails on a
+    # bump that moves either, so raise a bound only with that test green.
+    "aiomqtt>=2.5.1,<2.6",
     "aiohttp>=3.9.0",
     "aiohttp-jinja2>=1.6",
     "jinja2>=3.1.0",
@@ -64,7 +68,7 @@ dependencies = [
     # therefore to the fidelity captures.
     "ebus-sdk==0.22.0",
     "ebus-panel-sim==0.9.0",
-    "paho-mqtt>=2.0.0",
+    "paho-mqtt>=2.1,<2.2",
 ]
 
 [dependency-groups]

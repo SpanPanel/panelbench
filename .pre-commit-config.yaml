@@ -42,7 +42,8 @@ repos:
           # different build on two consecutive runs with nothing in the repo changing.
           - ebus-panel-sim==0.9.0
           - ebus-sdk==0.22.0
-          - aiomqtt>=2.0.0
+          - aiomqtt>=2.5.1,<2.6
+          - paho-mqtt>=2.1,<2.2
           - aiohttp>=3.9.0
           - aiohttp-jinja2>=1.6
           - jinja2>=3.1.0
