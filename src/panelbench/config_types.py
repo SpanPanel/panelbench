@@ -39,6 +39,7 @@ class PanelConfig(TypedDict):
     line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
     wifi_ssid: NotRequired[str]  # SSID published on status/wifi-ssid (default DEFAULT_WIFI_SSID)
+    vendor_name: NotRequired[str]  # info/vendor-name (default "Span"); a clone keeps its panel's
 
 
 class CyclingPattern(TypedDict, total=False):
@@ -125,6 +126,7 @@ class BESSConfigYAML(TypedDict, total=False):
     mid_product_name: str
     mid_firmware_version: str
     mid_hardware_version: str
+    mid_serial_number: str  # the MID's own serial, as a clone reads it; else `<serial>-mid`
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
@@ -206,7 +208,9 @@ class CircuitTemplateExtended(CircuitTemplate, total=False):
     inverter_type: str
     hvac_type: str  # "central_ac", "heat_pump", "heat_pump_aux"
     monthly_factors: dict[int, float]  # month (1-12) -> multiplier (1.0 = peak month)
-    breaker_rating: int  # Breaker rating in Amps (derived from power_range if not set)
+    # Breaker rating in Amps. None records a panel that publishes none, as a clone
+    # writes it; absent, 20.
+    breaker_rating: int | None
     breaker_rating_a: float  # Legacy alias for breaker_rating, used by older clones.
     recorder_entity: str  # HA entity ID for recorder replay (e.g. "sensor.span_panel_..._power")
     user_modified: bool  # True when user has edited profile → use synthetic instead of replay
@@ -248,6 +252,9 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     # Not identity, so the `pv` or `evse` section's is every inverter's or drive's
     # default, not only the first's.
     firmware_version: str
+    # pcs/priority. Absent, the circuit's position; None, a panel that publishes none
+    # for it, as a clone writes it.
+    pcs_priority: int | None
 
 
 class TabSynchronization(TypedDict):

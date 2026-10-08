@@ -220,3 +220,81 @@ def test_circuit_relay_behavior_translates_underscore_to_hyphen() -> None:
     c = build_manifest(profile).of_class("circuit")[0]
     assert c.metadata["relay-behavior"] == "always-on"
     assert c.metadata["always-on"] == "true"
+
+
+def _one_circuit_profile(template: dict, circuit_extra: dict) -> dict:
+    return {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuit_templates": {
+            "t": {"priority": "NEVER", "relay_behavior": "controllable", **template}
+        },
+        "circuits": [{"id": "c", "name": "C", "template": "t", "tabs": [1], **circuit_extra}],
+    }
+
+
+def test_a_rating_recorded_as_absent_reaches_the_emitter_as_the_placeholder() -> None:
+    """The emitter requires a rating, so a clone's absent one is given its documented
+    placeholder rather than refused; the fidelity test pins what that publishes."""
+    [circuit] = build_manifest(_one_circuit_profile({"breaker_rating": None}, {})).of_class(
+        "circuit"
+    )
+
+    assert circuit.metadata["breaker-rating-a"] == "20.0"
+
+
+def test_a_pcs_priority_recorded_as_absent_gives_the_emitter_none() -> None:
+    [absent] = build_manifest(_one_circuit_profile({}, {"pcs_priority": None})).of_class("circuit")
+    [named] = build_manifest(_one_circuit_profile({}, {"pcs_priority": 7})).of_class("circuit")
+    [positional] = build_manifest(_one_circuit_profile({}, {})).of_class("circuit")
+
+    assert "pcs-priority" not in absent.metadata
+    assert named.metadata["pcs-priority"] == "7"
+    assert positional.metadata["pcs-priority"] == "1"
+
+
+def test_the_panel_publishes_the_vendor_its_config_names() -> None:
+    profile = _one_circuit_profile({}, {})
+    profile["panel_config"]["vendor_name"] = "SPAN"
+
+    assert build_manifest(profile).of_class("panel")[0].metadata["vendor-name"] == "SPAN"
+
+
+def test_a_mid_publishes_its_own_serial_where_the_config_names_one() -> None:
+    profile = {
+        "panel_config": {"serial_number": "abc-123", "total_tabs": 40, "main_size": 200},
+        "circuits": [],
+        "bess": {
+            "enabled": True,
+            "nameplate_capacity_kwh": 13.5,
+            "serial_number": "example-bess-0001",
+            "mid_serial_number": "example-mid-0001",
+            "grid_forming": True,
+            "charge_mode": "backup-only",
+        },
+    }
+    mids = build_manifest(profile).of_class("mid")
+
+    assert mids, "the profile names no grid-forming battery, so the test proves nothing"
+    assert mids[0].metadata["serial-number"] == "example-mid-0001"
+
+
+def test_a_clones_energy_seeds_reach_the_emitter() -> None:
+    """Without them a clone's energy registers start at zero, whatever the panel's read."""
+    profile = _one_circuit_profile(
+        {
+            "energy_profile": {
+                "mode": "consumer",
+                "power_range": [0.0, 100.0],
+                "typical_power": 10.0,
+                "power_variation": 0.1,
+                "initial_consumed_energy_wh": 129126.5,
+                "initial_produced_energy_wh": 11355.5,
+            }
+        },
+        {},
+    )
+
+    [circuit] = build_manifest(profile).of_class("circuit")
+
+    assert circuit.metadata["initial-consumed-wh"] == "129126.5"
+    assert circuit.metadata["initial-produced-wh"] == "11355.5"

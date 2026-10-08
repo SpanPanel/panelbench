@@ -54,6 +54,14 @@ if TYPE_CHECKING:
 # agree with this module on it.
 _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-on"})
 
+# What the emitter is given for a circuit whose template records that its panel
+# publishes no breaker rating (`breaker_rating: null`, which a clone writes). The
+# emitter requires one (ebus-panel-sim 0.9.0, `manifest_physics` reads
+# `breaker-rating-a` with `_req_float`) and publishes it, so until it accepts the
+# absence this is what the wire shows; the round-trip fidelity test pins it as an
+# upstream difference rather than letting it pass as the panel's own value.
+_UNPUBLISHED_BREAKER_RATING_A = 20.0
+
 
 def normalise_relay_behavior(raw: str) -> str:
     """Coerce ``controllable`` / ``non_controllable`` / ``always_on`` (any
@@ -111,7 +119,7 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
         instance_id=panel_id,
         display_name=panel_cfg.get("display_name", "Span Panel"),
         metadata={
-            "vendor-name": "Span",
+            "vendor-name": str(panel_cfg.get("vendor_name", "Span")),
             "serial-number": panel_id,
             "firmware-version": panel_firmware_version(profile),
             "hardware-version": panel_hardware_version(profile),
@@ -167,10 +175,10 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             commissioned_system = template.get("commissioned_system")
             # ``breaker_rating_a`` is the producer-side legacy key; the typed
             # ``breaker_rating`` (no units suffix) is the canonical YAML field.
-            # Read both so manifests built from older clones still work.
-            breaker_rating = float(
-                template.get("breaker_rating_a") or template.get("breaker_rating", 20),
-            )
+            # Read both so manifests built from older clones still work. A rating
+            # recorded as absent is not 20 A: see `_UNPUBLISHED_BREAKER_RATING_A`.
+            rating = template.get("breaker_rating_a") or template.get("breaker_rating", 20)
+            breaker_rating = float(rating) if rating is not None else _UNPUBLISHED_BREAKER_RATING_A
         relay_behavior = normalise_relay_behavior(relay_behavior_raw)
         instances.append(
             DeviceInstance(
@@ -197,7 +205,13 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     # guard; this default is only what keeps configs terse.
                     "placement": str(c.get("placement", "upstream-of-lugs")),
                     "always-on": "true" if relay_behavior == "always-on" else "false",
-                    "pcs-priority": str(c.get("pcs_priority", idx)),
+                    # A config that names none gets its position. A clone writes the
+                    # panel's own, or null where the panel publishes none, as it does
+                    # on a commissioned PV circuit; then none is given.
+                    **_pcs_priority(c, idx),
+                    # The energy a clone read from its panel, so the clone's registers
+                    # carry on from the panel's rather than starting at zero.
+                    **_energy_seeds(template),
                     # The second commissioning lock, independent of the relay one:
                     # `load-shed/priority` publishes with `$settable = !never-backup`, so
                     # a locked circuit offers a consumer no way to re-prioritise it. Set
@@ -218,6 +232,24 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             ),
         )
     return instances
+
+
+def _energy_seeds(template: CircuitTemplateExtended | None) -> dict[str, str]:
+    profile = template.get("energy_profile") if template is not None else None
+    if not profile:
+        return {}
+    seeds = {
+        "initial-consumed-wh": profile.get("initial_consumed_energy_wh"),
+        "initial-produced-wh": profile.get("initial_produced_energy_wh"),
+    }
+    return {key: str(float(value)) for key, value in seeds.items() if value}
+
+
+def _pcs_priority(circuit: CircuitDefinitionExtended, position: int) -> dict[str, str]:
+    if "pcs_priority" not in circuit:
+        return {"pcs-priority": str(position)}
+    priority = circuit["pcs_priority"]
+    return {} if priority is None else {"pcs-priority": str(priority)}
 
 
 def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
@@ -280,7 +312,11 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
 
     metadata = {"vendor-name": str(bess_cfg.get("vendor", "Span"))}
     serial = bess_cfg.get("serial_number")
-    if serial is not None:
+    mid_serial = bess_cfg.get("mid_serial_number")
+    if mid_serial is not None:
+        # The MID's own, as a clone reads it from the MID its panel publishes.
+        metadata["serial-number"] = str(mid_serial)
+    elif serial is not None:
         # Derived from the battery's serial, not invented: the MID is part of that
         # unit, so a consumer resolving one to the other should be able to.
         metadata["serial-number"] = f"{serial}-mid"

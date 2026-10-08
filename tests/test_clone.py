@@ -797,7 +797,8 @@ class TestPanelSiteValues:
 
 
 class TestDefaultedBreakerRatings:
-    """A rating the panel did not publish is a guess, and the log says so."""
+    """A rating the panel does not publish is carried through as absent where the
+    config can say so, and reported where it cannot yet."""
 
     def test_a_missing_main_breaker_rating_is_reported(
         self, caplog: pytest.LogCaptureFixture
@@ -820,21 +821,22 @@ class TestDefaultedBreakerRatings:
             if r.levelno == logging.WARNING
         )
 
-    def test_each_missing_circuit_rating_is_reported(
+    def test_a_missing_circuit_rating_stays_missing(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
+        """A clone is faithful to what the panel publishes: a circuit that publishes no
+        rating gets none in the clone, rather than an invented one with a warning."""
         devices = _base_devices()
-        for device_id in ("aaa111", "bbb222"):
-            devices[device_id].properties["breaker"].pop("rating")
+        devices["aaa111"].properties["breaker"].pop("rating")
 
         with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
             config = translate_scraped_panel(_make_scraped(devices))
 
-        warned = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-        assert _templates(config)["clone_1"]["breaker_rating"] == 20
-        assert any("aaa111" in m and "20" in m for m in warned)
-        assert any("bbb222" in m and "20" in m for m in warned)
-        assert not any("ccc333" in m for m in warned)
+        templates = _templates(config)
+        assert templates["clone_1"]["breaker_rating"] is None
+        assert templates["clone_3"]["breaker_rating"] == 20
+        assert not [r for r in caplog.records if "aaa111" in r.getMessage()]
+        validate_yaml_config(config)
 
 
 class TestFeedLookupStaysInThePanel:
@@ -886,3 +888,96 @@ class TestTheCapturedPanel:
         ]
         assert len(commissioned) == 1
         validate_yaml_config(config)
+
+
+def _circuits_by_id(config: dict[str, object]) -> dict[str, dict[str, object]]:
+    circuits = config["circuits"]
+    assert isinstance(circuits, list)
+    return {str(c["id"]): c for c in circuits}
+
+
+class TestWhatTheClonePublishesComesFromThePanel:
+    """Values a panel publishes reach its clone, rather than PanelBench's defaults."""
+
+    def test_each_circuits_pcs_priority_is_copied(self) -> None:
+        devices = _base_devices()
+        devices["aaa111"].update_property("pcs", "priority", "7")
+
+        circuits = _circuits_by_id(translate_scraped_panel(_make_scraped(devices)))
+
+        assert circuits["circuit_1"]["pcs_priority"] == 7
+
+    def test_a_circuit_without_a_pcs_priority_has_none(self) -> None:
+        """The capture's commissioned PV circuit publishes none."""
+        devices = _base_devices()
+        devices["aaa111"].properties["pcs"].pop("priority")
+
+        circuits = _circuits_by_id(translate_scraped_panel(_make_scraped(devices)))
+
+        assert circuits["circuit_1"]["pcs_priority"] is None
+
+    def test_the_shed_threshold_is_copied(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property(
+            "shed",
+            "policy",
+            '{"algorithm": "soc-priority.v1", "parameters": '
+            '{"soc-threshold-shed": 49, "soc-threshold-release": 51}}',
+        )
+
+        assert (
+            _panel_config(translate_scraped_panel(_make_scraped(devices)))["soc_shed_threshold"]
+            == 49
+        )
+
+    def test_the_panel_vendor_is_copied(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "vendor-name", "SPAN")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["vendor_name"] == (
+            "SPAN"
+        )
+
+
+class TestBatteryPowerLimits:
+    """A battery's charge and discharge limits follow the battery, not a constant."""
+
+    def test_a_published_nominal_power_sets_both_limits(self) -> None:
+        devices = _base_devices()
+        devices["bess-0"].update_property("info", "nominal-power", "11500")
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert (bess["max_charge_w"], bess["max_discharge_w"]) == (11500.0, 11500.0)
+
+    def test_without_one_the_limits_scale_with_the_capacity(self) -> None:
+        """5 kW per 13.5 kWh, a Powerwall 2's continuous rating: six of them, as the
+        real MAIN 32 capture has, are 81 kWh and 30 kW, where the clone gave 3.5 kW."""
+        devices = _base_devices()
+        devices["bess-0"].update_property("info", "nameplate-capacity", "81")
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["max_charge_w"] == pytest.approx(30000.0)
+        assert bess["max_discharge_w"] == pytest.approx(30000.0)
+
+
+class TestMicrogridInterconnect:
+    """The MID's own identity reaches the clone, not one derived from the battery's."""
+
+    def test_the_mids_serial_and_firmware_are_copied(self) -> None:
+        devices = _base_devices()
+        devices["mid-0"] = _device(
+            "mid-0",
+            "energy.ebus.device.mid",
+            {"info": {"serial-number": "example-mid-0001", "firmware-version": "1.2.3"}},
+            parent="bess-0",
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["mid_serial_number"] == "example-mid-0001"
+        assert bess["mid_firmware_version"] == "1.2.3"

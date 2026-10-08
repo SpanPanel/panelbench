@@ -15,6 +15,7 @@ Design principles:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Mapping
@@ -35,6 +36,7 @@ TYPE_CIRCUIT = "energy.ebus.device.circuit"
 TYPE_BESS = "energy.ebus.device.bess"
 TYPE_PV = "energy.ebus.device.pv"
 TYPE_EVSE = "energy.ebus.device.evse"
+TYPE_MID = "energy.ebus.device.mid"
 
 COMMISSIONED_SYSTEM_FEEDS: Final[Mapping[str, str]] = MappingProxyType(
     {TYPE_PV: "pv", TYPE_BESS: "backup"}
@@ -50,9 +52,17 @@ Read only when a circuit publishes no ``connection`` to say what it feeds: the n
 is the user's to change, and a renamed circuit is commissioned all the same.
 """
 
-# Breaker ratings for a panel or circuit that publishes none, each reported when used.
+# A main breaker rating for a panel that publishes none, reported when used: the
+# config has no way yet to say a panel has none.
 _DEFAULT_MAIN_BREAKER_A: Final = 200
-_DEFAULT_CIRCUIT_BREAKER_A: Final = 20
+# What sizes the simulated power range of a circuit that publishes no rating. Only
+# that: the clone records the rating as absent, and publishes none of its own.
+_MODELLING_BREAKER_A: Final = 20
+
+# A battery that publishes no `info/nominal-power` is given 5 kW per 13.5 kWh, a
+# Powerwall 2's continuous rating: the most common battery behind these panels, and
+# one that scales exactly for a stack of them (six, 81 kWh, are 30 kW).
+_BESS_W_PER_KWH_UNPUBLISHED: Final = 5000.0 / 13.5
 
 # What a panel publishing no size is rounded up to from its highest occupied space.
 _STANDARD_PANEL_SIZES: Final = (16, 24, 32, 40, 48)
@@ -77,6 +87,14 @@ _PV_IDENTITY: Final = (
 _EVSE_IDENTITY: Final = (
     ("serial-number", "serial_number"),
     ("firmware-version", "firmware_version"),
+)
+# A battery's MID publishes its own identity, which the clone keeps on the battery's
+# section under the keys `spec_generator` builds the MID from.
+_MID_IDENTITY: Final = (
+    ("serial-number", "mid_serial_number"),
+    ("model", "mid_product_name"),
+    ("firmware-version", "mid_firmware_version"),
+    ("hardware-version", "mid_hardware_version"),
 )
 _BESS_IDENTITY: Final = (
     ("vendor-name", "vendor"),
@@ -200,7 +218,13 @@ def translate_panel_tree(
     panel_description = panel_device.description if panel_device is not None else None
     if isinstance(panel_description, dict) and isinstance(panel_description.get("name"), str):
         panel_config["display_name"] = panel_description["name"]
+    vendor = _get_prop(devices, panel_device_id, "info", "vendor-name")
+    if vendor:
+        panel_config["vendor_name"] = vendor
     _copy_site_values(devices, panel_device_id, panel_config)
+    shed_threshold = _soc_shed_threshold(devices, panel_device_id)
+    if shed_threshold is not None:
+        panel_config["soc_shed_threshold"] = shed_threshold
 
     # Build per-circuit templates and definitions
     templates: dict[str, dict[str, object]] = {}
@@ -260,8 +284,9 @@ def translate_panel_tree(
         config["hardware_version"] = hardware
 
     # Build top-level BESS config (only when a battery is actually connected)
+    mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
     for bess_id in bess_nodes:
-        bess_cfg = _build_bess_config(devices, bess_id)
+        bess_cfg = _build_bess_config(devices, bess_id, mid_nodes)
         if bess_cfg is not None:
             config["bess"] = bess_cfg
 
@@ -701,6 +726,24 @@ def _published_panel_size(
     return int(suffix.group(1)) if suffix else None
 
 
+def _soc_shed_threshold(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+) -> float | None:
+    """The off-grid SOC shed threshold from the panel's published ``shed/policy``."""
+    raw = _get_prop(devices, panel_device_id, "shed", "policy")
+    if raw is None:
+        return None
+    try:
+        threshold = json.loads(raw)["parameters"]["soc-threshold-shed"]
+        return float(threshold)
+    except (ValueError, KeyError, TypeError):
+        _LOGGER.warning(
+            "Panel %s publishes a shed/policy with no soc-threshold-shed", panel_device_id
+        )
+        return None
+
+
 def _copy_site_values(
     devices: Mapping[str, DiscoveredDevice],
     panel_device_id: str,
@@ -746,15 +789,11 @@ def _translate_circuit(
     space = tabs[0]
 
     name = _get_prop(devices, node_uuid, "info", "name") or f"Circuit {space}"
-    breaker_rating = _int_prop(devices, node_uuid, "breaker", "rating")
-    if not breaker_rating:
-        _LOGGER.warning(
-            "Circuit %s (%s) publishes no breaker/rating; cloning it with a %d A breaker",
-            node_uuid,
-            name,
-            _DEFAULT_CIRCUIT_BREAKER_A,
-        )
-        breaker_rating = _DEFAULT_CIRCUIT_BREAKER_A
+    # Faithful to what the panel publishes: a rating it does not publish stays absent
+    # in the clone. The simulated power range still needs a size, so a modelling one
+    # stands in for that alone.
+    breaker_rating = _int_prop(devices, node_uuid, "breaker", "rating") or None
+    modelling_rating = breaker_rating or _MODELLING_BREAKER_A
     active_power = _float_prop(devices, node_uuid, "meter", "active-power")
     priority = _get_prop(devices, node_uuid, "load-shed", "priority") or "NEVER"
     # v1.0 publishes controllability directly as `switch/relay-controllable`, where
@@ -810,7 +849,7 @@ def _translate_circuit(
     relay_behavior = "controllable" if relay_controllable else "non-controllable"
 
     # Power range and typical power
-    max_power = breaker_rating * voltage
+    max_power = modelling_rating * voltage
     typical = abs(active_power) if active_power is not None else max_power * 0.3
     # Clamp typical to max
     typical = min(typical, max_power)
@@ -883,6 +922,9 @@ def _translate_circuit(
         "name": name,
         "template": template_name,
         "tabs": tabs,
+        # The panel's own value, or none where it publishes none, as a commissioned
+        # PV circuit does: never the position-derived one PanelBench's configs get.
+        "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
     }
 
     return template_name, template, circuit_def, tabs
@@ -918,6 +960,7 @@ def _device_role_to_mode(device_role: str | None) -> str:
 def _build_bess_config(
     devices: Mapping[str, DiscoveredDevice],
     bess_node_id: str,
+    mid_nodes: list[str],
 ) -> dict[str, object] | None:
     """Build top-level bess config from scraped BESS node properties.
 
@@ -927,6 +970,12 @@ def _build_bess_config(
     nameplate = _float_prop(devices, bess_node_id, "info", "nameplate-capacity")
     if not nameplate:
         return None
+    # `info/nominal-power` is the battery's "nameplate maximum rated power output"
+    # (eBus devices/bess.md, `info`); a battery that publishes none is scaled from its
+    # capacity by `_BESS_W_PER_KWH_UNPUBLISHED`. Either way, charge as discharge.
+    rated_power = _float_prop(devices, bess_node_id, "info", "nominal-power")
+    if rated_power is None or rated_power <= 0:
+        rated_power = nameplate * _BESS_W_PER_KWH_UNPUBLISHED
 
     bess: dict[str, object] = {
         "enabled": True,
@@ -935,14 +984,25 @@ def _build_bess_config(
         "backup_reserve_pct": 20.0,
         "charge_efficiency": 0.95,
         "discharge_efficiency": 0.95,
-        "max_charge_w": 3500.0,
-        "max_discharge_w": 3500.0,
+        "max_charge_w": rated_power,
+        "max_discharge_w": rated_power,
         "charge_hours": [0, 1, 2, 3, 4, 5],
         "discharge_hours": [16, 17, 18, 19, 20, 21],
     }
     # The battery's identity, so a clone republishes the battery it read. Its serial
     # also names its device id, `<panel>-<serial>`, under the clone's own panel id.
     _copy_info(devices, bess_node_id, bess, _BESS_IDENTITY)
+    mid = next(
+        (
+            mid_id
+            for mid_id in mid_nodes
+            if (description := devices[mid_id].description) is not None
+            and description.get("parent") == bess_node_id
+        ),
+        None,
+    )
+    if mid is not None:
+        _copy_info(devices, mid, bess, _MID_IDENTITY)
     return bess
 
 

@@ -352,6 +352,7 @@ panel_config:
   longitude: float # Degrees east (default: -122.4)
   time_zone: str # IANA timezone (default: resolved from lat/lon)
   soc_shed_threshold: float # SOC % for SOC_THRESHOLD shedding (default: 20)
+  vendor_name: str # Published as info/vendor-name (default: Span); a clone keeps its panel's
 
 circuit_templates: # Reusable template definitions
   template_name:
@@ -382,7 +383,9 @@ circuit_templates: # Reusable template definitions
       # requires priority: NEVER and relay_behavior: non-controllable, and a
       # firmware_version naming release 202639 or later, or none. A clone sets it.
     device_type: str # "circuit" | "evse" | "pv" (default: "circuit")
-    breaker_rating: int # Amps (derived from power_range if not set)
+    breaker_rating:
+      int | null # Amps (default: 20). null records a panel that publishes no rating, as a clone writes
+      # it. The pinned emitter still requires one and publishes 20 for it until it accepts the absence.
 
     # Optional behavioral modules
     cycling_pattern:
@@ -432,6 +435,9 @@ circuits:
     template: str # References a circuit_templates key
     tabs: [int] # Tab positions ([1] = 120V, [1, 3] = 240V)
     breaker_rating: int # Per-circuit override (optional)
+    pcs_priority:
+      int | null # Published as pcs/priority (default: the circuit's position). null records a panel that
+      # publishes none, as on a commissioned PV circuit; a clone keeps its panel's.
     vendor: str # PV circuit: its inverter's vendor (the pv section's inverter: else pv.vendor)
     model: str # PV circuit: its inverter's model (the pv section's inverter: else pv.product_name)
     serial_number: str # PV circuit: its inverter's serial (the pv section's inverter: else pv.serial_number)
@@ -592,15 +598,16 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 
 ### What gets cloned
 
-- Panel identity (`sim-{serial}-clone`), main breaker rating, and the panel size its model names
-- The panel's time zone and line voltages
+- Panel identity (`sim-{serial}-clone`), vendor name, main breaker rating, and the panel size its model names
+- The panel's time zone, line voltages and off-grid SOC shed threshold
 - The panel's firmware version, so the clone publishes as that SPAN release does
 - The panel's hardware version
-- All circuits: name, tab position, breaker rating, relay behavior, priority
+- All circuits: name, tab position, breaker rating (or its absence), relay behavior, priority, PCS priority
 - Commissioned PV and battery system circuits, recognised by both locks and the inverter or battery they feed, as `commissioned_system`
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)
-- Energy accumulators seeded from the panel's imported/exported energy values
-- Battery behavior with sensible schedule defaults, and the battery's vendor, model, part number, serial and firmware version
+- Energy accumulators seeded from the panel's imported/exported energy values, which the clone's registers carry on from
+- Battery behavior with sensible schedule defaults; the battery's vendor, model, part number, serial and firmware version; its charge and discharge limits from
+  its `info/nominal-power`, else 5 kW per 13.5 kWh; and its MID's own identity
 - PV nameplate capacity and production profile, and each inverter's vendor, model, serial and firmware version on the circuit that feeds it
 - EVSE night-charging time-of-day profile, and each SPAN Drive's serial and firmware version on the circuit that feeds it
 - The source panel's host in `panel_source`, for on-demand refresh
