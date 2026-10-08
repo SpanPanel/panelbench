@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from panelbench.recorder import RecorderDataSource
 
 from panelbench.hvac import hvac_seasonal_factor
-from panelbench.solar import daily_weather_factor, solar_production_factor
+from panelbench.solar import daily_weather_factor, solar_production_factor, weather_seed
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
 
@@ -333,7 +333,7 @@ class RealisticBehaviorEngine:
 
         weather = daily_weather_factor(
             current_time,
-            seed=hash(self._config["panel_config"]["serial_number"]),
+            seed=weather_seed(self._config["panel_config"]["serial_number"]),
             monthly_factors=monthly_factors,
         )
         return abs(base_power) * factor * weather
@@ -462,7 +462,7 @@ class RealisticBehaviorEngine:
         """
         lat = self._config["panel_config"].get("latitude", 37.7)
         lon = self._config["panel_config"].get("longitude", -122.4)
-        seed = hash(self._config["panel_config"]["serial_number"])
+        seed = weather_seed(self._config["panel_config"]["serial_number"])
 
         monthly_factors: dict[int, float] | None = None
         cached = get_cached_weather(lat, lon)

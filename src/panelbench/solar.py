@@ -11,6 +11,7 @@ simulation without an external weather API.
 
 from __future__ import annotations
 
+import hashlib
 import math
 
 DEFAULT_LATITUDE = 37.7  # San Francisco
@@ -116,6 +117,17 @@ def solar_production_factor(
 
     raw: float = float(sin_elevation**1.2) / float(sin_peak**1.2)
     return float(min(1.0, max(0.0, raw)))
+
+
+def weather_seed(serial_number: str) -> int:
+    """The weather seed for a panel, the same in every process that asks.
+
+    A digest rather than ``hash()``, which Python salts per interpreter: a serial
+    seeded from ``hash`` gets different weather each time PanelBench starts. The
+    live engine and the history generator both seed from here, so the history a
+    panel is given and the weather it then runs into are one sky.
+    """
+    return int.from_bytes(hashlib.sha256(serial_number.encode("utf-8")).digest()[:8], "big")
 
 
 def daily_weather_factor(
