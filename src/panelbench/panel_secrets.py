@@ -30,6 +30,15 @@ SECRETS_FILENAME = "panel_sources.json"
 _PASSPHRASE = "passphrase"
 
 
+class PanelSecretsUnreadable(ValueError):
+    """The store's file exists but cannot be read as one.
+
+    Refused rather than read as empty: the next write would replace every other
+    panel's secrets with the one it holds, and re-registering is then the only way
+    back to them. The file is left as it is for its owner to repair or remove.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class BrokerCredentials:
     """How to reach a panel's MQTTS broker: what registering returned, or a user had.
@@ -116,45 +125,69 @@ class PanelSecretsStore:
         """Take the passphrase out of every config in *config_dir* that carries one.
 
         A file is rewritten only when it carries one, so every other config keeps
-        its text, comments and all. Answers the files rewritten.
+        its text, comments and all. One that cannot be migrated, unreadable, not
+        UTF-8, or with nowhere to put its passphrase, is reported by name and left as
+        it was: a config that keeps its passphrase is no reason to stop the others,
+        nor the simulator. Answers the files rewritten.
         """
         migrated: list[Path] = []
         for pattern in ("*.yaml", "*.yml"):
             for path in sorted(config_dir.glob(pattern)):
-                text = path.read_text(encoding="utf-8")
-                if _PASSPHRASE not in text:
-                    continue
                 try:
-                    config = yaml.safe_load(text)
-                except yaml.YAMLError:
-                    continue
-                if not isinstance(config, dict) or not self.take_from_config(config):
-                    continue
-                rewritten = yaml.dump(
-                    config, default_flow_style=False, sort_keys=False, allow_unicode=True
-                )
-                path.write_text(rewritten, encoding="utf-8")
-                _LOGGER.info("Moved the source panel's passphrase out of %s", path.name)
-                migrated.append(path)
+                    if self._migrate(path):
+                        migrated.append(path)
+                except (OSError, UnicodeDecodeError, PanelSecretsUnreadable) as exc:
+                    _LOGGER.warning(
+                        "Could not move the source panel's passphrase out of %s: %s",
+                        path.name,
+                        exc,
+                    )
         return migrated
+
+    def _migrate(self, path: Path) -> bool:
+        text = path.read_text(encoding="utf-8")
+        if _PASSPHRASE not in text:
+            return False
+        try:
+            config = yaml.safe_load(text)
+        except yaml.YAMLError:
+            return False
+        # The store is written before the config is, so a passphrase is never dropped
+        # from a config with nowhere to keep it.
+        if not isinstance(config, dict) or not self.take_from_config(config):
+            return False
+        rewritten = yaml.dump(
+            config, default_flow_style=False, sort_keys=False, allow_unicode=True
+        )
+        path.write_text(rewritten, encoding="utf-8")
+        _LOGGER.info("Moved the source panel's passphrase out of %s", path.name)
+        return True
 
     # -- the file -----------------------------------------------------------------
 
     def _read(self) -> dict[str, PanelSecrets]:
+        """Every panel's secrets; none for a store not yet written.
+
+        Raises:
+            PanelSecretsUnreadable: the file exists but is not a store this reads,
+                whole: an entry it cannot read is refused too, since the next write
+                would drop it.
+        """
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return {}
-        except (OSError, json.JSONDecodeError) as exc:
-            _LOGGER.warning("Ignoring the unreadable panel secrets file %s: %s", self.path, exc)
-            return {}
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PanelSecretsUnreadable(f"{self.path} cannot be read: {exc}") from exc
         if not isinstance(raw, dict):
-            return {}
-        return {
-            serial: secrets
-            for serial, entry in raw.items()
-            if isinstance(serial, str) and (secrets := _parse_entry(entry)) is not None
-        }
+            raise PanelSecretsUnreadable(f"{self.path} does not hold a mapping of serials")
+        entries: dict[str, PanelSecrets] = {}
+        for serial, entry in raw.items():
+            secrets = _parse_entry(entry)
+            if secrets is None:
+                raise PanelSecretsUnreadable(f"{self.path} has an entry it cannot read: {serial}")
+            entries[serial] = secrets
+        return entries
 
     def _write(self, entries: dict[str, PanelSecrets]) -> None:
         """Replace the file in one step, readable and writable only by its owner."""
@@ -167,11 +200,20 @@ class PanelSecretsStore:
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 handle.write(payload)
+                # On disk before it replaces the store: a power loss after the rename
+                # must not leave an empty file in its place.
+                handle.flush()
+                os.fsync(handle.fileno())
             os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
         except BaseException:
             Path(temporary).unlink(missing_ok=True)
             raise
+        directory = os.open(self.path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
 
 def _entry(secrets: PanelSecrets) -> dict[str, object]:
@@ -184,13 +226,17 @@ def _entry(secrets: PanelSecrets) -> dict[str, object]:
 
 
 def _parse_entry(entry: object) -> PanelSecrets | None:
+    """One panel's secrets, or None for an entry this cannot read."""
     if not isinstance(entry, dict):
         return None
     passphrase = entry.get("passphrase")
-    return PanelSecrets(
-        passphrase=passphrase if isinstance(passphrase, str) else None,
-        broker=_parse_broker(entry.get("broker")),
-    )
+    if passphrase is not None and not isinstance(passphrase, str):
+        return None
+    raw_broker = entry.get("broker")
+    broker = _parse_broker(raw_broker)
+    if raw_broker is not None and broker is None:
+        return None
+    return PanelSecrets(passphrase=passphrase, broker=broker)
 
 
 def _parse_broker(raw: object) -> BrokerCredentials | None:

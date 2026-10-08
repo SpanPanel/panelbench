@@ -7,6 +7,8 @@ store of their own, keyed by the source panel's serial, readable only by its own
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import stat
 import subprocess
@@ -15,12 +17,14 @@ from pathlib import Path
 import pytest
 import yaml
 
+from panelbench import panel_secrets
 from panelbench.app import SimulatorApp
 from panelbench.panel_secrets import (
     SECRETS_FILENAME,
     BrokerCredentials,
     PanelSecrets,
     PanelSecretsStore,
+    PanelSecretsUnreadable,
 )
 
 _SERIAL = "example-panel-001"
@@ -168,3 +172,110 @@ def test_the_default_store_in_a_checkout_is_gitignored() -> None:
         pytest.skip("not a git checkout")
 
     assert result.returncode == 0, f"{default} is not gitignored"
+
+
+# -- a store that cannot be read, and configs that cannot be migrated ------------
+
+
+def test_a_corrupt_store_is_refused_and_kept(tmp_path: Path) -> None:
+    """Overwriting it with one new entry would lose every other panel's secrets, and
+    re-registering is then the only way back to them."""
+    store = _store(tmp_path)
+    store.path.parent.mkdir(parents=True)
+    store.path.write_text("{ not json", encoding="utf-8")
+
+    with pytest.raises(PanelSecretsUnreadable, match=str(store.path)):
+        store.get(_SERIAL)
+    with pytest.raises(PanelSecretsUnreadable):
+        store.remember(_SERIAL, passphrase="example-passphrase")
+
+    assert store.path.read_text(encoding="utf-8") == "{ not json"
+
+
+def test_a_store_with_a_malformed_entry_is_refused(tmp_path: Path) -> None:
+    """Skipping the entry would drop it from the file at the next write."""
+    store = _store(tmp_path)
+    store.path.parent.mkdir(parents=True)
+    store.path.write_text(json.dumps({_SERIAL: {"broker": {"username": 1}}}), encoding="utf-8")
+
+    with pytest.raises(PanelSecretsUnreadable):
+        store.get("another-panel")
+
+
+def test_a_write_reaches_the_disk_before_it_replaces_the_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A power loss after the rename must not leave an empty file in its place."""
+    store = _store(tmp_path)
+    calls: list[str] = []
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(fd: int) -> None:
+        calls.append("fsync")
+        real_fsync(fd)
+
+    def replace(src: str | os.PathLike[str], dst: str | os.PathLike[str]) -> None:
+        calls.append("replace")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(panel_secrets.os, "fsync", fsync)
+    monkeypatch.setattr(panel_secrets.os, "replace", replace)
+
+    store.remember(_SERIAL, passphrase="example-passphrase")
+
+    assert calls[:2] == ["fsync", "replace"]
+
+
+def test_one_unmigratable_config_does_not_stop_the_rest(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A config that is not UTF-8 is reported by name and left; the others migrate."""
+    store = _store(tmp_path)
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    (configs / "a-unreadable.yaml").write_bytes(b"passphrase: \xff\xfe\n")
+    legacy = configs / "b-legacy-clone.yaml"
+    legacy.write_text(yaml.safe_dump(_legacy_clone(), sort_keys=False), encoding="utf-8")
+
+    migrated = store.migrate_config_files(configs)
+
+    assert migrated == [legacy]
+    assert "a-unreadable.yaml" in caplog.text
+
+
+def test_an_unwritable_store_leaves_the_config_as_it_was(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The passphrase stays where it is rather than being dropped with nowhere to go."""
+    # Its directory cannot be made: a file stands where it would go, as a full or
+    # read-only /data would refuse it.
+    (tmp_path / "secrets").write_text("", encoding="utf-8")
+    store = _store(tmp_path)
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    legacy = configs / "legacy-clone.yaml"
+    text = yaml.safe_dump(_legacy_clone(), sort_keys=False)
+    legacy.write_text(text, encoding="utf-8")
+
+    migrated = store.migrate_config_files(configs)
+
+    assert migrated == []
+    assert legacy.read_text(encoding="utf-8") == text
+    assert "legacy-clone.yaml" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_corrupt_store_does_not_stop_a_reload(tmp_path: Path) -> None:
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    (configs / "legacy-clone.yaml").write_text(
+        yaml.safe_dump(_legacy_clone(), sort_keys=False), encoding="utf-8"
+    )
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / SECRETS_FILENAME).write_text("{ not json", encoding="utf-8")
+    app = SimulatorApp(config_dir=configs, config_filter="", secrets_dir=secrets_dir)
+
+    await app.reload()
+
+    assert (secrets_dir / SECRETS_FILENAME).read_text(encoding="utf-8") == "{ not json"

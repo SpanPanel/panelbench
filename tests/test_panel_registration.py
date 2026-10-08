@@ -195,3 +195,20 @@ async def test_a_supplied_serial_the_panel_does_not_report_is_refused(
 
     assert scrape.attempts == []
     assert _store(tmp_path).get("another-serial").broker is None
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_store_is_a_scrape_error_and_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Said as a scrape failure the dashboard shows, and the file left to repair."""
+    install_fake_scrape(monkeypatch)
+    store = _store(tmp_path)
+    store.path.parent.mkdir(parents=True)
+    store.path.write_text("{ not json", encoding="utf-8")
+    async with running(FakeSpanPanel()) as panel:
+        with pytest.raises(ScrapeError, match="cannot be read"):
+            await scrape_panel(panel.host, store, passphrase="example-passphrase")
+
+    assert panel.registrations == []
+    assert store.path.read_text(encoding="utf-8") == "{ not json"

@@ -49,7 +49,7 @@ from paho.mqtt.reasoncodes import ReasonCode
 from panelbench.const import PATH_CA_CERT, PATH_REGISTER, PATH_STATUS
 from panelbench.emitter_adapter.broker_link import BrokerLink
 from panelbench.emitter_adapter.transport import LoopBoundTransport
-from panelbench.panel_secrets import BrokerCredentials, PanelSecretsStore
+from panelbench.panel_secrets import BrokerCredentials, PanelSecretsStore, PanelSecretsUnreadable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -162,8 +162,22 @@ async def scrape_panel(
     the one kept for the panel, and keeps what registering returns.
 
     Raises:
-        ScrapeError: The panel could not be reached, registered with or scraped.
+        ScrapeError: The panel could not be reached, registered with or scraped, or
+            the secrets store cannot be read.
     """
+    try:
+        return await _scrape_panel(host, secrets, passphrase, supplied, status_callback)
+    except PanelSecretsUnreadable as exc:
+        raise ScrapeError("secrets", str(exc)) from exc
+
+
+async def _scrape_panel(
+    host: str,
+    secrets: PanelSecretsStore,
+    passphrase: str | None,
+    supplied: SuppliedBroker | None,
+    status_callback: StatusCallback | None,
+) -> ScrapedPanel:
     serial = await _fetch_serial(host)
     if supplied is not None:
         if supplied.serial != serial:
