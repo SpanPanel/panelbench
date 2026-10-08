@@ -15,6 +15,7 @@ from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.engine import DynamicSimulationEngine
 from panelbench.firmware import panel_firmware_version
 from panelbench.hardware import status_hardware_version
+from panelbench.panel_models import panel_model
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -86,6 +87,14 @@ class PanelInstance:
             msg = "Panel not initialised — call start() first"
             raise RuntimeError(msg)
         return panel_firmware_version(self._engine.config)
+
+    @property
+    def model(self) -> str:
+        """The model this panel reports, over MQTT and mDNS alike."""
+        if self._engine is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        return panel_model(self._engine.config)
 
     @property
     def status_hardware_version(self) -> str | None:

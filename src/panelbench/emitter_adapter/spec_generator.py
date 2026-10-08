@@ -33,7 +33,7 @@ from panelbench.inverter import (
     normalise_inverter_type,
     template_inverter_type,
 )
-from panelbench.panel_models import PANEL_SIZE_TO_MODEL
+from panelbench.panel_models import DEFAULT_PANEL_SIZE, panel_model
 from panelbench.pv_section import bound_pv_circuit_id
 
 if TYPE_CHECKING:
@@ -112,11 +112,7 @@ def build_manifest(profile: SimulationConfig) -> DeviceManifest:
 def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
     panel_cfg = profile["panel_config"]
     panel_id = panel_cfg["serial_number"]
-    panel_size = int(panel_cfg.get("total_tabs", 40))
-    # The panel's own, as a clone keeps it; else the model its size names.
-    panel_model = panel_cfg.get("model") or PANEL_SIZE_TO_MODEL.get(
-        panel_size, f"MAIN_{panel_size}"
-    )
+    panel_size = int(panel_cfg.get("total_tabs", DEFAULT_PANEL_SIZE))
     return DeviceInstance(
         entity_class="panel",
         instance_id=panel_id,
@@ -128,7 +124,7 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
             "hardware-version": panel_hardware_version(profile),
             "panel-size": str(panel_size),
             "main-breaker-rating-a": str(int(panel_cfg.get("main_size", 200))),
-            "panel-model": panel_model,
+            "panel-model": panel_model(profile),
             "postal-code": str(panel_cfg.get("postal_code", "94103")),
             "time-zone": str(panel_cfg.get("time_zone", "America/Los_Angeles")),
             "service-voltage-v": str(panel_cfg.get("service_voltage_v", 240.0)),

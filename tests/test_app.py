@@ -229,15 +229,19 @@ class TestReloadContinuesOnPerPathFailure:
 
 
 async def _started(
-    tmp_path: Path, broker: tuple[str, int], extra_yaml: str
+    tmp_path: Path, broker: tuple[str, int], extra_yaml: str, *, panel_yaml: str = ""
 ) -> tuple[PanelInstance, MagicMock, MagicMock]:
     """One panel started through `_start_panel`, its HTTP server class and mDNS
-    advertiser replaced by mocks that record what `_start_panel` hands them."""
+    advertiser replaced by mocks that record what `_start_panel` hands them.
+
+    *extra_yaml* is appended at the top level, *panel_yaml* inside `panel_config`.
+    """
     host, port = broker
     config = _write_config(
         tmp_path, "panel.yaml", "SIM-FW-0001", broker_host=host, broker_port=port
     )
-    config.write_text(config.read_text() + extra_yaml)
+    written = config.read_text().replace("  total_tabs: 8\n", f"  total_tabs: 8\n{panel_yaml}", 1)
+    config.write_text(written + extra_yaml)
 
     app = SimulatorApp(config_dir=tmp_path)
     app._schema = load_schema(_BUNDLED_SCHEMA)
@@ -335,6 +339,39 @@ class TestOneFirmwareString:
         try:
             assert server_cls.call_args.kwargs["hardware_version"] == reported
             assert panel.status_hardware_version == reported
+        finally:
+            await panel.stop()
+
+
+class TestOneModel:
+    """A panel's mDNS record names the model its MQTT tree publishes."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("panel_yaml", "model"),
+        [
+            # A clone keeps its panel's model; a user may then edit its size. Before,
+            # mDNS re-derived the model from the size while MQTT published the config's.
+            ("  model: MAIN_16\n", "MAIN_16"),
+            ("", "MAIN_8"),
+        ],
+        ids=["named", "unnamed"],
+    )
+    async def test_the_advertised_model_is_the_published_one(
+        self, tmp_path: Path, amqtt_broker: tuple[str, int], panel_yaml: str, model: str
+    ) -> None:
+        panel, _server_cls, advertiser = await _started(
+            tmp_path, amqtt_broker, "", panel_yaml=panel_yaml
+        )
+        try:
+            engine = panel.engine
+            assert engine is not None
+            [published] = [
+                i for i in build_manifest(engine.config).instances if i.entity_class == "panel"
+            ]
+            advertised = advertiser.register_panel.call_args.kwargs["model"]
+
+            assert advertised == published.metadata["panel-model"] == panel.model == model
         finally:
             await panel.stop()
 

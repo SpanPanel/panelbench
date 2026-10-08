@@ -328,7 +328,10 @@ class SimulatorApp:
         # without a bootstrap HTTP server to match.
         try:
             total_tabs = panel.total_tabs
-            panel_model = PANEL_SIZE_TO_MODEL[total_tabs]
+            if total_tabs not in PANEL_SIZE_TO_MODEL:
+                raise KeyError(f"total_tabs {total_tabs} is not a SPAN panel size")
+            # The model MQTT publishes, so mDNS cannot advertise another.
+            panel_model = panel.model
             firmware = panel.firmware_version
             status_hardware = panel.status_hardware_version
             panel_schema = render_for_panel(self._schema, total_tabs, firmware=firmware)
