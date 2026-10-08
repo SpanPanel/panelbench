@@ -92,6 +92,50 @@ async def test_a_broker_that_never_answers_is_a_connecting_error_within_its_time
     assert loop.time() - started < 3.0
 
 
+async def _answering_every_connect_with(return_code: int) -> asyncio.Server:
+    """A broker that answers each CONNECT with an MQTT 3.1.1 CONNACK of *return_code*."""
+
+    async def answer(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read(1024)  # the CONNECT
+        writer.write(bytes((0x20, 0x02, 0x00, return_code)))
+        await writer.drain()
+        await reader.read()  # until the client goes
+        writer.close()
+
+    return await asyncio.start_server(answer, "127.0.0.1", 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("return_code", "refused"),
+    [
+        # Unavailable, or a rejected id: a broker restarting, or one that cannot serve
+        # this client, says nothing about the credentials, and registering again
+        # would leave another client on the panel for nothing. paho reports 3 as
+        # 0x88, "Server unavailable". (Not 1: paho answers that by retrying as 3.1.)
+        (2, False),
+        (3, False),
+        # Bad credentials, or not authorised: the only answers that refuse them.
+        (4, True),
+        (5, True),
+    ],
+)
+async def test_only_a_connack_that_refuses_the_credentials_is_a_refusal(
+    return_code: int, refused: bool
+) -> None:
+    server = await _answering_every_connect_with(return_code)
+    port: int = server.sockets[0].getsockname()[1]
+    try:
+        with pytest.raises(ScrapeError) as raised:
+            await _discover(port, connect_timeout=5.0)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert raised.value.phase == "connecting"
+    assert isinstance(raised.value, BrokerRefused) is refused
+
+
 def test_a_root_that_never_described_itself_is_reported_as_that() -> None:
     """The SDK creates the root's entry before anything arrives, so a root that is
     present is not a root that described itself."""
