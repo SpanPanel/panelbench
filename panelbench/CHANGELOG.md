@@ -40,6 +40,9 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 
 ### Fixed
 
+- **Commands from Home Assistant take effect**, such as a circuit's relay or shed priority, where PanelBench never read them.
+- **PanelBench reconnects after its MQTT broker restarts and publishes its panels again**, where it stayed disconnected until the add-on was restarted.
+- **A panel's solar output no longer changes when the add-on restarts**, where each start gave the same panel different weather.
 - **An upgraded add-on refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down.
 - **The panel's HTTP status, Homie schema endpoint and mDNS advertisement report the same firmware version it publishes over MQTT.**
 - **A cloned panel keeps the source panel's name, firmware version and hardware version.**

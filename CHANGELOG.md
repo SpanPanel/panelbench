@@ -51,6 +51,10 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 
 ### Fixed
 
+- **Commands from Home Assistant now take effect**, such as a circuit's relay or shed priority, where PanelBench subscribed to them and then never read them.
+- **PanelBench reconnects after its MQTT broker restarts and publishes its panels again**, where it stayed disconnected until it was restarted itself and
+  logged an error for every topic it could not publish.
+- **A panel's solar output no longer changes when PanelBench restarts**, where each start gave the same panel different weather.
 - **An upgraded add-on now refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down and published
   whatever firmware they named.
 - **The dashboard shows a panel as islandable when any of its solar inverters is hybrid**, where only the first solar circuit listed decided it.
