@@ -16,6 +16,7 @@ import pytest
 
 from panelbench.panel_secrets import PanelSecretsStore
 from panelbench.scraper import (
+    BrokerRefused,
     ScrapeError,
     SuppliedBroker,
     registered_client_name,
@@ -131,3 +132,66 @@ async def test_a_supplied_ca_is_used_as_given(
 
     assert panel.ca_requests == 0
     assert scrape.attempts[0][1] == supplied_ca.encode()
+
+
+@pytest.mark.asyncio
+async def test_kept_credentials_whose_broker_does_not_answer_register_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a refusal is something a new registration can fix. A broker that does not
+    answer, a tree that never completes, a panel with no circuits: registering again
+    adds a client the owner removes by hand, and replaces credentials that worked."""
+    scrape = install_fake_scrape(monkeypatch)
+    async with running(FakeSpanPanel()) as panel:
+        await scrape_panel(panel.host, _store(tmp_path), passphrase="example-passphrase")
+        scrape.silent_users.add("registered-user-1")
+
+        with pytest.raises(ScrapeError, match="did not answer"):
+            await scrape_panel(panel.host, _store(tmp_path))
+
+    assert len(panel.registrations) == 1
+    broker = _store(tmp_path).get(panel.serial).broker
+    assert broker is not None and broker.username == "registered-user-1"
+
+
+@pytest.mark.asyncio
+async def test_supplied_credentials_are_kept_only_once_they_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mistyped password must not replace credentials that worked."""
+    scrape = install_fake_scrape(monkeypatch)
+    async with running(FakeSpanPanel()) as panel:
+        await scrape_panel(panel.host, _store(tmp_path), passphrase="example-passphrase")
+        scrape.refused_users.add("mistyped-user")
+
+        with pytest.raises(BrokerRefused):
+            await scrape_panel(
+                panel.host,
+                _store(tmp_path),
+                supplied=SuppliedBroker(
+                    serial=panel.serial, username="mistyped-user", password="pw", port=8883
+                ),
+            )
+
+    broker = _store(tmp_path).get(panel.serial).broker
+    assert broker is not None and broker.username == "registered-user-1"
+
+
+@pytest.mark.asyncio
+async def test_a_supplied_serial_the_panel_does_not_report_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kept under the wrong serial, the credentials would serve another panel's clone."""
+    scrape = install_fake_scrape(monkeypatch)
+    async with running(FakeSpanPanel()) as panel:
+        with pytest.raises(ScrapeError, match="another-serial"):
+            await scrape_panel(
+                panel.host,
+                _store(tmp_path),
+                supplied=SuppliedBroker(
+                    serial="another-serial", username="existing-user", password="pw", port=8883
+                ),
+            )
+
+    assert scrape.attempts == []
+    assert _store(tmp_path).get("another-serial").broker is None

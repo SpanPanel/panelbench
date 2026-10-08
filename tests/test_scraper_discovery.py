@@ -15,7 +15,12 @@ from collections.abc import AsyncIterator
 import pytest
 from ebus_sdk import DiscoveredDevice
 
-from panelbench.scraper import ScrapeError, _discover_tree, _validate_discovered_tree
+from panelbench.scraper import (
+    BrokerRefused,
+    ScrapeError,
+    _discover_tree,
+    _validate_discovered_tree,
+)
 
 
 def _closed_port() -> int:
@@ -49,6 +54,7 @@ async def test_a_refused_connection_is_a_connecting_error_naming_the_broker() ->
 
     assert raised.value.phase == "connecting"
     assert f"127.0.0.1:{port}" in str(raised.value)
+    assert not isinstance(raised.value, BrokerRefused), "nothing refused the credentials"
 
 
 @pytest.fixture

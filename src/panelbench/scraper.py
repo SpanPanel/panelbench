@@ -42,7 +42,9 @@ from urllib.parse import urlsplit
 import aiohttp
 import aiomqtt
 import ebus_sdk
+from aiomqtt.exceptions import MqttConnectError
 from ebus_sdk import DiscoveredDevice
+from paho.mqtt.reasoncodes import ReasonCode
 
 from panelbench.const import PATH_CA_CERT, PATH_REGISTER, PATH_STATUS
 from panelbench.emitter_adapter.broker_link import BrokerLink
@@ -72,6 +74,25 @@ class ScrapeError(Exception):
     def __init__(self, phase: str, message: str) -> None:
         self.phase = phase
         super().__init__(message)
+
+
+class BrokerRefused(ScrapeError):
+    """The panel's broker refused the credentials: bad, or no longer authorised.
+
+    The one scrape failure a new registration can fix, so the only one that leads to
+    one. A broker that does not answer, a tree that never completes, a panel with no
+    circuits: registering again cannot help any of them, and each registration adds a
+    client the panel's owner removes by hand.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("connecting", message)
+
+
+# CONNACK codes that refuse the credentials: 4 and 5 under MQTT 3.1.1, which paho
+# reports as their MQTT 5 equivalents, 0x86 (bad user name or password) and 0x87
+# (not authorised).
+_REFUSED_CONNACK_CODES = frozenset({4, 5, 0x86, 0x87})
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,27 +164,35 @@ async def scrape_panel(
     Raises:
         ScrapeError: The panel could not be reached, registered with or scraped.
     """
+    serial = await _fetch_serial(host)
     if supplied is not None:
+        if supplied.serial != serial:
+            # Kept under the wrong serial, they would serve another panel's clone.
+            raise ScrapeError(
+                "registering",
+                f"The panel at {host} reports serial {serial}, not {supplied.serial}",
+            )
         broker = BrokerCredentials(
             username=supplied.username,
             password=supplied.password,
             port=supplied.port,
             ca_pem=supplied.ca_pem or (await _fetch_ca(host)).decode(),
         )
-        secrets.remember(supplied.serial, passphrase=passphrase, broker=broker)
-        return await _scrape_through(host, supplied.serial, broker, status_callback)
+        scraped = await _scrape_through(host, serial, broker, status_callback)
+        # Kept only once they work, so a mistyped password replaces nothing that did.
+        secrets.remember(serial, passphrase=passphrase, broker=broker)
+        return scraped
 
-    serial = await _fetch_serial(host)
     kept = secrets.get(serial)
     passphrase = passphrase or kept.passphrase
     if kept.broker is not None:
         try:
             return await _scrape_through(host, serial, kept.broker, status_callback)
-        except ScrapeError as exc:
+        except BrokerRefused as exc:
             if passphrase is None:
                 raise
             _LOGGER.warning(
-                "The broker credentials kept for panel %s did not work (%s); registering again",
+                "The broker refused the credentials kept for panel %s (%s); registering again",
                 serial,
                 exc,
             )
@@ -417,44 +446,68 @@ async def _discover_tree(
 
     if status_callback:
         await status_callback("connecting", f"MQTTS to {address}")
-    try:
-        async with asyncio.timeout(connect_timeout):
-            await link.connect()
-    except TimeoutError as exc:
-        raise ScrapeError(
-            "connecting",
-            f"The panel's broker at {address} did not answer within {connect_timeout:g} s",
-        ) from exc
-    except aiomqtt.MqttError as exc:
-        raise ScrapeError(
-            "connecting", f"Could not connect to the panel's broker at {address}: {exc}"
-        ) from exc
+    await _connect(link, address, connect_timeout)
 
-    transport = LoopBoundTransport(
-        publish=link.publish,
-        subscribe=link.subscribe,
-        unsubscribe=link.unsubscribe,
-        connected=link.is_connected,
-    )
-    transport.start()
-    controller = ebus_sdk.Controller(mqtt_cfg=None, root_device_id=root, mqttc=transport)
-    # The SDK resyncs a tree-rooted controller on reconnect only for a client it
-    # built; for one it is given, that is the caller's to wire.
-    link.on_reconnect(controller.resync)
+    # Everything after the connect is inside the try, and the link's disconnect is
+    # in a finally of its own: a link that outlives the scrape reconnects for the
+    # life of the process with the source panel's credentials.
+    transport: LoopBoundTransport | None = None
+    controller: ebus_sdk.Controller | None = None
     try:
+        transport = LoopBoundTransport(
+            publish=link.publish,
+            subscribe=link.subscribe,
+            unsubscribe=link.unsubscribe,
+            connected=link.is_connected,
+        )
+        transport.start()
+        controller = ebus_sdk.Controller(mqtt_cfg=None, root_device_id=root, mqttc=transport)
+        # The SDK resyncs a tree-rooted controller on reconnect only for a client it
+        # built; for one it is given, that is the caller's to wire.
+        link.on_reconnect(controller.resync)
         controller.start_discovery()
         if status_callback:
             await status_callback("scraping", f"Discovering the device tree rooted at {root}")
         await _await_whole_tree(
             controller, root, stability_timeout=stability_timeout, max_timeout=max_timeout
         )
-        devices = dict(controller.devices)
+        return dict(controller.devices)
     finally:
-        controller.stop()
-        await transport.aclose()
-        await link.disconnect()
+        try:
+            if controller is not None:
+                controller.stop()
+            if transport is not None:
+                await transport.aclose()
+        finally:
+            await link.disconnect()
 
-    return devices
+
+async def _connect(link: BrokerLink, address: str, timeout: float) -> None:
+    """Open *link*, or say why not: refused credentials apart from every other failure."""
+    try:
+        async with asyncio.timeout(timeout):
+            await link.connect()
+    except TimeoutError as exc:
+        raise ScrapeError(
+            "connecting", f"The panel's broker at {address} did not answer within {timeout:g} s"
+        ) from exc
+    except MqttConnectError as exc:
+        if _connack_code(exc) in _REFUSED_CONNACK_CODES:
+            raise BrokerRefused(
+                f"The panel's broker at {address} refused the credentials: {exc}"
+            ) from exc
+        raise ScrapeError(
+            "connecting", f"Could not connect to the panel's broker at {address}: {exc}"
+        ) from exc
+    except aiomqtt.MqttError as exc:
+        raise ScrapeError(
+            "connecting", f"Could not connect to the panel's broker at {address}: {exc}"
+        ) from exc
+
+
+def _connack_code(exc: MqttConnectError) -> int | None:
+    rc = exc.rc
+    return rc.value if isinstance(rc, ReasonCode) else rc
 
 
 async def _await_whole_tree(

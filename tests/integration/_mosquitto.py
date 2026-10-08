@@ -45,14 +45,15 @@ class Mosquitto:
     that lost it would: only a republished tree can refill it.
     """
 
-    def __init__(self, executable: str, workdir: Path) -> None:
+    def __init__(self, executable: str, workdir: Path, *, allow_anonymous: bool = True) -> None:
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             self.port: int = probe.getsockname()[1]
         self._executable = executable
         self._config = workdir / "mosquitto.conf"
         self._config.write_text(
-            f"listener {self.port} 127.0.0.1\nallow_anonymous true\npersistence false\n",
+            f"listener {self.port} 127.0.0.1\n"
+            f"allow_anonymous {'true' if allow_anonymous else 'false'}\npersistence false\n",
             encoding="utf-8",
         )
         self._log = workdir / "mosquitto.log"

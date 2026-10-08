@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import aiomqtt
 import pytest
 
-from panelbench.scraper import _discover_tree, _validate_discovered_tree
-from tests.integration._mosquitto import Mosquitto, requires_mosquitto
+from panelbench.scraper import BrokerRefused, _discover_tree, _validate_discovered_tree
+from tests.integration._mosquitto import MOSQUITTO, Mosquitto, requires_mosquitto
 
 pytestmark = requires_mosquitto
 
@@ -78,3 +79,27 @@ async def test_a_tree_slow_to_arrive_is_scraped_whole(mosquitto: Mosquitto) -> N
         device = devices[f"{serial}-{circuit}"]
         assert device.description is not None
         assert device.get_property("info", "spaces") == str(index)
+
+
+@pytest.mark.asyncio
+async def test_credentials_the_broker_refuses_are_a_refusal(tmp_path: Path) -> None:
+    """The one failure a new registration can fix, told apart from every other."""
+    assert MOSQUITTO is not None
+    broker = Mosquitto(MOSQUITTO, tmp_path, allow_anonymous=False)
+    await broker.start()
+    try:
+        with pytest.raises(BrokerRefused):
+            await _discover_tree(
+                host="127.0.0.1",
+                port=broker.port,
+                root="example-panel-001",
+                username="example-user",
+                password="wrong-password",
+                ca_cert_path=None,
+                connect_timeout=5.0,
+                stability_timeout=0.2,
+                max_timeout=2.0,
+                status_callback=None,
+            )
+    finally:
+        await broker.stop()

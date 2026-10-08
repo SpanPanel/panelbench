@@ -18,7 +18,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from panelbench import scraper
-from panelbench.scraper import PanelCredentials, ScrapedPanel, ScrapeError
+from panelbench.scraper import BrokerRefused, PanelCredentials, ScrapedPanel, ScrapeError
 from tests._helpers import (
     CAPTURED_MAIN_32,
     CAPTURED_MAIN_32_SERIAL,
@@ -82,10 +82,16 @@ async def running(panel: FakeSpanPanel) -> AsyncIterator[FakeSpanPanel]:
 
 @dataclass
 class FakeScrape:
-    """Stands in for ``scraper.scrape_ebus``: records each attempt, refuses some users."""
+    """Stands in for ``scraper.scrape_ebus``: records each attempt.
+
+    Its broker refuses *refused_users* (bad credentials, not authorised), and never
+    answers *silent_users*, which is a failure of another kind: one no registration
+    can fix.
+    """
 
     attempts: list[tuple[PanelCredentials, bytes]] = field(default_factory=list)
     refused_users: set[str] = field(default_factory=set)
+    silent_users: set[str] = field(default_factory=set)
 
     async def __call__(
         self, creds: PanelCredentials, ca_pem: bytes, *, status_callback: object = None
@@ -93,7 +99,9 @@ class FakeScrape:
         del status_callback
         self.attempts.append((creds, ca_pem))
         if creds.username in self.refused_users:
-            raise ScrapeError("scraping", f"broker refused {creds.username}")
+            raise BrokerRefused(f"the panel's broker refused {creds.username}")
+        if creds.username in self.silent_users:
+            raise ScrapeError("connecting", f"the panel's broker did not answer {creds.username}")
         return ScrapedPanel(
             serial_number=creds.serial_number,
             devices=discovered_from_tree_snapshot(CAPTURED_MAIN_32),
