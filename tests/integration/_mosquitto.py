@@ -31,7 +31,7 @@ MOSQUITTO = shutil.which(
     ),
 )
 
-_REQUIRED = bool(os.environ.get("PANELBENCH_REQUIRE_MOSQUITTO"))
+_REQUIRED = os.environ.get("PANELBENCH_REQUIRE_MOSQUITTO", "") not in ("", "0")
 
 requires_mosquitto = pytest.mark.skipif(
     MOSQUITTO is None and not _REQUIRED, reason="mosquitto is not installed"

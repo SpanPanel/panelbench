@@ -642,8 +642,8 @@ def _declared_descendants(devices: Mapping[str, DiscoveredDevice], root: str) ->
 def _is_circuit(device: DiscoveredDevice) -> bool:
     """True when a discovered device is a circuit, by its Homie ``$type``.
 
-    ``description`` is the parsed ``$description`` dict, not a method — a device
-    that has not yet published one leaves it empty rather than absent.
+    ``description`` is the parsed ``$description`` dict, not a method, and None for
+    a device that has not published one yet.
     """
     description = device.description
     return bool(isinstance(description, dict) and description.get("type") == TYPE_CIRCUIT)

@@ -47,17 +47,19 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 - **Commands from Home Assistant take effect**, such as a circuit's relay or shed priority, where PanelBench never read them.
 - **PanelBench reconnects after its MQTT broker restarts or stops answering, and publishes its panels again**, where it stayed disconnected until the add-on
   was restarted.
-- **A config naming the serial of a panel already running is refused**, where both ran and took each other's broker connection in turn.
-- **A panel that fails as it starts no longer leaves its broker connection open** to fight the panel's next start.
+- **A config naming the serial of a panel already running is refused**, where both started, the second silently taking over the first's broker connection.
+- **A panel that fails as it starts no longer leaves its broker connection open**, where it stayed open until the panel started again.
 - **Cloning or syncing a panel connects to its broker at the address you gave**, where it dialled the panel's `.local` name, which does not resolve across
   subnets.
 - **A panel's solar output no longer changes when the add-on restarts**, where each start gave the same panel different weather.
-- **The add-on registers with a panel once and reuses its credentials for every clone, sync and restore**, where each one left another client on the panel.
+- **The add-on registers with a panel once and reuses its credentials for every clone, sync and restore**, registering again only if the panel's broker
+  refuses them, where each one left another client on the panel.
 - **A panel's passphrase is no longer written into its clone's config or an export of it**, but kept in the add-on's private storage, where an existing clone's
   passphrase moves the next time the add-on reads it.
 - **A clone takes its size from the panel's model**, where a panel whose highest spaces were empty was cloned as a smaller one.
 - **A clone's energy readings carry on from its panel's**, where they started at zero.
-- **A clone keeps its panel's PCS priorities, vendor name, off-grid shed threshold and battery MID identity.**
+- **A clone keeps its panel's PCS priorities, vendor name, model, off-grid shed threshold and battery MID identity.**
+- **A clone keeps its panel's network links, Wi-Fi network or its absence, door and cloud state**, where a panel on Ethernet cloned as one on Wi-Fi.
 - **A clone's battery charges and discharges at the battery's rated power**, where every battery was held to 3.5 kW.
 - **A clone records a breaker rating its panel does not publish as absent**, where it wrote 20 A into the config.
 - **Restoring a circuit from a panel that cannot be reached says why**, where it left the circuit unchanged without a word.
