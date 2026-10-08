@@ -32,11 +32,14 @@ _PASSPHRASE = "passphrase"
 
 @dataclass(frozen=True, slots=True)
 class BrokerCredentials:
-    """How to reach a panel's MQTTS broker: what registering returned, or a user had."""
+    """How to reach a panel's MQTTS broker: what registering returned, or a user had.
+
+    No host: the broker runs on the panel, and is dialled wherever the panel is
+    reached, not at a name kept from when these were issued.
+    """
 
     username: str
     password: str
-    host: str
     port: int
     ca_pem: str
 
@@ -193,17 +196,14 @@ def _parse_entry(entry: object) -> PanelSecrets | None:
 def _parse_broker(raw: object) -> BrokerCredentials | None:
     if not isinstance(raw, dict):
         return None
-    username, password, host, port, ca_pem = (
-        raw.get(key) for key in ("username", "password", "host", "port", "ca_pem")
+    username, password, port, ca_pem = (
+        raw.get(key) for key in ("username", "password", "port", "ca_pem")
     )
     if not (
         isinstance(username, str)
         and isinstance(password, str)
-        and isinstance(host, str)
         and isinstance(port, int)
         and isinstance(ca_pem, str)
     ):
         return None
-    return BrokerCredentials(
-        username=username, password=password, host=host, port=port, ca_pem=ca_pem
-    )
+    return BrokerCredentials(username=username, password=password, port=port, ca_pem=ca_pem)

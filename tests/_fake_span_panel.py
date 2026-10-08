@@ -55,7 +55,9 @@ class FakeSpanPanel:
             {
                 "ebusBrokerUsername": f"registered-user-{len(self.registrations)}",
                 "ebusBrokerPassword": "registered-broker-password",
-                "ebusBrokerHost": "127.0.0.1",
+                # A real panel advertises its mDNS name, which does not resolve
+                # across subnets; nothing here may dial it.
+                "ebusBrokerHost": f"span-{self.serial}.local",
                 "ebusBrokerMqttsPort": 8883,
                 "serialNumber": self.serial,
             }

@@ -264,6 +264,17 @@ class BrokerLink:
             self._fail(session, exc)
             raise BrokerUnavailable(f"subscription to {topic_filter} was not sent") from exc
 
+    async def unsubscribe(self, topic_filter: str) -> None:
+        """Stop routing *topic_filter*, and stop restoring it on reconnect."""
+        self._routes.pop(topic_filter, None)
+        session = self._live_session()
+        try:
+            async with session.operation() as client:
+                await client.unsubscribe(topic_filter)
+        except (aiomqtt.MqttError, TimeoutError) as exc:
+            self._fail(session, exc)
+            raise BrokerUnavailable(f"unsubscribe from {topic_filter} was not sent") from exc
+
     # -- internals --------------------------------------------------------------
 
     def _live_session(self) -> _Session:

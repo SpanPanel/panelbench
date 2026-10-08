@@ -89,6 +89,12 @@ class FakeClient:
         # 0x80 is a SUBACK's refusal, which an ACL produces.
         return (0x80,) if topic in self.broker.refused_filters else (qos,)
 
+    async def unsubscribe(self, topic: str) -> None:
+        if self.severed:
+            raise aiomqtt.MqttError("Could not unsubscribe from topic")
+        self.subscribed = [(f, q) for f, q in self.subscribed if f != topic]
+        self.log.append(("unsubscribe", topic))
+
     @property
     def messages(self) -> AsyncIterator[aiomqtt.Message]:
         return self._iterate()

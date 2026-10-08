@@ -234,7 +234,10 @@ async def test_an_outage_is_reported_once_and_without_a_traceback(
     caplog.set_level(logging.DEBUG)
     link = await connected_link()
     transport = LoopBoundTransport(
-        publish=link.publish, subscribe=link.subscribe, connected=link.is_connected
+        publish=link.publish,
+        subscribe=link.subscribe,
+        unsubscribe=link.unsubscribe,
+        connected=link.is_connected,
     )
     transport.start()
 
@@ -510,3 +513,26 @@ async def test_a_connect_cancelled_by_disconnect_is_closed_once_it_connects(
 
     await eventually(lambda: slow.exited)
     assert slow.entered, "the connect was abandoned rather than finished"
+
+
+@pytest.mark.asyncio
+async def test_an_unsubscribed_filter_is_neither_routed_nor_restored(
+    fake_broker: FakeBroker,
+) -> None:
+    link = await connected_link()
+    inbox = Inbox()
+    await link.subscribe(RELAY_SETS, inbox, 1)
+    await link.subscribe(PRIORITY_SET, Inbox(), 1)
+
+    await link.unsubscribe(RELAY_SETS)
+    first = fake_broker.live
+    assert first is not None
+    first.receive("ebus/5/dev-1/switch/relay/set", b"OPEN")  # one already in flight
+    await outage(fake_broker, link)
+    fake_broker.come_up()
+    second = await fake_broker.wait_for_live(after=first)
+    await eventually(lambda: second.subscribed)
+
+    assert second.subscribed == [(PRIORITY_SET, 1)]
+    assert inbox.received == []
+    await link.disconnect()

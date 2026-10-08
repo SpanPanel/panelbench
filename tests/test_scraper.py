@@ -78,7 +78,7 @@ class TestValidateDiscoveredTree:
     def test_missing_root_raises(self) -> None:
         tree = self._valid_tree()
         del tree[_SERIAL]
-        with pytest.raises(ScrapeError, match="No device published"):
+        with pytest.raises(ScrapeError, match=r"no \$description for its root"):
             _validate_discovered_tree(tree, _SERIAL)
 
     def test_panel_without_circuits_raises(self) -> None:

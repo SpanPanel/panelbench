@@ -1,8 +1,15 @@
 """eBus scraper — connect to a real SPAN panel and discover its device tree.
 
 Performs the authentication handshake via the panel's v2 REST API, then drives a
-tree-rooted ``ebus_sdk.Controller`` against the panel's MQTTS broker until the
-retained burst stabilises.
+tree-rooted ``ebus_sdk.Controller`` against the panel's MQTTS broker until every
+device the panel declares has described itself and the retained burst settles.
+
+**The broker is dialled at the host the user gave.** A panel advertises its own
+mDNS name (``span-….local``) as its broker host, and mDNS does not resolve across
+subnets, so a scrape that dialled it never connected. The broker runs on the panel
+itself, so the host the panel was reached at is the broker's, and TLS is verified
+against the panel's CA, whose leaf names that address, exactly as the Home
+Assistant integration connects.
 
 Discovery is delegated rather than hand-rolled because under the parent/child data
 model a panel's circuits, BESS, PV, EVSE, lugs and MID are SEPARATE Homie devices in
@@ -26,21 +33,26 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
+import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import aiohttp
+import aiomqtt
 import ebus_sdk
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.const import PATH_CA_CERT, PATH_REGISTER, PATH_STATUS
+from panelbench.emitter_adapter.broker_link import BrokerLink
+from panelbench.emitter_adapter.transport import LoopBoundTransport
 from panelbench.panel_secrets import BrokerCredentials, PanelSecretsStore
 
 _LOGGER = logging.getLogger(__name__)
 
 # Timeouts
+_CONNECT_TIMEOUT_S = 15.0
 _STABILITY_TIMEOUT_S = 5.0
 _MAX_SCRAPE_TIMEOUT_S = 30.0
 _HTTP_TIMEOUT_S = 15.0
@@ -135,19 +147,18 @@ async def scrape_panel(
         broker = BrokerCredentials(
             username=supplied.username,
             password=supplied.password,
-            host=_hostname(host),
             port=supplied.port,
             ca_pem=supplied.ca_pem or (await _fetch_ca(host)).decode(),
         )
         secrets.remember(supplied.serial, passphrase=passphrase, broker=broker)
-        return await _scrape_through(supplied.serial, broker, status_callback)
+        return await _scrape_through(host, supplied.serial, broker, status_callback)
 
     serial = await _fetch_serial(host)
     kept = secrets.get(serial)
     passphrase = passphrase or kept.passphrase
     if kept.broker is not None:
         try:
-            return await _scrape_through(serial, kept.broker, status_callback)
+            return await _scrape_through(host, serial, kept.broker, status_callback)
         except ScrapeError as exc:
             if passphrase is None:
                 raise
@@ -161,25 +172,26 @@ async def scrape_panel(
     broker = BrokerCredentials(
         username=creds.username,
         password=creds.password,
-        host=creds.broker_host,
         port=creds.mqtts_port,
         ca_pem=ca_pem.decode(),
     )
     secrets.remember(serial, passphrase=passphrase, broker=broker)
-    return await _scrape_through(serial, broker, status_callback)
+    return await _scrape_through(host, serial, broker, status_callback)
 
 
 async def _scrape_through(
+    host: str,
     serial: str,
     broker: BrokerCredentials,
     status_callback: StatusCallback | None,
 ) -> ScrapedPanel:
+    """Scrape *serial*'s tree from the broker on the panel at *host*."""
     creds = PanelCredentials(
         username=broker.username,
         password=broker.password,
         serial_number=serial,
         mqtts_port=broker.port,
-        broker_host=broker.host,
+        broker_host=_hostname(host),
     )
     return await scrape_ebus(creds, broker.ca_pem.encode(), status_callback=status_callback)
 
@@ -270,7 +282,9 @@ async def register_with_panel(
                 password=data["ebusBrokerPassword"],
                 serial_number=data["serialNumber"],
                 mqtts_port=int(data["ebusBrokerMqttsPort"]),
-                broker_host=data.get("ebusBrokerHost", host),
+                # Not `ebusBrokerHost`: that is the panel's .local name, which does
+                # not resolve across subnets. See the module docstring.
+                broker_host=_hostname(host),
             )
 
             # Step 2: Fetch CA certificate for TLS trust
@@ -298,32 +312,40 @@ async def scrape_ebus(
     ca_pem: bytes,
     *,
     status_callback: StatusCallback | None = None,
+    connect_timeout: float = _CONNECT_TIMEOUT_S,
     stability_timeout: float = _STABILITY_TIMEOUT_S,
     max_timeout: float = _MAX_SCRAPE_TIMEOUT_S,
 ) -> ScrapedPanel:
-    """Connect to a panel's MQTTS broker and collect all retained eBus topics.
+    """Connect to a panel's MQTTS broker and collect its whole device tree.
 
     Args:
-        creds: MQTT credentials from ``register_with_panel``.
+        creds: MQTT credentials, and the host the panel's broker is reached at.
         ca_pem: PEM-encoded CA certificate for the panel's broker.
         status_callback: Optional async callback for progress updates.
-        stability_timeout: Seconds of silence before declaring scrape complete.
-        max_timeout: Maximum total scrape duration.
+        connect_timeout: How long the broker has to accept the connection.
+        stability_timeout: Seconds of quiet, once the tree is whole, before the
+            scrape takes it.
+        max_timeout: How long the tree has to arrive once connected.
 
     Returns:
         ScrapedPanel with the collected data.
 
     Raises:
-        ScrapeError: On connection failure or missing required topics.
+        ScrapeError: The broker could not be reached, or the tree did not arrive.
     """
-    # The SDK's TLS config takes a CA path, so the PEM needs a file on disk.
+    # aiomqtt's TLS parameters take a CA path, so the PEM needs a file on disk.
     with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as ca_file:
         ca_file.write(ca_pem)
     ca_path = Path(ca_file.name)
     try:
         devices = await _discover_tree(
-            creds,
-            ca_path,
+            host=creds.broker_host,
+            port=creds.mqtts_port,
+            root=creds.serial_number,
+            username=creds.username,
+            password=creds.password,
+            ca_cert_path=ca_path,
+            connect_timeout=connect_timeout,
             stability_timeout=stability_timeout,
             max_timeout=max_timeout,
             status_callback=status_callback,
@@ -348,9 +370,14 @@ async def scrape_ebus(
 
 
 async def _discover_tree(
-    creds: PanelCredentials,
-    ca_cert_path: Path,
     *,
+    host: str,
+    port: int,
+    root: str,
+    username: str | None,
+    password: str | None,
+    ca_cert_path: Path | None,
+    connect_timeout: float,
     stability_timeout: float,
     max_timeout: float,
     status_callback: StatusCallback | None,
@@ -368,71 +395,116 @@ async def _discover_tree(
     it is stated in each device's ``$description`` via ``root`` / ``parent``. That is
     precisely what `Controller`'s tree-rooted mode resolves, so this defers to it
     rather than re-implementing discovery and the membership rule here.
+
+    The controller runs on the same broker link and transport a simulated panel
+    publishes through, so connecting is an awaitable step with its own timeout, and
+    a broker that never answers is reported as that, naming it. Once connected, the
+    scrape waits for ``Controller.is_tree_complete`` — every device the panel
+    declares has described itself — and then for *stability_timeout* of quiet so
+    the retained values land. The quiet period counts only from the first message,
+    so a panel slow to start answering is not taken for an empty one.
     """
-    controller = ebus_sdk.Controller(
-        mqtt_cfg={
-            "host": creds.broker_host,
-            "port": creds.mqtts_port,
-            "use_tls": True,
-            "tls_ca_cert": str(ca_cert_path),
-            "tls_insecure": False,
-            "authentication": {
-                "type": "USER_PASS",
-                "username": creds.username,
-                "password": creds.password,
-            },
-        },
-        root_device_id=creds.serial_number,
+    address = f"{host}:{port}"
+    link = BrokerLink(
+        host=host,
+        port=port,
+        # A scrape is a passing reader, so any id that collides with no one will do.
+        client_id=f"panelbench-scrape-{uuid.uuid4().hex[:12]}",
+        username=username,
+        password=password,
+        ca_cert_path=str(ca_cert_path) if ca_cert_path is not None else None,
     )
 
     if status_callback:
-        await status_callback("connecting", f"MQTTS to {creds.broker_host}:{creds.mqtts_port}")
+        await status_callback("connecting", f"MQTTS to {address}")
+    try:
+        async with asyncio.timeout(connect_timeout):
+            await link.connect()
+    except TimeoutError as exc:
+        raise ScrapeError(
+            "connecting",
+            f"The panel's broker at {address} did not answer within {connect_timeout:g} s",
+        ) from exc
+    except aiomqtt.MqttError as exc:
+        raise ScrapeError(
+            "connecting", f"Could not connect to the panel's broker at {address}: {exc}"
+        ) from exc
 
+    transport = LoopBoundTransport(
+        publish=link.publish,
+        subscribe=link.subscribe,
+        unsubscribe=link.unsubscribe,
+        connected=link.is_connected,
+    )
+    transport.start()
+    controller = ebus_sdk.Controller(mqtt_cfg=None, root_device_id=root, mqttc=transport)
+    # The SDK resyncs a tree-rooted controller on reconnect only for a client it
+    # built; for one it is given, that is the caller's to wire.
+    link.on_reconnect(controller.resync)
     try:
         controller.start_discovery()
-
         if status_callback:
-            await status_callback(
-                "scraping",
-                f"Discovering the device tree rooted at {creds.serial_number}",
-            )
-
-        # Same stabilisation rule as before: stop once the tree stops growing, with a
-        # hard ceiling. Retained state arrives in a burst, so "no new device and no new
-        # property for `stability_timeout`" is a better signal than any fixed wait.
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + max_timeout
-        last_change = loop.time()
-        fingerprint = _tree_fingerprint(controller.devices)
-
-        while loop.time() < deadline:
-            await asyncio.sleep(_POLL_INTERVAL_S)
-            current = _tree_fingerprint(controller.devices)
-            if current != fingerprint:
-                fingerprint = current
-                last_change = loop.time()
-            elif loop.time() - last_change >= stability_timeout:
-                break
-
+            await status_callback("scraping", f"Discovering the device tree rooted at {root}")
+        await _await_whole_tree(
+            controller, root, stability_timeout=stability_timeout, max_timeout=max_timeout
+        )
         devices = dict(controller.devices)
     finally:
         controller.stop()
+        await transport.aclose()
+        await link.disconnect()
 
     return devices
 
 
-def _tree_fingerprint(devices: Mapping[str, DiscoveredDevice]) -> tuple[tuple[str, int], ...]:
-    """A cheap "has anything arrived?" summary: each device and its property count.
+async def _await_whole_tree(
+    controller: ebus_sdk.Controller,
+    root: str,
+    *,
+    stability_timeout: float,
+    max_timeout: float,
+) -> None:
+    """Wait until *root*'s tree is whole and quiet, or until *max_timeout*.
 
-    Compared between polls to decide whether the retained burst has finished. Counting
-    properties rather than just devices matters — the tree's shape settles before its
-    values do, so device ids alone would call it done too early.
+    What arrived by the deadline is taken as it stands; validating it says what is
+    missing, which the wait alone cannot.
     """
-    out: list[tuple[str, int]] = []
-    for device_id, device in sorted(devices.items()):
-        count = sum(len(device.get_node_properties(node)) for node in device.get_nodes())
-        out.append((device_id, count))
-    return tuple(out)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max_timeout
+    fingerprint = _tree_fingerprint(controller.devices)
+    last_change: float | None = None
+    while loop.time() < deadline:
+        await asyncio.sleep(_POLL_INTERVAL_S)
+        current = _tree_fingerprint(controller.devices)
+        if current != fingerprint:
+            fingerprint = current
+            last_change = loop.time()
+            continue
+        if (
+            last_change is not None
+            and loop.time() - last_change >= stability_timeout
+            and controller.is_tree_complete(root)
+        ):
+            return
+
+
+def _tree_fingerprint(
+    devices: Mapping[str, DiscoveredDevice],
+) -> tuple[tuple[str, bool, int], ...]:
+    """A cheap "has anything arrived?" summary: each device, whether it has described
+    itself, and how many values it has published.
+
+    Compared between polls to decide whether the retained burst has finished. The
+    values count, not only the shape: a tree's descriptions settle before its values.
+    """
+    return tuple(
+        (
+            device_id,
+            device.description is not None,
+            sum(len(values) for values in device.properties.values()),
+        )
+        for device_id, device in sorted(devices.items())
+    )
 
 
 def _validate_discovered_tree(
@@ -441,13 +513,26 @@ def _validate_discovered_tree(
 ) -> None:
     """Ensure discovery produced a usable tree before anything tries to clone it.
 
-    Checks the tree rather than topic strings: the root is present, and it has at
-    least one circuit child. A panel that answered but whose children never arrived
-    is the failure this catches — it looks like success to a topic count.
+    Checks the tree rather than topic strings: the root described itself, every
+    device it declares did too, and it has at least one circuit child. The SDK
+    creates the root's entry before anything arrives, so the root being present
+    says nothing; its ``$description`` is what says it answered.
     """
     root = devices.get(serial)
-    if root is None:
-        raise ScrapeError("scraping", f"No device published a $description for root {serial}")
+    if root is None or root.description is None:
+        raise ScrapeError("scraping", f"The panel published no $description for its root {serial}")
+
+    undescribed = [
+        child
+        for child in _declared_descendants(devices, serial)
+        if (device := devices.get(child)) is None or device.description is None
+    ]
+    if undescribed:
+        raise ScrapeError(
+            "scraping",
+            f"{len(undescribed)} devices the panel declares never described themselves "
+            f"({', '.join(sorted(undescribed)[:5])}{', …' if len(undescribed) > 5 else ''})",
+        )
 
     circuits = [
         device_id
@@ -468,6 +553,23 @@ def _validate_discovered_tree(
         len(circuits),
         serial,
     )
+
+
+def _declared_descendants(devices: Mapping[str, DiscoveredDevice], root: str) -> list[str]:
+    """Every device id *root*'s tree declares, by ``children``, cycles tolerated."""
+    seen = {root}
+    queue = list(devices[root].children_ids) if root in devices else []
+    out: list[str] = []
+    while queue:
+        child = queue.pop(0)
+        if child in seen:
+            continue
+        seen.add(child)
+        out.append(child)
+        device = devices.get(child)
+        if device is not None:
+            queue.extend(device.children_ids)
+    return out
 
 
 def _is_circuit(device: DiscoveredDevice) -> bool:

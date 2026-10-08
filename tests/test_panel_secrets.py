@@ -27,7 +27,6 @@ _SERIAL = "example-panel-001"
 _BROKER = BrokerCredentials(
     username="example-user",
     password="example-broker-password",
-    host="192.0.2.10",
     port=8883,
     ca_pem="-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----\n",
 )

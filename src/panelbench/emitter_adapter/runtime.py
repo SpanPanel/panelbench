@@ -195,6 +195,7 @@ async def start_clone(
         loop_bound = LoopBoundTransport(
             publish=link.publish,
             subscribe=link.subscribe,
+            unsubscribe=link.unsubscribe,
             connected=link.is_connected,
         )
         loop_bound.start()

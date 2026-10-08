@@ -88,8 +88,17 @@ class _Subscribe:
     qos: int
 
 
+@dataclass(frozen=True, slots=True)
+class _Unsubscribe:
+    topic_filter: str
+
+
 class LoopBoundTransport:
     """Satisfies ``ebus_sdk.MqttDeviceTransport`` on top of an async MQTT client.
+
+    And ``MqttControllerTransport`` too, which adds ``unsubscribe``: the scraper
+    discovers a panel's tree through a ``Controller`` on the same client and
+    transport a simulated panel publishes through.
 
     Deliberately not an ``MqttClient``. ``owned_client()`` narrows by
     ``isinstance(mqttc, MqttClient)``, so this is correctly classified as
@@ -106,13 +115,17 @@ class LoopBoundTransport:
         *,
         publish: Callable[[str, bytes, int, bool], Awaitable[None]],
         subscribe: Callable[[str, MessageCallback, int], Awaitable[None]],
+        unsubscribe: Callable[[str], Awaitable[None]],
         connected: Callable[[], bool],
         max_pending: int = DEFAULT_MAX_PENDING,
     ) -> None:
         self._publish = publish
         self._subscribe = subscribe
+        self._unsubscribe = unsubscribe
         self._connected = connected
-        self._queue: asyncio.Queue[_Publish | _Subscribe] = asyncio.Queue(maxsize=max_pending)
+        self._queue: asyncio.Queue[_Publish | _Subscribe | _Unsubscribe] = asyncio.Queue(
+            maxsize=max_pending
+        )
         self._drainer: asyncio.Task[None] | None = None
         self.is_running = False
 
@@ -158,9 +171,13 @@ class LoopBoundTransport:
         self._submit(_Subscribe(sub, param, qos))
         return None
 
+    def unsubscribe(self, sub: str) -> object:
+        self._submit(_Unsubscribe(sub))
+        return None
+
     # -- internals --------------------------------------------------------------
 
-    def _submit(self, item: _Publish | _Subscribe) -> None:
+    def _submit(self, item: _Publish | _Subscribe | _Unsubscribe) -> None:
         try:
             self._queue.put_nowait(item)
         except asyncio.QueueFull as exc:
@@ -175,6 +192,8 @@ class LoopBoundTransport:
             try:
                 if isinstance(item, _Subscribe):
                     await self._subscribe(item.topic_filter, item.callback, item.qos)
+                elif isinstance(item, _Unsubscribe):
+                    await self._unsubscribe(item.topic_filter)
                 else:
                     await self._publish(item.topic, item.payload, item.qos, item.retain)
             except BrokerUnavailable:

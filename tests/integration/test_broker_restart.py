@@ -5,24 +5,13 @@ the parts a fake cannot speak for: that aiomqtt notices a broker that went away,
 that a broker restarted without persistence comes back holding nothing, and that
 a command Home Assistant publishes after the restart reaches the panel.
 
-Skipped where mosquitto is not installed, unless ``PANELBENCH_REQUIRE_MOSQUITTO``
-is set, as CI sets it: there a missing broker fails rather than passing silently.
-The in-process amqtt broker the other tests use cannot stand in here: a restart
-has to take the process away, sockets and retained store with it, and a freeze has
-to stop it answering while its sockets stay open.
+Runs against the mosquitto in ``_mosquitto.py``, and skips with it.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
-import os
-import shutil
-import signal
-import socket
-import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiomqtt
@@ -34,88 +23,12 @@ from panelbench.emitter_adapter.runtime import BrokerConnection
 from panelbench.emitter_adapter.transport import BrokerUnavailable, LoopBoundTransport
 from panelbench.engine import DynamicSimulationEngine
 from tests._helpers import DEFAULT_CONFIG, relay_opened_by_command, settable_relays
+from tests.integration._mosquitto import Mosquitto, requires_mosquitto
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable
+    from collections.abc import Callable
 
-# Package managers put mosquitto in an sbin directory, which is often not on PATH.
-_MOSQUITTO = shutil.which(
-    "mosquitto",
-    path=os.pathsep.join(
-        [os.environ.get("PATH", ""), "/opt/homebrew/sbin", "/usr/local/sbin", "/usr/sbin"]
-    ),
-)
-
-_REQUIRED = bool(os.environ.get("PANELBENCH_REQUIRE_MOSQUITTO"))
-
-pytestmark = pytest.mark.skipif(
-    _MOSQUITTO is None and not _REQUIRED, reason="mosquitto is not installed"
-)
-
-
-class Mosquitto:
-    """A mosquitto process on a fixed port that can be stopped and started again.
-
-    No persistence, so a restart empties the retained store the way a broker
-    that lost it would: only a republished tree can refill it.
-    """
-
-    def __init__(self, executable: str, workdir: Path) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            self.port: int = probe.getsockname()[1]
-        self._executable = executable
-        self._config = workdir / "mosquitto.conf"
-        self._config.write_text(
-            f"listener {self.port} 127.0.0.1\nallow_anonymous true\npersistence false\n",
-            encoding="utf-8",
-        )
-        self._log = workdir / "mosquitto.log"
-        self._process: asyncio.subprocess.Process | None = None
-
-    async def start(self) -> None:
-        with self._log.open("ab") as log:
-            self._process = await asyncio.create_subprocess_exec(
-                self._executable, "-c", str(self._config), stdout=log, stderr=subprocess.STDOUT
-            )
-        async with asyncio.timeout(5):
-            while True:
-                with contextlib.suppress(OSError):
-                    _, writer = await asyncio.open_connection("127.0.0.1", self.port)
-                    writer.close()
-                    await writer.wait_closed()
-                    return
-                await asyncio.sleep(0.02)
-
-    def freeze(self) -> None:
-        """Stop the broker answering, its sockets left open: a hung broker, as a
-        sleeping host or a dropped link presents to the client."""
-        assert self._process is not None
-        self._process.send_signal(signal.SIGSTOP)
-
-    def thaw(self) -> None:
-        assert self._process is not None
-        self._process.send_signal(signal.SIGCONT)
-
-    async def stop(self) -> None:
-        process, self._process = self._process, None
-        if process is None or process.returncode is not None:
-            return
-        process.send_signal(signal.SIGCONT)  # a frozen process cannot act on SIGTERM
-        process.terminate()
-        await process.wait()
-
-
-@pytest.fixture
-async def mosquitto(tmp_path: Path) -> AsyncIterator[Mosquitto]:
-    if _MOSQUITTO is None:
-        pytest.fail("PANELBENCH_REQUIRE_MOSQUITTO is set, but mosquitto is not installed")
-    broker = Mosquitto(_MOSQUITTO, tmp_path)
-    await broker.start()
-    try:
-        yield broker
-    finally:
-        await broker.stop()
+pytestmark = requires_mosquitto
 
 
 async def eventually(condition: Callable[[], bool], *, within: float) -> None:

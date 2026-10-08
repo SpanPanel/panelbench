@@ -42,6 +42,8 @@ async def test_a_panel_is_registered_once_under_a_name_from_its_serial(
     assert panel.registrations[0]["hopPassphrase"] == "example-passphrase"
     assert panel.serial in registered_client_name(panel.serial)
     assert scrape.users == ["registered-user-1", "registered-user-1"]
+    broker_hosts = {creds.broker_host for creds, _ in scrape.attempts}
+    assert broker_hosts == {panel.host.split(":")[0]}, "a scrape dialled the advertised name"
 
 
 @pytest.mark.asyncio
