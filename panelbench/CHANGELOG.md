@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.6.0 — 2026-10-07
+## 2.6.0 — 2026-10-08
 
 The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's. The add-on
 refreshes its shipped templates on every start, so an upgraded install's templates publish release 202639's. Use it with SPAN integration 2.1.2 or later,
