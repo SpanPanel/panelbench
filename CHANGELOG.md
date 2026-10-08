@@ -11,8 +11,11 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 
 - **The dashboard can set the health of the panel's link to its battery**, which is what a SPAN panel requires before it honours Home Assistant's dominant power
   source control.
-- **Commissioned PV and battery system circuits**, locked as SPAN firmware release 202639 locks them, are modelled and kept by a clone, and a config naming an
-  earlier release is refused if it asks for one.
+- **Commissioned PV and battery system circuits**, locked as SPAN firmware release 202639 locks them, are modelled and kept by a clone, which recognises one by
+  its locks and the inverter or battery it feeds whatever it is named, and a config naming an earlier release is refused if it asks for one.
+- **A clone of a panel keeps the panel's time zone and line voltages**, and its time zone wins over one derived from Home Assistant's home location.
+- **The log warns when a clone gives the main breaker or a circuit a default rating** because the panel publishes none.
+- **The dashboard's Clone accepts broker credentials you already hold for a panel in place of its passphrase**, and then registers nothing with the panel.
 - **The log warns about a solar circuit on a breaker whose template lacks `commissioned_system: pv` when the config's `firmware_version` names SPAN release
   202639 or later, or no SPAN release**, since that release locks such a circuit, though the config still loads.
 - **The log warns about a solar circuit on a single tab**, since a grid-tied inverter is 240 V on a two-pole breaker with two tabs on opposite legs, though the
@@ -52,9 +55,15 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
 ### Fixed
 
 - **Commands from Home Assistant now take effect**, such as a circuit's relay or shed priority, where PanelBench subscribed to them and then never read them.
-- **PanelBench reconnects after its MQTT broker restarts and publishes its panels again**, where it stayed disconnected until it was restarted itself and
-  logged an error for every topic it could not publish.
+- **PanelBench reconnects after its MQTT broker restarts and publishes its panels again**, where it stayed disconnected until it was restarted itself and logged
+  an error for every topic it could not publish.
 - **A panel's solar output no longer changes when PanelBench restarts**, where each start gave the same panel different weather.
+- **PanelBench registers with a panel once and reuses the credentials it is given for every later clone, sync and restore**, where each one left another
+  client on the panel for its owner to remove.
+- **A panel's passphrase is no longer written into its clone's config, an export of it, or a text field**, but kept with the panel's broker credentials in a
+  file only PanelBench reads, and a clone that still carries one gives it up the next time PanelBench reads it.
+- **A clone takes its size from the panel's model**, where a panel whose highest spaces were empty was cloned as a smaller one.
+- **Restoring a circuit from a panel that cannot be reached says why**, where it left the circuit as it was without a word.
 - **An upgraded add-on now refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down and published
   whatever firmware they named.
 - **The dashboard shows a panel as islandable when any of its solar inverters is hybrid**, where only the first solar circuit listed decided it.

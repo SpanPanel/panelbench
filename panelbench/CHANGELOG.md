@@ -10,8 +10,11 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 
 - **The dashboard can set the health of the panel's link to its battery**, which a SPAN panel requires before it honours Home Assistant's dominant power source
   control.
-- **Commissioned PV and battery system circuits are modelled and kept by a clone**, locked as release 202639 locks them, and a config naming an earlier release
-  is refused if it asks for one.
+- **Commissioned PV and battery system circuits are modelled and kept by a clone**, locked as release 202639 locks them and recognised by what they feed
+  whatever they are named, and a config naming an earlier release is refused if it asks for one.
+- **A clone of a panel keeps the panel's time zone and line voltages.**
+- **The log warns when a clone gives a breaker a default rating** because the panel publishes none.
+- **Clone accepts broker credentials you already hold for a panel in place of its passphrase**, and then registers nothing with the panel.
 - **From release 202639, the log warns about a solar circuit on a breaker whose template lacks `commissioned_system: pv`**, since that release locks it.
 - **The log warns about a solar circuit on a single tab**, since a grid-tied inverter is 240 V on a two-pole breaker.
 - **From release 202639, a panel's status endpoint reports its hardware version**: `1.2` or `2.0` from the config's `hardware_version`, and `UNKNOWN` otherwise.
@@ -43,6 +46,11 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 - **Commands from Home Assistant take effect**, such as a circuit's relay or shed priority, where PanelBench never read them.
 - **PanelBench reconnects after its MQTT broker restarts and publishes its panels again**, where it stayed disconnected until the add-on was restarted.
 - **A panel's solar output no longer changes when the add-on restarts**, where each start gave the same panel different weather.
+- **The add-on registers with a panel once and reuses its credentials for every clone, sync and restore**, where each one left another client on the panel.
+- **A panel's passphrase is no longer written into its clone's config or an export of it**, but kept in the add-on's private storage, where an existing clone's
+  passphrase moves the next time the add-on reads it.
+- **A clone takes its size from the panel's model**, where a panel whose highest spaces were empty was cloned as a smaller one.
+- **Restoring a circuit from a panel that cannot be reached says why**, where it left the circuit unchanged without a word.
 - **An upgraded add-on refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down.
 - **The panel's HTTP status, Homie schema endpoint and mDNS advertisement report the same firmware version it publishes over MQTT.**
 - **A cloned panel keeps the source panel's name, firmware version and hardware version.**
