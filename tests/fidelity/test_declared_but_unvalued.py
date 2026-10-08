@@ -37,7 +37,7 @@ where the device hangs rather than its name.
 
 Shrinking this file is not the goal — being right about each line is. Membership
 was audited against the specification and SPAN's r202633 topic reference, and
-what remains is there for four different reasons:
+what remains is there for five different reasons:
 
   `connection/feeds-device-*` on a mixed-load circuit is *correct* absence, not a
   gap. The catalog omits the triple "when mixed-load with no commissioned
@@ -74,12 +74,12 @@ what remains is there for four different reasons:
   a device has no value for. Carrying more identity through the clone does not
   remove them, since membership needs the reference to leave them unvalued too.
 
-Two kinds of line have left:
+  `panel status/wifi-ssid` is the example's own absence, kept. Upstream's example
+  names no network, so its panel publishes none, and PanelBench's import now
+  carries that rather than its own default network, as a clone of a panel on
+  Ethernet does. This line leaves when the example names an SSID.
 
-  `panel status/wifi-ssid` was valued because the enclosure device model defines
-  it (MAY), r202633 documents it as the MQTT successor to the panel's Wi-Fi REST
-  endpoint, and consumers read the flat equivalent today — evidence about the
-  panel, not about the emitter's mechanism.
+One kind of line has left:
 
   `connection/count` described a node aggregating several physical units behind
   one connection point. Nothing here aggregates, and no manifest key or tick input

@@ -38,8 +38,16 @@ class PanelConfig(TypedDict):
     service_voltage_v: NotRequired[float]  # service voltage (default 240.0)
     line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
-    wifi_ssid: NotRequired[str]  # SSID published on status/wifi-ssid (default DEFAULT_WIFI_SSID)
     vendor_name: NotRequired[str]  # info/vendor-name (default "Span"); a clone keeps its panel's
+    model: NotRequired[str]  # info/model (default: from total_tabs); a clone keeps its panel's
+    # The panel envelope, as a clone reads it from its panel. Defaults: both links up,
+    # door CLOSED, cloud CONNECTED, and DEFAULT_WIFI_SSID while Wi-Fi is up. A null
+    # wifi_ssid is a panel that publishes none, as one on Ethernet does.
+    wifi_link: NotRequired[bool]
+    ethernet_link: NotRequired[bool]
+    wifi_ssid: NotRequired[str | None]
+    door_state: NotRequired[str]
+    cloud_connection: NotRequired[str]
 
 
 class CyclingPattern(TypedDict, total=False):
@@ -127,6 +135,7 @@ class BESSConfigYAML(TypedDict, total=False):
     mid_firmware_version: str
     mid_hardware_version: str
     mid_serial_number: str  # the MID's own serial, as a clone reads it; else `<serial>-mid`
+    mid_vendor: str  # the MID's own vendor, as a clone reads it; else the battery's
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]

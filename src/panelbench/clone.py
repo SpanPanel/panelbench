@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -91,6 +92,7 @@ _EVSE_IDENTITY: Final = (
 # A battery's MID publishes its own identity, which the clone keeps on the battery's
 # section under the keys `spec_generator` builds the MID from.
 _MID_IDENTITY: Final = (
+    ("vendor-name", "mid_vendor"),
     ("serial-number", "mid_serial_number"),
     ("model", "mid_product_name"),
     ("firmware-version", "mid_firmware_version"),
@@ -221,6 +223,10 @@ def translate_panel_tree(
     vendor = _get_prop(devices, panel_device_id, "info", "vendor-name")
     if vendor:
         panel_config["vendor_name"] = vendor
+    model = _get_prop(devices, panel_device_id, "info", "model")
+    if model:
+        panel_config["model"] = model
+    _copy_envelope(devices, panel_device_id, panel_config)
     _copy_site_values(devices, panel_device_id, panel_config)
     shed_threshold = _soc_shed_threshold(devices, panel_device_id)
     if shed_threshold is not None:
@@ -515,9 +521,11 @@ def _float_prop(
     if raw is None:
         return None
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         return None
+    # `inf` and `nan` parse, and mean nothing a config can carry: read them as unpublished.
+    return value if math.isfinite(value) else None
 
 
 def _int_prop(
@@ -527,13 +535,8 @@ def _int_prop(
     prop: str,
 ) -> int | None:
     """An integer property, tolerating a float-formatted payload."""
-    raw = _get_prop(devices, device_id, capability, prop)
-    if raw is None:
-        return None
-    try:
-        return int(float(raw))
-    except ValueError:
-        return None
+    value = _float_prop(devices, device_id, capability, prop)
+    return None if value is None else int(value)
 
 
 def _bool_prop(
@@ -717,10 +720,10 @@ def _published_panel_size(
     devices: Mapping[str, DiscoveredDevice],
     panel_device_id: str,
 ) -> int | None:
-    """The size the panel states, from ``info/panel-size`` or its model's suffix."""
-    size = _int_prop(devices, panel_device_id, "info", "panel-size")
-    if size:
-        return size
+    """The size the panel's ``info/model`` names by its numeric suffix (``MAIN_32``).
+
+    A panel publishes no size of its own: upstream's capture derives one the same way.
+    """
     model = _get_prop(devices, panel_device_id, "info", "model") or ""
     suffix = re.search(r"(\d+)$", model)
     return int(suffix.group(1)) if suffix else None
@@ -742,6 +745,41 @@ def _soc_shed_threshold(
             "Panel %s publishes a shed/policy with no soc-threshold-shed", panel_device_id
         )
         return None
+
+
+# The panel envelope: what the panel says of its own links and status, and the
+# panel_config key each is kept under for the emitter's envelope to publish.
+_ENVELOPE_FLAGS: Final = (("wifi", "wifi_link"), ("ethernet", "ethernet_link"))
+_ENVELOPE_STATES: Final = (
+    ("door", "state", "door_state"),
+    ("status", "cloud-connection", "cloud_connection"),
+)
+
+
+def _copy_envelope(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    panel_config: dict[str, object],
+) -> None:
+    """The panel's link state and status, absences included.
+
+    A panel on Ethernet publishes Wi-Fi down and no SSID; its clone records both, so
+    it publishes neither a Wi-Fi link nor PanelBench's default network. The SSID is
+    written as null only for a panel that states its links and names no network.
+    """
+    for prop, key in _ENVELOPE_FLAGS:
+        flag = _bool_prop(devices, panel_device_id, "status", prop)
+        if flag is not None:
+            panel_config[key] = flag
+    ssid = _get_prop(devices, panel_device_id, "status", "wifi-ssid")
+    if ssid:
+        panel_config["wifi_ssid"] = ssid
+    elif "wifi_link" in panel_config:
+        panel_config["wifi_ssid"] = None
+    for capability, prop, key in _ENVELOPE_STATES:
+        state = _get_prop(devices, panel_device_id, capability, prop)
+        if state:
+            panel_config[key] = state
 
 
 def _copy_site_values(

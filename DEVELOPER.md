@@ -353,6 +353,13 @@ panel_config:
   time_zone: str # IANA timezone (default: resolved from lat/lon)
   soc_shed_threshold: float # SOC % for SOC_THRESHOLD shedding (default: 20)
   vendor_name: str # Published as info/vendor-name (default: Span); a clone keeps its panel's
+  model: str # Published as info/model (default: the model total_tabs names); a clone keeps its panel's
+  # The panel envelope, as a clone keeps it from its panel (defaults: links up, door CLOSED, cloud CONNECTED)
+  wifi_link: bool # status/wifi
+  ethernet_link: bool # status/ethernet
+  wifi_ssid: str | null # status/wifi-ssid (default: sim-wifi while Wi-Fi is up); null publishes none
+  door_state: str # door/state
+  cloud_connection: str # status/cloud-connection
 
 circuit_templates: # Reusable template definitions
   template_name:
@@ -599,7 +606,8 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 ### What gets cloned
 
 - Panel identity (`sim-{serial}-clone`), vendor name, main breaker rating, and the panel size its model names
-- The panel's time zone, line voltages and off-grid SOC shed threshold
+- The panel's time zone, line voltages, off-grid SOC shed threshold, model, and its network links, SSID (or its absence),
+  door and cloud state
 - The panel's firmware version, so the clone publishes as that SPAN release does
 - The panel's hardware version
 - All circuits: name, tab position, breaker rating (or its absence), relay behavior, priority, PCS priority

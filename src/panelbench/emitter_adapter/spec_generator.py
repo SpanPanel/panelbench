@@ -113,7 +113,10 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
     panel_cfg = profile["panel_config"]
     panel_id = panel_cfg["serial_number"]
     panel_size = int(panel_cfg.get("total_tabs", 40))
-    panel_model = PANEL_SIZE_TO_MODEL.get(panel_size, f"MAIN_{panel_size}")
+    # The panel's own, as a clone keeps it; else the model its size names.
+    panel_model = panel_cfg.get("model") or PANEL_SIZE_TO_MODEL.get(
+        panel_size, f"MAIN_{panel_size}"
+    )
     return DeviceInstance(
         entity_class="panel",
         instance_id=panel_id,
@@ -319,7 +322,7 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
     if not bess_cfg.get("enabled") or not _bess_is_grid_forming(profile):
         return None
 
-    metadata = {"vendor-name": str(bess_cfg.get("vendor", "Span"))}
+    metadata = {"vendor-name": str(bess_cfg.get("mid_vendor") or bess_cfg.get("vendor", "Span"))}
     serial = bess_cfg.get("serial_number")
     mid_serial = bess_cfg.get("mid_serial_number")
     if mid_serial is not None:

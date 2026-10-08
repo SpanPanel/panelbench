@@ -287,19 +287,29 @@ async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
 def _panel_envelope(config: SimulationConfig) -> PanelEnvelopeTick:
     """Panel-envelope facts the emitter cannot derive from circuit physics.
 
-    Only the Wi-Fi SSID is overridden; the rest of ``PanelEnvelopeTick``'s
-    defaults (door closed, links up, cloud connected) already describe the panel
-    this simulator models.
+    The links, door and cloud state come from the config, which a clone fills from
+    its panel; ``PanelEnvelopeTick``'s defaults (door closed, links up, cloud
+    connected) stand for a config that names none of them.
 
     The SSID is here rather than in the manifest because the emitter resolves
     ``status/wifi-ssid`` from ``snapshot.status.wifi_ssid``, which it fills from
     this envelope — ``status`` is per-tick state, not identity. It has to be
     supplied: the enclosure profile declares the property, ``status/wifi``
     reports the interface up, and the envelope's own default is ``None``, so
-    leaving it unset publishes a declaration a consumer waits on forever.
+    leaving it unset publishes a declaration a consumer waits on forever. Unless
+    Wi-Fi is down, or the config names no network, as a clone of a panel on
+    Ethernet does: then there is no SSID to publish, as on that panel.
     """
+    panel = config["panel_config"]
+    wifi = panel.get("wifi_link", True)
+    ssid = panel.get("wifi_ssid", DEFAULT_WIFI_SSID if wifi else None)
+    defaults = PanelEnvelopeTick()
     return PanelEnvelopeTick(
-        wifi_ssid=str(config["panel_config"].get("wifi_ssid", DEFAULT_WIFI_SSID)),
+        wlan_link=wifi,
+        eth0_link=panel.get("ethernet_link", defaults.eth0_link),
+        wifi_ssid=None if ssid is None else str(ssid),
+        door_state=panel.get("door_state", defaults.door_state),
+        cloud_connection=panel.get("cloud_connection", defaults.cloud_connection),
     )
 
 

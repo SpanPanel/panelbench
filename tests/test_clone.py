@@ -723,12 +723,19 @@ class TestPanelSize:
         ]
         validate_yaml_config(config)
 
-    def test_a_published_panel_size_outranks_the_model(self) -> None:
+    def test_the_model_itself_is_kept(self) -> None:
+        """Published verbatim, rather than re-derived from the size it implies."""
         devices = _base_devices()
         devices[_SERIAL].update_property("info", "model", "MAIN_40")
-        devices[_SERIAL].update_property("info", "panel-size", "32")
 
-        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["total_tabs"] == 32
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["model"] == "MAIN_40"
+
+    def test_a_model_its_highest_circuit_just_fits_is_kept(self) -> None:
+        """The boundary: a circuit on the model's last space fits it."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_17")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["total_tabs"] == 17
 
     def test_a_model_without_a_size_falls_back_to_the_highest_space(self) -> None:
         devices = _base_devices()
@@ -808,7 +815,7 @@ class TestDefaultedBreakerRatings:
             _SERIAL,
             TYPE_PANEL,
             {"info": {"serial-number": _SERIAL, "data-model-version": "1.0"}},
-            children=list(devices[_SERIAL].description.get("children", [])),
+            children=[device_id for device_id in devices if device_id != _SERIAL],
         )
 
         with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
@@ -858,7 +865,7 @@ class TestFeedLookupStaysInThePanel:
             },
             parent="other-panel",
         )
-        foreign_description = dict(foreign.description)
+        foreign_description = dict(foreign.description or {})
         foreign_description["root"] = "other-panel"
         foreign.update_description(json.dumps(foreign_description))
         devices = {"000foreign": foreign, **_base_devices()}
@@ -981,3 +988,135 @@ class TestMicrogridInterconnect:
         assert isinstance(bess, dict)
         assert bess["mid_serial_number"] == "example-mid-0001"
         assert bess["mid_firmware_version"] == "1.2.3"
+
+    def test_the_mids_vendor_model_and_hardware_are_copied(self) -> None:
+        devices = _base_devices()
+        devices["mid-0"] = _device(
+            "mid-0",
+            "energy.ebus.device.mid",
+            {
+                "info": {
+                    "vendor-name": "Example Gateway Co",
+                    "model": "Example Gateway",
+                    "hardware-version": "B",
+                }
+            },
+            parent="bess-0",
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["mid_vendor"] == "Example Gateway Co"
+        assert bess["mid_product_name"] == "Example Gateway"
+        assert bess["mid_hardware_version"] == "B"
+
+    def test_only_the_batterys_own_mid_is_read(self) -> None:
+        """A MID listed first that belongs to no battery here must not lend its serial."""
+        devices = _base_devices()
+        devices["mid-a"] = _device(
+            "mid-a",
+            "energy.ebus.device.mid",
+            {"info": {"serial-number": "example-stray-mid"}},
+            parent="another-bess",
+        )
+        devices["mid-b"] = _device(
+            "mid-b",
+            "energy.ebus.device.mid",
+            {"info": {"serial-number": "example-mid-0001"}},
+            parent="bess-0",
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["mid_serial_number"] == "example-mid-0001"
+
+
+class TestNetworkAndEnvelope:
+    """The panel's link state and status travel with the clone, absences included.
+
+    The captured MAIN 32 is on Ethernet: `status/wifi` false, `status/ethernet` true
+    and no SSID. A clone that published Wi-Fi up on `sim-wifi` invented a network.
+    """
+
+    def test_an_ethernet_panel_clones_with_no_wifi_and_no_ssid(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("status", "wifi", "false")
+        devices[_SERIAL].update_property("status", "ethernet", "true")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert (panel["wifi_link"], panel["ethernet_link"]) == (False, True)
+        assert "wifi_ssid" in panel and panel["wifi_ssid"] is None
+
+    def test_a_wifi_panel_keeps_its_ssid(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("status", "wifi", "true")
+        devices[_SERIAL].update_property("status", "wifi-ssid", "example-net")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert (panel["wifi_link"], panel["wifi_ssid"]) == (True, "example-net")
+
+    def test_the_door_and_cloud_state_are_copied(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("door", "state", "UNKNOWN")
+        devices[_SERIAL].update_property("status", "cloud-connection", "UNKNOWN")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert (panel["door_state"], panel["cloud_connection"]) == ("UNKNOWN", "UNKNOWN")
+
+    def test_a_panel_that_publishes_none_of_it_gets_none_written(self) -> None:
+        panel = _panel_config(translate_scraped_panel(_make_scraped()))
+
+        assert (
+            not {
+                "wifi_link",
+                "ethernet_link",
+                "wifi_ssid",
+                "door_state",
+                "cloud_connection",
+                "model",
+            }
+            & panel.keys()
+        )
+
+
+class TestUnreadableNumbers:
+    """A non-finite number a panel publishes is read as unpublished, not as a value."""
+
+    @pytest.mark.parametrize("raw", ["inf", "-inf", "nan"])
+    def test_a_non_finite_pcs_priority_is_absent(self, raw: str) -> None:
+        devices = _base_devices()
+        devices["aaa111"].update_property("pcs", "priority", raw)
+
+        assert (
+            _circuits_by_id(translate_scraped_panel(_make_scraped(devices)))["circuit_1"][
+                "pcs_priority"
+            ]
+            is None
+        )
+
+    @pytest.mark.parametrize("raw", ["inf", "nan", "0", "-5"])
+    def test_an_unusable_battery_power_falls_back_to_the_scaled_one(self, raw: str) -> None:
+        devices = _base_devices()
+        devices["bess-0"].update_property("info", "nominal-power", raw)
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["max_charge_w"] == pytest.approx(13.5 * 5000.0 / 13.5)
+
+    def test_a_shed_policy_without_a_threshold_is_reported_and_skipped(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("shed", "policy", '{"algorithm": "soc-priority.v1"}')
+
+        with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
+            panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert "soc_shed_threshold" not in panel
+        assert "soc-threshold-shed" in caplog.text

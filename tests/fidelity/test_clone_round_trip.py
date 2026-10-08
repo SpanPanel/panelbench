@@ -6,8 +6,9 @@ each declares, and every value, literal form included, since a consumer reads
 the literal. A difference fails unless it is one of these, each named below with
 its reason:
 
-- **Time-varying**: measurements and live state, which differ between any two
-  moments of the same panel.
+- **Time-varying**: measurements and timestamps, which differ between any two
+  moments of the same panel. Never configuration, nor the status a clone copies:
+  its links, door and cloud state are compared like any other value.
 - **By design**: what makes the clone a clone, its own serial and device ids, and
   the postal code, which a clone deliberately does not copy. Device ids are
   compared through the clone's mapping of them, so a reference to the wrong device
@@ -23,6 +24,7 @@ Two sources: the pinned release's masked capture of a real MAIN 32 on SPAN relea
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -212,32 +214,28 @@ def _description_differences(
 
 
 # -- what a difference may be ----------------------------------------------------
+#
+# Each allowance is pinned to the property, the device and the values it was observed
+# with, so it cannot also hide a regression elsewhere that happens to look alike. A
+# strict expectation is only as narrow as its predicate.
 
-_TIME_VARYING_NODES = frozenset({"meter", "power-flows", "soc", "shed-forecast"})
-"""Measurements, which differ between any two moments of one panel."""
+_MEASUREMENTS = frozenset({"power-flows", "soc", "shed-forecast"})
+"""Nodes whose every value is a measurement, different between any two moments."""
 
-_TIME_VARYING_VALUES = frozenset(
-    {
-        "value $state",
-        "description version",
-        # Live state of the panel's envelope and of the grid, as of the capture.
-        "value door/state",
-        "value status/cloud-connection",
-        "value status/wifi",
-        "value status/wifi-ssid",
-        "value grid/grid-state",
-        "value switch/relay",
-    }
+_METER_MEASUREMENTS = frozenset(
+    {"active-power", "current", "current-a", "current-b", "imported-energy", "exported-energy"}
 )
+"""The meter's measurements. Not its voltages: those are the panel's, and a clone keeps them."""
 
 
 def _time_varying(difference: Difference) -> bool:
-    where = difference.where
-    if where in _TIME_VARYING_VALUES:
+    """A measurement or a timestamp. Never configuration, nor status a clone copies."""
+    if difference.where in ("value $state", "description version"):
         return True
-    return where.startswith("value ") and where.removeprefix("value ").split("/")[0] in (
-        _TIME_VARYING_NODES
-    )
+    if not difference.where.startswith("value "):
+        return False
+    node, _, prop = difference.where.removeprefix("value ").partition("/")
+    return node in _MEASUREMENTS or (node == "meter" and prop in _METER_MEASUREMENTS)
 
 
 def _by_design(difference: Difference) -> bool:
@@ -247,67 +245,148 @@ def _by_design(difference: Difference) -> bool:
         and difference.where == "value info/serial-number"
     ):
         return True
-    return difference.where == "value status/postal-code"
+    return (
+        difference.role == "distribution-enclosure"
+        and difference.where == "value status/postal-code"
+    )
 
 
-def _numerically_equal(difference: Difference) -> bool:
-    try:
-        return float(str(difference.source)) == float(str(difference.clone))
-    except ValueError:
+def _is(difference: Difference, role: str, where: str, source: object, clone: object) -> bool:
+    return (difference.role, difference.where, difference.source, difference.clone) == (
+        role,
+        where,
+        source,
+        clone,
+    )
+
+
+def _on_a_circuit(difference: Difference) -> bool:
+    return difference.role.startswith("circuit @")
+
+
+_PANEL = "distribution-enclosure"
+_COMMISSIONED_PV_CIRCUIT = "circuit @29,31"
+"""The captured MAIN 32's "Commissioned PV System" circuit."""
+
+_FIXED_SHED_POLICY = (
+    '{"algorithm": "soc-priority.v1", '
+    '"parameters": {"soc-threshold-shed": 20, "soc-threshold-release": 30}}'
+)
+
+_FIXED_PCS = {
+    "binding-constraint": ("FSR", "NONE"),
+    "enabled": ("true", "false"),
+    "feed-import-limit": ("160.0", "0.0"),
+    "feed-import-limit-active": ("true", "false"),
+    "feed-import-limit-enablement": ("ENABLED", "UNCONFIGURED"),
+    "import-limit": ("160.0", "0.0"),
+    "off-grid-import-limit": (None, "0.0"),
+    "off-grid-import-limit-active": (None, "false"),
+    "off-grid-import-limit-enablement": (None, "UNCONFIGURED"),
+    "requested-import-limit": ("200.0", "0.0"),
+}
+"""The ten PCS values the captured panel publishes, and the emitter's own for each."""
+
+_UUID_NAME = re.compile(r"[0-9a-f]{32}")
+
+
+def _pcs_fixed(d: Difference) -> bool:
+    prop = d.where.removeprefix("value pcs/")
+    return (
+        d.role == _PANEL
+        and d.where.startswith("value pcs/")
+        and _FIXED_PCS.get(prop) == (d.source, d.clone)
+    )
+
+
+def _same_but_name(d: Difference) -> bool:
+    if not (isinstance(d.source, dict) and isinstance(d.clone, dict)):
         return False
+    return {k: v for k, v in d.source.items() if k != "name"} == {
+        k: v for k, v in d.clone.items() if k != "name"
+    }
 
 
 UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
     "an unpublished breaker rating is published": (
         "ebus-panel-sim 0.9.0 requires breaker-rating-a (manifest_physics._req_float), so a "
         "clone that records none must give it a placeholder, which it publishes",
-        lambda d: d.where == "value breaker/rating" and d.source is None,
+        lambda d: (
+            _on_a_circuit(d)
+            and (d.where, d.source, d.clone) == ("value breaker/rating", None, "20")
+        ),
     ),
     "an unpublished pcs priority is published": (
         "ebus-panel-sim 0.9.0 publishes pcs/priority 0 for a circuit whose manifest names none",
-        lambda d: d.where == "value pcs/priority" and d.source is None,
+        lambda d: (
+            _on_a_circuit(d) and (d.where, d.source, d.clone) == ("value pcs/priority", None, "0")
+        ),
     ),
     "a number loses its literal form": (
         "ebus-panel-sim 0.9.0 parses numeric metadata to float and publishes str(float): "
         "81 becomes 81.0",
-        lambda d: d.where.startswith("value ") and d.source is not None and _numerically_equal(d),
+        lambda d: (
+            _is(d, "bess @UPSTREAM lugs", "value info/nameplate-capacity", "81", "81.0")
+            or _is(d, "pv @29,31", "value info/nominal-power", "4640", "4640.0")
+        ),
+    ),
+    "one voltage for both legs": (
+        "ebus-panel-sim 0.9.0 publishes one per-leg voltage on both legs, so a clone carries "
+        "the legs' mean",
+        lambda d: (
+            _is(d, _PANEL, "value meter/voltage-a", "121.8", "121.95")
+            or _is(d, _PANEL, "value meter/voltage-b", "122.1", "121.95")
+        ),
     ),
     "the shed policy is fixed": (
-        "ebus-panel-sim 0.9.0 publishes a fixed soc-priority policy (20/30) unless one is set "
-        "over MQTT; the manifest's threshold does not reach it",
-        lambda d: d.where == "value shed/policy",
+        "ebus-panel-sim 0.9.0 publishes a fixed soc-priority policy unless one is set over "
+        "MQTT; the manifest's shed threshold does not reach it, and LoadSheddingConfig has no "
+        "field for the release threshold (51 here)",
+        lambda d: (
+            d.role == _PANEL and d.where == "value shed/policy" and d.clone == _FIXED_SHED_POLICY
+        ),
     ),
     "the PCS settings are fixed": (
-        "ebus-panel-sim 0.9.0 publishes its own PCS settings and the off-grid import limit "
-        "properties, whatever the panel's",
-        lambda d: (
-            d.role == "distribution-enclosure"
-            and d.where.removeprefix("value ").removeprefix("declaration ").startswith("pcs/")
-        ),
+        "ebus-panel-sim 0.9.0 publishes its own value for these ten PCS properties, whatever "
+        "the panel's",
+        _pcs_fixed,
     ),
     "a commissioned circuit's relay requester": (
         "ebus-panel-sim 0.9.0 reports CONFIGURATION for a locked relay; SPAN reports PCS for "
-        "the commissioned PV circuit",
-        lambda d: d.where == "value switch/relay-requester",
+        "the commissioned PV circuit (filed upstream as #66)",
+        lambda d: _is(
+            d, _COMMISSIONED_PV_CIRCUIT, "value switch/relay-requester", "PCS", "CONFIGURATION"
+        ),
+    ),
+    "the MID's grid state is derived": (
+        "ebus-panel-sim 0.9.0 derives the MID's grid-state from the tick (UP); the captured "
+        "panel's MID publishes UNKNOWN",
+        lambda d: (
+            d.role.startswith("mid of ")
+            and (d.where, d.source, d.clone) == ("value grid/grid-state", "UNKNOWN", "UP")
+        ),
     ),
     "connection/count is not published": (
         "ebus-panel-sim 0.9.0's profiles do not declare connection/count",
-        lambda d: d.where == "declaration connection/count",
+        lambda d: (
+            (_on_a_circuit(d) or d.role.startswith("lugs "))
+            and d.where == "declaration connection/count"
+            and d.clone is None
+        ),
+    ),
+    "a property's declared name differs": (
+        "ebus-panel-sim 0.9.0's SPAN profile words info/spaces differently from SPAN firmware",
+        lambda d: _on_a_circuit(d) and d.where == "declaration info/spaces" and _same_but_name(d),
     ),
     "a circuit is named for people": (
         "ebus-panel-sim 0.9.0 publishes one display name as both a circuit's $description "
         "name and its info/name; SPAN release 202639 names the device after its id and keeps "
         "the circuit's own name in info/name, which naming the device by id here would lose",
-        lambda d: d.where == "description name" and d.role.startswith("circuit"),
-    ),
-    "a property's declared name differs": (
-        "ebus-panel-sim 0.9.0's profiles word some declarations differently from SPAN firmware",
         lambda d: (
-            d.where.startswith("declaration ")
-            and isinstance(d.source, dict)
-            and isinstance(d.clone, dict)
-            and {k: v for k, v in d.source.items() if k != "name"}
-            == {k: v for k, v in d.clone.items() if k != "name"}
+            _on_a_circuit(d)
+            and d.where == "description name"
+            and isinstance(d.source, str)
+            and _UUID_NAME.fullmatch(d.source) is not None
         ),
     ),
 }

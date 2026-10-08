@@ -12,6 +12,7 @@ from panelbench.emitter_adapter.runtime import (
     _panel_envelope,
     bess_config_from_engine,
 )
+from tests._helpers import default_config
 
 
 def testbess_config_from_engine_returns_none_when_disabled() -> None:
@@ -130,3 +131,33 @@ def test_panel_envelope_falls_back_rather_than_leaving_the_ssid_unvalued() -> No
     config = {"panel_config": {"serial_number": "abc"}}
 
     assert _panel_envelope(config).wifi_ssid == DEFAULT_WIFI_SSID
+
+
+def test_an_ethernet_panel_publishes_no_wifi_and_no_ssid() -> None:
+    """As the captured MAIN 32 does, and as a clone of it records."""
+    config = default_config()
+    config["panel_config"]["wifi_link"] = False
+    config["panel_config"]["ethernet_link"] = True
+    config["panel_config"]["wifi_ssid"] = None
+
+    envelope = _panel_envelope(config)
+
+    assert (envelope.wlan_link, envelope.eth0_link, envelope.wifi_ssid) == (False, True, None)
+
+
+def test_a_panel_with_wifi_down_and_no_ssid_named_gets_no_default_ssid() -> None:
+    config = default_config()
+    config["panel_config"]["wifi_link"] = False
+    config["panel_config"].pop("wifi_ssid", None)
+
+    assert _panel_envelope(config).wifi_ssid is None
+
+
+def test_the_door_and_cloud_state_reach_the_envelope() -> None:
+    config = default_config()
+    config["panel_config"]["door_state"] = "UNKNOWN"
+    config["panel_config"]["cloud_connection"] = "UNKNOWN"
+
+    envelope = _panel_envelope(config)
+
+    assert (envelope.door_state, envelope.cloud_connection) == ("UNKNOWN", "UNKNOWN")

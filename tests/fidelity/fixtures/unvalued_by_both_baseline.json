@@ -11,6 +11,7 @@
   "energy.ebus.device.circuit::Pool Pump @3  connection/feeds-device-id",
   "energy.ebus.device.circuit::Pool Pump @3  connection/feeds-device-status",
   "energy.ebus.device.circuit::Pool Pump @3  connection/feeds-device-type",
+  "energy.ebus.device.distribution-enclosure::Example 40-tab Panel  status/wifi-ssid",
   "energy.ebus.device.evse @32,34  config/user-max-charge-current",
   "energy.ebus.device.evse @35,37  config/user-max-charge-current",
   "energy.ebus.device.lugs @DOWNSTREAM  connection/fed-by-device-id",
