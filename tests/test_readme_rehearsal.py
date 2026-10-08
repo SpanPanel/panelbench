@@ -12,7 +12,6 @@ than a user's rehearsal.
 
 from __future__ import annotations
 
-import copy
 import logging
 from typing import TYPE_CHECKING
 
@@ -22,86 +21,31 @@ from panelbench.clone import TYPE_PV
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.wire_capture import discovered_devices, recorded_panel
-from tests._helpers import NOON, default_config, published, write_config
+from tests._helpers import (
+    NOON,
+    published,
+    write_config,
+)
+from tests._helpers import (
+    REHEARSAL_ADDED_INVERTER as _ADDED,
+)
+from tests._helpers import (
+    REHEARSAL_ORIGINAL_INVERTER as _ORIGINAL,
+)
+from tests._helpers import (
+    rehearsal_after as _after,
+)
+from tests._helpers import (
+    rehearsal_before as _before,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from ebus_sdk import DiscoveredDevice
 
-    from panelbench.config_types import SimulationConfig
     from panelbench.emitter_adapter.runtime import CloneRuntime
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
-
-_ORIGINAL = "solar_inverter"
-# The second inverter's circuit as "A second inverter" adds it to a clone of a
-# template: a two-pole circuit on two free spaces on opposite legs.
-_ADDED = "solar_inverter_2"
-_ADDED_TABS = [24, 26]
-
-
-def _before(second: str | None = None) -> SimulationConfig:
-    """Step 1, on a clone of a template: its PV circuit plays the "Commissioned PV
-    System", renamed with its `id` kept, and its template unlocked.
-
-    With *second* `_ADDED`, the second inverter's two-pole circuit is added too, as a
-    load, on two free spaces taken out of `unmapped_tabs`.
-    """
-    config = default_config()
-    [circuit] = [c for c in config["circuits"] if c["id"] == _ORIGINAL]
-    circuit["name"] = "Commissioned PV System"
-    solar = config["circuit_templates"][circuit["template"]]
-    solar["relay_behavior"] = "controllable"
-    solar["priority"] = "OFF_GRID"
-    if second == _ADDED:
-        templates = config["circuit_templates"]
-        templates[_ADDED] = copy.deepcopy(templates["new_circuit_tpl"])
-        config["circuits"].append(
-            {
-                "id": _ADDED,
-                "name": "Solar Inverter 2",
-                "template": _ADDED,
-                "tabs": list(_ADDED_TABS),
-                "breaker_rating": 20,
-            }
-        )
-        config["unmapped_tabs"] = [t for t in config["unmapped_tabs"] if t not in _ADDED_TABS]
-    return config
-
-
-def _after(before: SimulationConfig, second: str) -> SimulationConfig:
-    """Step 2, then "A second inverter" for the two-pole circuit *second*."""
-    config = copy.deepcopy(before)
-    config["firmware_version"] = "spanos3/r202639/03"
-    templates = config["circuit_templates"]
-    [original] = [c for c in config["circuits"] if c["id"] == _ORIGINAL]
-    solar = templates[original["template"]]
-    solar["commissioned_system"] = "pv"
-    solar["priority"] = "NEVER"
-    solar["relay_behavior"] = "non-controllable"
-
-    # "Give it a commissioned PV template": the commissioned template as this config
-    # has it, locked.
-    copied = copy.deepcopy(solar)
-    copied["energy_profile"]["nameplate_capacity_w"] = 3800.0
-    copied["energy_profile"]["power_range"] = [-3800.0, 0.0]
-    copied["energy_profile"]["typical_power"] = -2280.0
-    templates["solar_2"] = copied
-    [circuit] = [c for c in config["circuits"] if c["id"] == second]
-    # "Name the circuit as its inverter's."
-    circuit["name"] = "Solar Inverter 2"
-    circuit["template"] = "solar_2"
-    # "Remove the circuit's own `overrides`."
-    circuit.pop("overrides", None)
-    # "Give the circuit ... its own inverter's vendor, model and serial_number."
-    circuit["vendor"] = "SolarEdge"
-    circuit["model"] = "SE3800H-US"
-    circuit["serial_number"] = "sim-inv-0002"
-    # "Where the config has a top-level `pv` section ... set `pv.feed`."
-    pv = config.get("pv")
-    assert pv is not None
-    pv["feed"] = _ORIGINAL
-    return config
 
 
 async def _started(path: Path) -> tuple[CloneRuntime, RecordingTransport]:

@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-import yaml
 
 from panelbench.clone import translate_panel_tree, write_clone_config
 from panelbench.emitter_adapter.wire_capture import (
@@ -36,9 +35,14 @@ from panelbench.emitter_adapter.wire_capture import (
     capture_retained,
     discovered_devices,
 )
-from tests._helpers import CAPTURED_MAIN_32, CAPTURED_MAIN_32_SERIAL
-
-_REHEARSAL_AFTER = Path(__file__).resolve().parents[2] / "configs" / "rehearsal-after.yaml"
+from tests._helpers import (
+    CAPTURED_MAIN_32,
+    CAPTURED_MAIN_32_SERIAL,
+    REHEARSAL_ADDED_INVERTER,
+    rehearsal_after,
+    rehearsal_before,
+    write_config,
+)
 
 Capture = dict[str, dict[str, str]]
 
@@ -88,10 +92,11 @@ async def _captured_main_32(workdir: Path) -> tuple[Capture, Capture]:
 
 
 async def _rehearsal_after(workdir: Path) -> tuple[Capture, Capture]:
-    serial = yaml.safe_load(_REHEARSAL_AFTER.read_text(encoding="utf-8"))["panel_config"][
-        "serial_number"
-    ]
-    return await _round_trip(await capture_retained(_REHEARSAL_AFTER), serial, workdir)
+    """The README's rehearsal-after panel, built by the recipe its own test follows."""
+    config = rehearsal_after(rehearsal_before(REHEARSAL_ADDED_INVERTER), REHEARSAL_ADDED_INVERTER)
+    source = write_config(workdir / "rehearsal-after.yaml", config)
+    serial = config["panel_config"]["serial_number"]
+    return await _round_trip(await capture_retained(source), serial, workdir)
 
 
 # -- aligning and comparing ------------------------------------------------------

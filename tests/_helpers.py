@@ -174,3 +174,78 @@ def discovered_from_tree_snapshot(path: Path) -> dict[str, DiscoveredDevice]:
             device.update_property(capability, prop, str(value))
         devices[device_id] = device
     return devices
+
+
+REHEARSAL_ORIGINAL_INVERTER: Final = "solar_inverter"
+# The README's "Rehearsing a SPAN firmware upgrade", on a copy of the MAIN 40
+# template: shared by the test that follows the README and the fidelity round trip,
+# so both read one recipe. The second inverter's circuit is the one "A second
+# inverter" adds to a clone of a template: two-pole, on two free spaces.
+REHEARSAL_ADDED_INVERTER: Final = "solar_inverter_2"
+_REHEARSAL_ADDED_TABS: Final = (24, 26)
+
+
+def rehearsal_before(second: str | None = None) -> SimulationConfig:
+    """Step 1, on a clone of a template: its PV circuit plays the "Commissioned PV
+    System", renamed with its `id` kept, and its template unlocked.
+
+    With *second* `REHEARSAL_ADDED_INVERTER`, the second inverter's two-pole circuit is
+    added too, as a load, on two free spaces taken out of `unmapped_tabs`.
+    """
+    config = default_config()
+    [circuit] = [c for c in config["circuits"] if c["id"] == REHEARSAL_ORIGINAL_INVERTER]
+    circuit["name"] = "Commissioned PV System"
+    solar = config["circuit_templates"][circuit["template"]]
+    solar["relay_behavior"] = "controllable"
+    solar["priority"] = "OFF_GRID"
+    if second == REHEARSAL_ADDED_INVERTER:
+        templates = config["circuit_templates"]
+        templates[REHEARSAL_ADDED_INVERTER] = copy.deepcopy(templates["new_circuit_tpl"])
+        config["circuits"].append(
+            {
+                "id": REHEARSAL_ADDED_INVERTER,
+                "name": "Solar Inverter 2",
+                "template": REHEARSAL_ADDED_INVERTER,
+                "tabs": list(_REHEARSAL_ADDED_TABS),
+                "breaker_rating": 20,
+            }
+        )
+        config["unmapped_tabs"] = [
+            t for t in config["unmapped_tabs"] if t not in _REHEARSAL_ADDED_TABS
+        ]
+    return config
+
+
+def rehearsal_after(before: SimulationConfig, second: str) -> SimulationConfig:
+    """Step 2, then "A second inverter" for the two-pole circuit *second*."""
+    config = copy.deepcopy(before)
+    config["firmware_version"] = "spanos3/r202639/03"
+    templates = config["circuit_templates"]
+    [original] = [c for c in config["circuits"] if c["id"] == REHEARSAL_ORIGINAL_INVERTER]
+    solar = templates[original["template"]]
+    solar["commissioned_system"] = "pv"
+    solar["priority"] = "NEVER"
+    solar["relay_behavior"] = "non-controllable"
+
+    # "Give it a commissioned PV template": the commissioned template as this config
+    # has it, locked.
+    copied = copy.deepcopy(solar)
+    copied["energy_profile"]["nameplate_capacity_w"] = 3800.0
+    copied["energy_profile"]["power_range"] = [-3800.0, 0.0]
+    copied["energy_profile"]["typical_power"] = -2280.0
+    templates["solar_2"] = copied
+    [circuit] = [c for c in config["circuits"] if c["id"] == second]
+    # "Name the circuit as its inverter's."
+    circuit["name"] = "Solar Inverter 2"
+    circuit["template"] = "solar_2"
+    # "Remove the circuit's own `overrides`."
+    circuit.pop("overrides", None)
+    # "Give the circuit ... its own inverter's vendor, model and serial_number."
+    circuit["vendor"] = "SolarEdge"
+    circuit["model"] = "SE3800H-US"
+    circuit["serial_number"] = "sim-inv-0002"
+    # "Where the config has a top-level `pv` section ... set `pv.feed`."
+    pv = config.get("pv")
+    assert pv is not None
+    pv["feed"] = REHEARSAL_ORIGINAL_INVERTER
+    return config
