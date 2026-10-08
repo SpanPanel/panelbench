@@ -486,7 +486,7 @@ firmware_version:
   # The shipped configs name spanos3/r202633/02; set a 202639 string to emulate r202639.
 
 hardware_version:
-  str # Published as info/hardware-version (default: rev2). From release 202639
+  str # Published as info/hardware-version (default: 1.2). From release 202639
   # the status endpoint reports it as hardwareVersion if it is 1.2 or 2.0, else UNKNOWN.
 
 # Clone provenance (written by the clone pipeline)

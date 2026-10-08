@@ -1,8 +1,8 @@
 """The hardware version a PanelBench panel reports.
 
-One value per panel, the config's ``hardware_version``, else ``rev2``, the value the
-manifest builder has always defaulted to. The panel publishes it as
-``info/hardware-version``, a free string in SPAN's MQTT topic reference. From SPAN
+One value per panel, the config's ``hardware_version``, else ``1.2``, the value a
+captured SPAN Panel publishes (tests/fidelity/fixtures/upstream). The panel publishes
+it as ``info/hardware-version``, a free string in SPAN's MQTT topic reference. From SPAN
 release 202639, ``GET /api/v2/status`` also reports the panel's hardware version as
 the required ``hardwareVersion``, which SPAN documents as ``1.2`` or ``2.0``, and
 ``UNKNOWN`` when the panel cannot determine it (SPAN-API-Client-Docs, Release 202639).
@@ -20,7 +20,7 @@ from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, pre
 if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
 
-DEFAULT_HARDWARE_VERSION: Final = "rev2"
+DEFAULT_HARDWARE_VERSION: Final = "1.2"
 
 _STATUS_HARDWARE_VERSIONS: Final = frozenset({"1.2", "2.0"})
 _STATUS_HARDWARE_UNKNOWN: Final = "UNKNOWN"

@@ -26,9 +26,9 @@ names no SPAN release, including a clone of the earlier MAIN 40 template, now pu
 - **Home Assistant's dominant power source control is ignored while the panel's link to its battery is healthy**, as a SPAN panel ignores it.
 - **From release 202639, the battery's own power reading is positive while discharging**, as SPAN firmware publishes it.
 - **From release 202639, a SPAN Drive's user charge limit is not published until a user sets one**, as on SPAN firmware.
-- **The shipped configs report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows, and the shipped MAIN 32 reports hardware version
-  `1.2`.
-- **The other shipped templates keep hardware version `rev2`**, so from release 202639 their status endpoint reports `UNKNOWN`.
+- **The shipped configs report firmware `spanos3/r202633/02`**, which Home Assistant's device info shows.
+- **The shipped configs, and any config that sets no `hardware_version`, now report hardware version `1.2`**, as a SPAN panel publishes it, where they reported
+  `rev2`; a config copied from an earlier template keeps its `rev2`, which the status endpoint reports as `UNKNOWN` from release 202639.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
 - **From release 202639, a config with two or more solar circuits publishes each inverter as its own solar device**, under new device ids, and a clone keeps
   every inverter.

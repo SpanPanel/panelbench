@@ -30,13 +30,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 
 from panelbench.clone import translate_panel_tree, write_clone_config
+from panelbench.config_types import SimulationConfig
 from panelbench.emitter_adapter.wire_capture import (
     as_capture,
     capture_retained,
     discovered_devices,
 )
+from panelbench.hardware import status_hardware_version
 from tests._helpers import (
     CAPTURED_MAIN_32,
     CAPTURED_MAIN_32_SERIAL,
@@ -462,3 +465,18 @@ async def test_a_clone_carries_on_from_its_panels_energy(tmp_path: Path) -> None
                 continue
             cloned = float(ours[clone_roles[role]][register])
             assert float(published) <= cloned < float(published) + 50.0, (role, register)
+
+
+def test_a_clone_of_the_captured_main_32_reports_its_hardware_version_over_rest(
+    tmp_path: Path,
+) -> None:
+    """MQTT already round-trips unmasked above; the REST status reads the same value, so
+    the clone's ``hardwareVersion`` is the one the captured panel publishes."""
+    source = _retained_from_snapshot(CAPTURED_MAIN_32)
+    published = source[f"ebus/5/{CAPTURED_MAIN_32_SERIAL}/info/hardware-version"].decode()
+    translated = translate_panel_tree(CAPTURED_MAIN_32_SERIAL, discovered_devices(source))
+    written = write_clone_config(translated, tmp_path, CAPTURED_MAIN_32_SERIAL)
+
+    clone: SimulationConfig = yaml.safe_load(written.read_text(encoding="utf-8"))
+
+    assert status_hardware_version(clone) == published

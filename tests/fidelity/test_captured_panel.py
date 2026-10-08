@@ -9,6 +9,7 @@ inverter.
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -21,7 +22,14 @@ from panelbench.definition_import import config_from_definition
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.wire_capture import as_capture, capture_retained
 from panelbench.firmware import SPAN_RELEASE_202639
-from tests._helpers import write_config
+from panelbench.hardware import status_hardware_version
+from tests._helpers import (
+    CAPTURED_MAIN_32,
+    CAPTURED_MAIN_32_SERIAL,
+    CURRENT_FIRMWARE,
+    default_config,
+    write_config,
+)
 
 from .comparator import captured_definition, class_of
 
@@ -76,3 +84,23 @@ async def test_the_import_keeps_every_inverter(tmp_path: Path) -> None:
     published = as_capture(await capture_retained(path))
 
     assert sum(class_of(body) == "pv" for body in published.values()) == captured
+
+
+@pytest.mark.asyncio
+async def test_a_panel_naming_no_hardware_version_reports_the_captured_panels(
+    tmp_path: Path,
+) -> None:
+    """The default is the form a real panel publishes, not one PanelBench made up: the
+    captured MAIN 32's `info/hardware-version`, on MQTT and, from release 202639, as
+    the REST status's `hardwareVersion`."""
+    snapshot = json.loads(CAPTURED_MAIN_32.read_text(encoding="utf-8"))
+    captured = snapshot["devices"][CAPTURED_MAIN_32_SERIAL]["properties"]["info/hardware-version"]
+    config = default_config()
+    config.pop("hardware_version", None)
+    config["firmware_version"] = CURRENT_FIRMWARE
+    serial = config["panel_config"]["serial_number"]
+
+    retained = await capture_retained(write_config(tmp_path / "panel.yaml", config))
+
+    assert retained[f"ebus/5/{serial}/info/hardware-version"].decode() == captured
+    assert status_hardware_version(config) == captured

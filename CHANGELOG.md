@@ -47,8 +47,8 @@ SPAN release changes on upgrade, and that includes a clone of the earlier MAIN 4
   `energy_profile`.
 - **Every solar device, battery, battery MID and set of lugs is now named after its own device id**, as SPAN firmware release 202639 names them, where they
   were named "Solar", "Battery", "Microgrid Interconnect Device" and "Upstream lugs"; a circuit keeps its own name.
-- **The shipped MAIN 32 config reports hardware version `1.2`**, as a SPAN Panel MAIN 32 publishes it; the other shipped configs keep `rev2` and so report
-  `UNKNOWN` from release 202639.
+- **The shipped configs, and any config that sets no `hardware_version`, now report hardware version `1.2`**, as a SPAN panel publishes it, where they reported
+  `rev2`; a config copied from an earlier template keeps its `rev2`, which the status endpoint reports as `UNKNOWN` from release 202639.
 - **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a panel
   gives its battery, and the MID whose id follows it as `<bess-id>-mid`, a new device id, while existing clone configs are unchanged.
 

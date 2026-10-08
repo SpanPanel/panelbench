@@ -140,8 +140,8 @@ first did. The two must never run at once: `run-local.sh` keeps one simulator PI
 From release 202639 the second instance does what SPAN's public [CHANGELOG](https://github.com/spanio/SPAN-API-Client-Docs) lists for that release. It publishes
 the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes the
 "Commissioned PV System" circuit locked, with no relay command and a priority fixed at `NEVER`. `GET /api/v2/status` reports `hardwareVersion`: `1.2` or `2.0`
-from the config's `hardware_version`, and `UNKNOWN` for any other value. It publishes one solar device per inverter when the panel has more than one, and a
-panel with one keeps its device id.
+from the config's `hardware_version`, `1.2` when it sets none, and `UNKNOWN` for any other value. It publishes one solar device per inverter when the panel has
+more than one, and a panel with one keeps its device id.
 
 ### A second inverter
 

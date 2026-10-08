@@ -57,17 +57,27 @@ def test_an_unquoted_yaml_hardware_version_reads_as_written() -> None:
     assert status_hardware_version(config) == "1.2"
 
 
-@pytest.mark.parametrize(("model", "reported"), [("MAIN_32", "1.2"), ("MAIN_40", "UNKNOWN")])
-def test_only_the_shipped_main_32_names_a_documented_hardware_version(
-    model: str, reported: str
-) -> None:
-    """Public evidence shows a MAIN 32's hardware version and no other model's."""
+@pytest.mark.parametrize("model", ["MAIN_16", "MAIN_32", "MAIN_40"])
+def test_every_shipped_template_reports_a_documented_hardware_version(model: str) -> None:
+    """Over MQTT and, on release 202639, over REST, and the same value on both."""
     shipped: SimulationConfig = yaml.safe_load(
         DEFAULT_CONFIG.with_name(f"default_{model}.yaml").read_text(encoding="utf-8")
     )
     shipped["firmware_version"] = CURRENT_FIRMWARE
 
-    assert status_hardware_version(shipped) == reported
+    assert status_hardware_version(shipped) == panel_hardware_version(shipped) == "1.2"
+
+
+def test_a_panel_that_names_none_reports_one_on_mqtt_and_rest_alike() -> None:
+    """The REST status reads the value MQTT publishes: one key, never two answers."""
+    config = _panel(firmware=CURRENT_FIRMWARE, hardware=None)
+
+    assert status_hardware_version(config) == panel_hardware_version(config)
+    assert status_hardware_version(config) != "UNKNOWN"
+
+
+def test_before_202639_the_status_still_leaves_the_field_out() -> None:
+    assert status_hardware_version(_panel(firmware=EARLIER_FIRMWARE, hardware=None)) is None
 
 
 @pytest.mark.parametrize(
@@ -87,19 +97,23 @@ def test_the_status_reports_a_documented_hardware_version_from_202639(
 
 
 @pytest.mark.asyncio
-async def test_mqtt_publishes_the_config_hardware_version(tmp_path: Path) -> None:
-    path = write_config(tmp_path / "panel.yaml", _panel(firmware=CURRENT_FIRMWARE, hardware="1.2"))
+async def test_a_configured_hardware_version_overrides_the_default_on_mqtt_and_rest(
+    tmp_path: Path,
+) -> None:
+    """`2.0`, not the default, so a panel that ignored its config could not pass."""
+    config = _panel(firmware=CURRENT_FIRMWARE, hardware="2.0")
 
-    retained = await capture_retained(path)
+    retained = await capture_retained(write_config(tmp_path / "panel.yaml", config))
 
-    assert retained[f"ebus/5/{_SERIAL}/info/hardware-version"].decode() == "1.2"
+    assert retained[f"ebus/5/{_SERIAL}/info/hardware-version"].decode() == "2.0"
+    assert status_hardware_version(config) == "2.0"
 
 
 @pytest.mark.asyncio
 async def test_a_clone_keeps_the_source_hardware_version(tmp_path: Path) -> None:
-    path = write_config(tmp_path / "panel.yaml", _panel(firmware=CURRENT_FIRMWARE, hardware="1.2"))
+    path = write_config(tmp_path / "panel.yaml", _panel(firmware=CURRENT_FIRMWARE, hardware="2.0"))
     devices = discovered_devices(await capture_retained(path))
 
     cloned = translate_panel_tree(_SERIAL, devices)
 
-    assert cloned["hardware_version"] == "1.2"
+    assert cloned["hardware_version"] == "2.0"
