@@ -16,6 +16,7 @@ Design principles:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -35,14 +36,26 @@ TYPE_BESS = "energy.ebus.device.bess"
 TYPE_PV = "energy.ebus.device.pv"
 TYPE_EVSE = "energy.ebus.device.evse"
 
+COMMISSIONED_SYSTEM_FEEDS: Final[Mapping[str, str]] = MappingProxyType(
+    {TYPE_PV: "pv", TYPE_BESS: "backup"}
+)
+"""The system a commissioned circuit belongs to, by the type of device it feeds."""
+
 COMMISSIONED_SYSTEM_NAMES: Final[Mapping[str, str]] = MappingProxyType(
     {"Commissioned PV System": "pv", "Commissioned Backup System": "backup"}
 )
-"""The circuits a SPAN panel adds for a commissioned system, by the name it gives them.
+"""The names a SPAN panel gives the circuits it adds for a commissioned system.
 
-The same rule upstream's ``panel-sim-capture`` applies: the name, a locked relay,
-and a NEVER priority without ``$settable``. The name alone is not enough.
+Read only when a circuit publishes no ``connection`` to say what it feeds: the name
+is the user's to change, and a renamed circuit is commissioned all the same.
 """
+
+# Breaker ratings for a panel or circuit that publishes none, each reported when used.
+_DEFAULT_MAIN_BREAKER_A: Final = 200
+_DEFAULT_CIRCUIT_BREAKER_A: Final = 20
+
+# What a panel publishing no size is rounded up to from its highest occupied space.
+_STANDARD_PANEL_SIZES: Final = (16, 24, 32, 40, 48)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -167,10 +180,16 @@ def translate_panel_tree(
     feed_map = _build_feed_map(devices, circuit_nodes)
 
     # Extract panel-level values
-    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating") or 200
+    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating")
+    if not main_breaker:
+        _LOGGER.warning(
+            "Panel %s publishes no breaker/rating; cloning it with a %d A main breaker",
+            panel_device_id,
+            _DEFAULT_MAIN_BREAKER_A,
+        )
+        main_breaker = _DEFAULT_MAIN_BREAKER_A
 
-    # Derive panel size from maximum space value across all circuits
-    total_tabs = _derive_total_tabs(devices, circuit_nodes)
+    total_tabs = _derive_total_tabs(devices, panel_device_id, circuit_nodes)
 
     clone_serial = make_clone_serial(panel_device_id)
 
@@ -185,6 +204,7 @@ def translate_panel_tree(
     panel_description = panel_device.description if panel_device is not None else None
     if isinstance(panel_description, dict) and isinstance(panel_description.get("name"), str):
         panel_config["display_name"] = panel_description["name"]
+    _copy_site_values(devices, panel_device_id, panel_config)
 
     # Build per-circuit templates and definitions
     templates: dict[str, dict[str, object]] = {}
@@ -207,11 +227,11 @@ def translate_panel_tree(
 
     # Enrich PV circuit template
     for pv_id in pv_nodes:
-        _enrich_pv_template(devices, pv_id, feed_map, templates, circuits)
+        _enrich_pv_template(devices, circuit_nodes, pv_id, feed_map, templates, circuits)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(devices, evse_id, feed_map, templates, circuits)
+        _enrich_evse_template(devices, circuit_nodes, evse_id, feed_map, templates, circuits)
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -585,16 +605,19 @@ def _devices_of_type(
 
 def _circuit_feeding(
     devices: Mapping[str, DiscoveredDevice],
+    circuit_nodes: list[str],
     target_device_id: str,
 ) -> str | None:
-    """The circuit that feeds ``target_device_id``, or None.
+    """The circuit of this panel that feeds ``target_device_id``, or None.
 
     The reverse of the flat schema's lookup. A DER used to name its circuit through
     ``feed``; now the circuit names the DER through ``connection/feeds-device-id``,
     so finding a DER's circuit means searching the circuits rather than reading one
-    property off the DER.
+    property off the DER. Only *circuit_nodes*, this panel's circuits: a broker
+    serving two panels hands back both trees, and another device publishing
+    ``connection`` is not a circuit of this one.
     """
-    for device_id in devices:
+    for device_id in circuit_nodes:
         if _get_prop(devices, device_id, "connection", "feeds-device-id") == target_device_id:
             return device_id
     return None
@@ -632,27 +655,83 @@ def _build_feed_map(
 
 def _derive_total_tabs(
     devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
     circuit_nodes: list[str],
 ) -> int:
-    """Derive panel size from the highest breaker position any circuit occupies.
+    """The panel's size: what it publishes, else its highest occupied space.
 
-    v1.0 publishes the positions directly in ``info/spaces``, so a 240 V circuit
-    already reports both. The flat schema published one position plus a ``dipole``
-    flag and left the consumer to infer the companion as position + 2 — that
-    inference is gone, along with the class of bug where a panel wired against the
-    convention was silently mis-sized.
+    An ``info/panel-size``, where one is published, then the numeric suffix of
+    ``info/model`` (``MAIN_32``), as upstream's capture reads it. Only without either
+    does the highest breaker position decide, rounded up to a standard size, and
+    that undercounts any panel whose top spaces are empty.
+
+    A published size the circuits do not fit in is reported and set aside, since the
+    clone would place a circuit on a space the panel does not have.
     """
     max_space = 0
     for node_id in circuit_nodes:
         for space in _spaces_prop(devices, node_id):
             max_space = max(max_space, space)
 
-    # Round up to standard panel sizes
-    for standard_size in (16, 24, 32, 40, 48):
+    published = _published_panel_size(devices, panel_device_id)
+    if published is not None:
+        if published >= max_space:
+            return published
+        _LOGGER.warning(
+            "Panel %s publishes a size of %d (model %s) but has a circuit on space %d; "
+            "sizing the clone from its circuits",
+            panel_device_id,
+            published,
+            _get_prop(devices, panel_device_id, "info", "model"),
+            max_space,
+        )
+
+    for standard_size in _STANDARD_PANEL_SIZES:
         if max_space <= standard_size:
             return standard_size
 
     return max_space
+
+
+def _published_panel_size(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+) -> int | None:
+    """The size the panel states, from ``info/panel-size`` or its model's suffix."""
+    size = _int_prop(devices, panel_device_id, "info", "panel-size")
+    if size:
+        return size
+    model = _get_prop(devices, panel_device_id, "info", "model") or ""
+    suffix = re.search(r"(\d+)$", model)
+    return int(suffix.group(1)) if suffix else None
+
+
+def _copy_site_values(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    panel_config: dict[str, object],
+) -> None:
+    """The panel's time zone and line voltages, where it publishes them.
+
+    A simulated panel publishes one per-leg voltage on both legs, so the clone takes
+    the mean of the legs the source publishes, and their sum (or twice the one) as
+    the service voltage. A value the panel does not publish is left unwritten, so
+    the config's default applies. The postal code is deliberately not copied.
+    """
+    time_zone = _get_prop(devices, panel_device_id, "status", "time-zone")
+    if time_zone:
+        panel_config["time_zone"] = time_zone
+
+    legs = [
+        voltage
+        for leg in ("voltage-a", "voltage-b")
+        if (voltage := _float_prop(devices, panel_device_id, "meter", leg)) is not None
+        and voltage > 0
+    ]
+    if legs:
+        line = sum(legs) / len(legs)
+        panel_config["line_voltage_v"] = round(line, 2)
+        panel_config["service_voltage_v"] = round(2 * line, 2)
 
 
 def _translate_circuit(
@@ -672,7 +751,15 @@ def _translate_circuit(
     space = tabs[0]
 
     name = _get_prop(devices, node_uuid, "info", "name") or f"Circuit {space}"
-    breaker_rating = _int_prop(devices, node_uuid, "breaker", "rating") or 20
+    breaker_rating = _int_prop(devices, node_uuid, "breaker", "rating")
+    if not breaker_rating:
+        _LOGGER.warning(
+            "Circuit %s (%s) publishes no breaker/rating; cloning it with a %d A breaker",
+            node_uuid,
+            name,
+            _DEFAULT_CIRCUIT_BREAKER_A,
+        )
+        breaker_rating = _DEFAULT_CIRCUIT_BREAKER_A
     active_power = _float_prop(devices, node_uuid, "meter", "active-power")
     priority = _get_prop(devices, node_uuid, "load-shed", "priority") or "NEVER"
     # v1.0 publishes controllability directly as `switch/relay-controllable`, where
@@ -696,16 +783,12 @@ def _translate_circuit(
     # `$settable = true`, which no value-derived flag can produce.
     priority_locked = not _is_settable(devices, node_uuid, "load-shed", "priority")
     # A circuit SPAN adds for a commissioned PV or battery system is the third lock:
-    # priority locked at NEVER on a locked relay. Recognised by the rule upstream's
-    # `panel-sim-capture` applies, so the name alone commissions nothing.
-    commissioned_system = COMMISSIONED_SYSTEM_NAMES.get(name)
-    if not (
-        commissioned_system is not None
-        and priority_locked
-        and not relay_controllable
-        and priority == "NEVER"
-    ):
-        commissioned_system = None
+    # priority locked at NEVER on a locked relay.
+    commissioned_system = (
+        _commissioned_system(devices, node_uuid, name)
+        if priority_locked and not relay_controllable and priority == "NEVER"
+        else None
+    )
     never_backup = priority_locked and commissioned_system is None
     if never_backup and priority != "OFF_GRID":
         # The panel contradicted itself: a circuit commissioned never-backup *is*
@@ -810,6 +893,24 @@ def _translate_circuit(
     return template_name, template, circuit_def, tabs
 
 
+def _commissioned_system(
+    devices: Mapping[str, DiscoveredDevice],
+    node_uuid: str,
+    name: str,
+) -> str | None:
+    """The commissioned system a doubly locked circuit belongs to, if any.
+
+    What the circuit feeds decides it: an inverter makes it the PV system, a battery
+    the backup system, anything else neither. Only a circuit that publishes no
+    ``connection`` falls back to the name SPAN gives such a circuit, which the user
+    may since have changed.
+    """
+    feeds = _get_prop(devices, node_uuid, "connection", "feeds-device-type")
+    if feeds:
+        return COMMISSIONED_SYSTEM_FEEDS.get(feeds)
+    return COMMISSIONED_SYSTEM_NAMES.get(name)
+
+
 def _device_role_to_mode(device_role: str | None) -> str:
     """Map a device role from the feed map to an energy profile mode."""
     if device_role == "pv":
@@ -852,6 +953,7 @@ def _build_bess_config(
 
 def _enrich_pv_template(
     devices: Mapping[str, DiscoveredDevice],
+    circuit_nodes: list[str],
     pv_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
@@ -859,7 +961,7 @@ def _enrich_pv_template(
 ) -> None:
     """Enrich the PV circuit template with nameplate capacity and solar profile, and
     write the inverter's identity onto the circuit that feeds it."""
-    circuit_uuid = _circuit_feeding(devices, pv_node_id)
+    circuit_uuid = _circuit_feeding(devices, circuit_nodes, pv_node_id)
     template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
         return
@@ -882,6 +984,7 @@ def _enrich_pv_template(
 
 def _enrich_evse_template(
     devices: Mapping[str, DiscoveredDevice],
+    circuit_nodes: list[str],
     evse_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
@@ -889,7 +992,7 @@ def _enrich_evse_template(
 ) -> None:
     """Enrich the EVSE circuit template with time-of-day charging profile, and write
     the drive's serial and firmware onto the circuit that feeds it."""
-    circuit_uuid = _circuit_feeding(devices, evse_node_id)
+    circuit_uuid = _circuit_feeding(devices, circuit_nodes, evse_node_id)
     template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
         return

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 
+import pytest
 import yaml
 from ebus_sdk import DiscoveredDevice
 
@@ -13,13 +15,20 @@ from panelbench.clone import (
     TYPE_CIRCUIT,
     TYPE_EVSE,
     TYPE_PV,
+    translate_panel_tree,
     translate_scraped_panel,
     update_config_from_scrape,
     write_clone_config,
 )
 from panelbench.scraper import ScrapedPanel
 from panelbench.validation import validate_yaml_config
-from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE
+from tests._helpers import (
+    CAPTURED_MAIN_32,
+    CAPTURED_MAIN_32_SERIAL,
+    CURRENT_FIRMWARE,
+    EARLIER_FIRMWARE,
+    discovered_from_tree_snapshot,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -608,3 +617,282 @@ class TestUpdateConfigFromScrape:
         update_config_from_scrape(config, _make_scraped(after))
 
         assert config["firmware_version"] == EARLIER_FIRMWARE
+
+
+def _templates(config: dict[str, object]) -> dict[str, dict[str, object]]:
+    templates = config["circuit_templates"]
+    assert isinstance(templates, dict)
+    return templates
+
+
+def _panel_config(config: dict[str, object]) -> dict[str, object]:
+    panel = config["panel_config"]
+    assert isinstance(panel, dict)
+    return panel
+
+
+def _locked_circuit(
+    device_id: str,
+    name: str,
+    spaces: str,
+    *,
+    feeds: tuple[str, str] | None,
+) -> DiscoveredDevice:
+    """A circuit SPAN adds for a commissioned system: relay locked, priority locked
+    at NEVER. Whatever it is named, and whatever it feeds, is the test's to choose."""
+    return _circuit(
+        device_id,
+        name,
+        spaces,
+        rating="40",
+        priority="NEVER",
+        active_power="0.0",
+        controllable="false",
+        never_backup=True,
+        feeds=feeds,
+    )
+
+
+class TestCommissionedSystemByWhatItFeeds:
+    """A commissioned circuit is recognised by its locks and what it feeds.
+
+    SPAN names these circuits "Commissioned PV System" and "Commissioned Backup
+    System", but the name is the user's to change. Reading it as the commissioning
+    lost the lock from any clone of a renamed one.
+    """
+
+    def test_a_locked_circuit_feeding_an_inverter_is_the_pv_system_whatever_its_name(
+        self,
+    ) -> None:
+        devices = _base_devices()
+        devices["ccc333"] = _locked_circuit(
+            "ccc333", "Roof Array", "7,9", feeds=("pv-0", "energy.ebus.device.pv")
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _templates(config)["clone_7"].get("commissioned_system") == "pv"
+        validate_yaml_config(config)
+
+    def test_a_locked_circuit_feeding_a_battery_is_the_backup_system(self) -> None:
+        devices = _base_devices()
+        devices["ddd444"] = _locked_circuit(
+            "ddd444", "Powerwall", "11,13", feeds=("bess-0", "energy.ebus.device.bess")
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _templates(config)["clone_11"].get("commissioned_system") == "backup"
+        validate_yaml_config(config)
+
+    def test_what_it_feeds_outranks_its_name(self) -> None:
+        """A locked circuit feeding a SPAN Drive is no PV system, whatever it is called."""
+        devices = _base_devices()
+        devices["eee555"] = _locked_circuit(
+            "eee555",
+            "Commissioned PV System",
+            "15,17",
+            feeds=("evse-0", "energy.ebus.device.evse"),
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert "commissioned_system" not in _templates(config)["clone_15"]
+
+    def test_without_connection_data_the_name_decides(self) -> None:
+        """The fallback, for a panel that publishes no `connection` on the circuit."""
+        devices = _base_devices()
+        devices["ccc333"] = _locked_circuit("ccc333", "Commissioned PV System", "7,9", feeds=None)
+        devices["ddd444"] = _locked_circuit("ddd444", "Battery Storage", "11,13", feeds=None)
+
+        templates = _templates(translate_scraped_panel(_make_scraped(devices)))
+
+        assert templates["clone_7"].get("commissioned_system") == "pv"
+        assert "commissioned_system" not in templates["clone_11"]
+
+    def test_feeding_an_inverter_without_both_locks_is_not_commissioned(self) -> None:
+        """The base fixture's solar circuit: relay locked, priority still settable."""
+        templates = _templates(translate_scraped_panel(_make_scraped()))
+
+        assert "commissioned_system" not in templates["clone_7"]
+
+
+class TestPanelSize:
+    """The panel's size is the model it publishes, not its highest occupied space."""
+
+    def test_the_model_names_the_size(self) -> None:
+        """A MAIN 40 whose circuits stop at space 17 is still a 40-space panel."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_40")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 40
+        assert config["unmapped_tabs"] == [
+            t for t in range(1, 41) if t not in {1, 3, 5, 7, 9, 11, 13, 15, 17}
+        ]
+        validate_yaml_config(config)
+
+    def test_a_published_panel_size_outranks_the_model(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_40")
+        devices[_SERIAL].update_property("info", "panel-size", "32")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["total_tabs"] == 32
+
+    def test_a_model_without_a_size_falls_back_to_the_highest_space(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "UNKNOWN")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["total_tabs"] == 24
+
+    def test_a_model_smaller_than_the_circuits_falls_back(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A size the circuits do not fit in would make a clone the panel refuses."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_16")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 24
+        assert "MAIN_16" in caplog.text
+        validate_yaml_config(config)
+
+
+class TestPanelSiteValues:
+    """The panel's time zone and line voltages travel with the clone."""
+
+    def test_the_time_zone_is_copied(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("status", "time-zone", "America/Denver")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["time_zone"] == "America/Denver"
+        validate_yaml_config(config)
+
+    def test_the_line_voltages_are_copied(self) -> None:
+        """One per-leg voltage is all a simulated panel publishes, so the clone takes
+        the legs' mean, and their sum as the service voltage."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("meter", "voltage-a", "121.8")
+        devices[_SERIAL].update_property("meter", "voltage-b", "122.1")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert panel["line_voltage_v"] == 121.95
+        assert panel["service_voltage_v"] == 243.9
+
+    def test_one_leg_stands_for_both(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("meter", "voltage-a", "121.8")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert panel["line_voltage_v"] == 121.8
+        assert panel["service_voltage_v"] == 243.6
+
+    def test_nothing_published_writes_nothing(self) -> None:
+        """Absent, the config's defaults apply rather than a guess written into it."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("meter", "voltage-a", "0.0")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert "time_zone" not in panel
+        assert "line_voltage_v" not in panel
+        assert "service_voltage_v" not in panel
+        assert "postal_code" not in panel
+
+
+class TestDefaultedBreakerRatings:
+    """A rating the panel did not publish is a guess, and the log says so."""
+
+    def test_a_missing_main_breaker_rating_is_reported(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        devices = _base_devices()
+        devices[_SERIAL] = _device(
+            _SERIAL,
+            TYPE_PANEL,
+            {"info": {"serial-number": _SERIAL, "data-model-version": "1.0"}},
+            children=list(devices[_SERIAL].description.get("children", [])),
+        )
+
+        with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
+            config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["main_size"] == 200
+        assert any(
+            _SERIAL in r.getMessage() and "200" in r.getMessage()
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+        )
+
+    def test_each_missing_circuit_rating_is_reported(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        devices = _base_devices()
+        for device_id in ("aaa111", "bbb222"):
+            devices[device_id].properties["breaker"].pop("rating")
+
+        with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
+            config = translate_scraped_panel(_make_scraped(devices))
+
+        warned = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert _templates(config)["clone_1"]["breaker_rating"] == 20
+        assert any("aaa111" in m and "20" in m for m in warned)
+        assert any("bbb222" in m and "20" in m for m in warned)
+        assert not any("ccc333" in m for m in warned)
+
+
+class TestFeedLookupStaysInThePanel:
+    """Finding the circuit that feeds a device reads only this panel's circuits."""
+
+    def test_another_panels_circuit_naming_the_same_inverter_is_ignored(self) -> None:
+        """A broker serving two panels hands back both trees. A circuit of the other
+        panel, listed first, that names this panel's inverter must not take its
+        nameplate, which then lands on no template at all."""
+        foreign = _device(
+            "000foreign",
+            TYPE_CIRCUIT,
+            {
+                "info": {"name": "Other Panel Solar", "spaces": "1"},
+                "connection": {
+                    "feeds-device-id": "pv-0",
+                    "feeds-device-type": "energy.ebus.device.pv",
+                },
+            },
+            parent="other-panel",
+        )
+        foreign_description = dict(foreign.description)
+        foreign_description["root"] = "other-panel"
+        foreign.update_description(json.dumps(foreign_description))
+        devices = {"000foreign": foreign, **_base_devices()}
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        ep = _templates(config)["clone_7"]["energy_profile"]
+        assert isinstance(ep, dict)
+        assert ep["nameplate_capacity_w"] == 5000.0
+
+
+class TestTheCapturedPanel:
+    """The release's masked capture of a real MAIN 32 on SPAN release 202639."""
+
+    def test_a_clone_of_it_reads_what_the_panel_publishes(self) -> None:
+        devices = discovered_from_tree_snapshot(CAPTURED_MAIN_32)
+
+        config = translate_panel_tree(CAPTURED_MAIN_32_SERIAL, devices)
+
+        panel = _panel_config(config)
+        assert panel["total_tabs"] == 32
+        assert panel["time_zone"] == "America/Los_Angeles"
+        assert panel["line_voltage_v"] == 121.95
+        assert panel["service_voltage_v"] == 243.9
+        commissioned = [
+            t for t in _templates(config).values() if t.get("commissioned_system") == "pv"
+        ]
+        assert len(commissioned) == 1
+        validate_yaml_config(config)

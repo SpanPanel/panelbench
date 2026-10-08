@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from ebus_panel_sim.relay_resolver import RelayRequester, RelayState
+from ebus_sdk import DiscoveredDevice
 
 from panelbench.clone import TYPE_PV, translate_panel_tree
 from panelbench.emitter_adapter import runtime as emitter_runtime
@@ -30,13 +32,21 @@ from panelbench.emitter_adapter.wire_capture import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ebus_sdk import DiscoveredDevice
-
     from panelbench.config_types import SimulationConfig
     from panelbench.emitter_adapter.runtime import CloneRuntime
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
 DEFAULT_CONFIG: Final = Path(__file__).resolve().parents[1] / "configs" / "default_MAIN_40.yaml"
+
+# The pinned emitter release's masked capture of a real MAIN 32 on SPAN release 202639.
+CAPTURED_MAIN_32: Final = (
+    Path(__file__).resolve().parent
+    / "fidelity"
+    / "fixtures"
+    / "upstream"
+    / "main32_r202639-tree-v1.json"
+)
+CAPTURED_MAIN_32_SERIAL: Final = "nt-9874-s7rxt"
 
 # SPAN firmware strings either side of release 202639, where the BESS meter's sign
 # and the EVSE user limit's publication changed.
@@ -143,3 +153,24 @@ async def relay_opened_by_command(
     async with asyncio.timeout(within):
         while runtime.emitter.relays.state(uuid) != (RelayState.OPEN, RelayRequester.USER):
             await asyncio.sleep(0.005)
+
+
+def discovered_from_tree_snapshot(path: Path) -> dict[str, DiscoveredDevice]:
+    """A ``tree-v1`` snapshot as the devices a scrape of that panel would discover.
+
+    The snapshot keeps strings and numbers apart; the wire does not, and neither does
+    a discovered device, so both are read back as the strings a panel published.
+    """
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    devices: dict[str, DiscoveredDevice] = {}
+    for device_id, entry in snapshot["devices"].items():
+        device = DiscoveredDevice(device_id)
+        device.update_description(json.dumps(entry["description"]))
+        values = {**entry.get("properties", {}), **entry.get("numeric_properties", {})}
+        for key, value in values.items():
+            if value is None:
+                continue
+            capability, prop = key.split("/", 1)
+            device.update_property(capability, prop, str(value))
+        devices[device_id] = device
+    return devices
