@@ -42,6 +42,19 @@ already down by then, so publishes fail fast rather than queue. Only an expired
 deadline becomes ``TimeoutError``, so ``disconnect``'s cancellation stays a
 cancellation.
 
+**A failed session leaves without a DISCONNECT.** A clean DISCONNECT tells the
+broker to discard the will, so a broker that recovered after the session failed
+would keep a stale ``ready`` for a panel stopped meanwhile. A session an operation
+failed is left by closing its socket, and the will stands until the reconnect
+republishes the tree. A session the reader saw drop, or one ``disconnect`` ends,
+leaves through aiomqtt's own exit.
+
+**A connect that timed out is withdrawn.** aiomqtt gives up waiting for a CONNACK
+without closing paho's socket, so a broker that answers late connects a client no
+one owns, under the panel's id and will, which outlives even a stopped panel. The
+link sends DISCONNECT behind the pending CONNECT instead, so the broker closes the
+session and discards the will. (An aiomqtt issue, to report upstream.)
+
 **A cancelled connect is finished, then closed.** aiomqtt connects in a thread,
 which cancelling the await does not stop. A connect cancelled by ``disconnect``
 is therefore left to resolve, and a client it connected is closed, so no orphan
@@ -314,21 +327,33 @@ class BrokerLink:
         try:
             await asyncio.shield(attempt)
         except asyncio.CancelledError:
-            closing = asyncio.ensure_future(self._close_when_connected(attempt))
+            closing = asyncio.ensure_future(self._close_when_connected(client, attempt))
             self._orphans.add(closing)
             closing.add_done_callback(self._orphans.discard)
             raise
+        except aiomqtt.MqttError:
+            _withdraw(client)
+            raise
         try:
             yield client
-        finally:
+        except TimeoutError:
+            # The session's own deadline: an operation failed it. See the module docstring.
+            _drop(client)
+            raise
+        except BaseException:
             await client.__aexit__(None, None, None)
+            raise
+        await client.__aexit__(None, None, None)
 
     @staticmethod
-    async def _close_when_connected(attempt: asyncio.Future[aiomqtt.Client]) -> None:
+    async def _close_when_connected(
+        client: aiomqtt.Client, attempt: asyncio.Future[aiomqtt.Client]
+    ) -> None:
         try:
-            client = await attempt
+            await attempt
         except Exception:
-            return  # never connected, so nothing to close
+            _withdraw(client)  # never connected, but its socket may yet
+            return
         with contextlib.suppress(Exception):
             await client.__aexit__(None, None, None)
 
@@ -457,6 +482,24 @@ class BrokerLink:
             self._address,
             str(reason) or type(reason).__name__,
         )
+
+
+# aiomqtt offers no way to withdraw a connect it gave up on, nor to leave without a
+# DISCONNECT, so both reach into the paho client it wraps: the one place this module
+# does, kept to these two helpers.
+
+
+def _withdraw(client: aiomqtt.Client) -> None:
+    """DISCONNECT behind a CONNECT aiomqtt stopped waiting for, so no late CONNACK
+    connects a client nobody owns; the broker discards its will and session."""
+    with contextlib.suppress(Exception):
+        client._client.disconnect()
+
+
+def _drop(client: aiomqtt.Client) -> None:
+    """Close the socket with no DISCONNECT, so the broker publishes the will."""
+    with contextlib.suppress(Exception):
+        client._client._sock_close()
 
 
 def _code(rc: int | ReasonCode | None) -> int | None:

@@ -11,6 +11,7 @@ Runs against the mosquitto in ``_mosquitto.py``, and skips with it.
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 from typing import TYPE_CHECKING
 
@@ -115,11 +116,13 @@ async def test_a_link_leaves_a_broker_that_stops_answering(mosquitto: Mosquitto)
         host="127.0.0.1",
         port=mosquitto.port,
         client_id="panelbench-freeze-probe",
+        will=aiomqtt.Will(topic="probe/$state", payload="lost", qos=0, retain=True),
         min_reconnect_delay=0.2,
         max_reconnect_delay=1.0,
         operation_timeout=1.0,
     )
     await link.connect()
+    await link.publish("probe/$state", b"ready", 1, True)
     restored = asyncio.Event()
     link.on_reconnect(restored.set)
     commands: list[bytes] = []
@@ -135,7 +138,52 @@ async def test_a_link_leaves_a_broker_that_stops_answering(mosquitto: Mosquitto)
         async with aiomqtt.Client("127.0.0.1", mosquitto.port, identifier="home-assistant") as ha:
             await ha.publish("probe/command/set", b"OPEN", qos=1)
         await eventually(lambda: bool(commands), within=5)
+        # Left without a DISCONNECT, the failed session's will stands: a consumer sees
+        # the producer lost, not a stale `ready` (nothing here republishes ready).
+        assert await retained(mosquitto.port, "probe/$state") == b"lost"
     finally:
         await link.disconnect()
 
     assert commands == [b"OPEN"]
+
+
+@pytest.mark.asyncio
+async def test_no_connect_the_link_gave_up_on_comes_alive_after_a_stop(
+    mosquitto: Mosquitto, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Connects that time out on a frozen broker, then a stop, then the broker thaws.
+
+    aiomqtt leaves a timed-out connect's socket open, so on thaw its CONNACK would
+    land and connect a client nobody owns, under the panel's id and will, after the
+    panel had stopped. Whether one did shows when a client next takes that id over:
+    the broker then publishes the orphan's will.
+    """
+    caplog.set_level(logging.ERROR, logger="asyncio")
+    will = aiomqtt.Will(topic="probe/$state", payload="lost", qos=0, retain=True)
+    link = BrokerLink(
+        host="127.0.0.1",
+        port=mosquitto.port,
+        client_id="panelbench-orphan-probe",
+        will=will,
+        min_reconnect_delay=0.1,
+        max_reconnect_delay=0.2,
+        operation_timeout=0.5,
+    )
+    await link.connect()
+    mosquitto.freeze()
+    with pytest.raises(BrokerUnavailable):
+        await link.publish("probe/$state", b"ready", 1, True)
+    await asyncio.sleep(2.0)  # several connects, each giving up on its CONNACK
+    await link.disconnect()
+    mosquitto.thaw()
+    await asyncio.sleep(1.0)  # the failed session's will lands; any orphan connects
+
+    async with aiomqtt.Client("127.0.0.1", mosquitto.port, identifier="observer") as observer:
+        await observer.publish("probe/$state", b"stopped", qos=1, retain=True)
+    async with aiomqtt.Client("127.0.0.1", mosquitto.port, identifier="panelbench-orphan-probe"):
+        await asyncio.sleep(0.5)
+
+    assert await retained(mosquitto.port, "probe/$state") == b"stopped", "an orphan's will fired"
+    gc.collect()
+    await asyncio.sleep(0)
+    assert "never retrieved" not in caplog.text

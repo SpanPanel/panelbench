@@ -392,7 +392,9 @@ async def test_an_operation_timing_out_on_an_open_socket_ends_the_session(
     await fake_broker.wait_for_live(after=frozen)
     await eventually(lambda: hooks)
 
-    assert frozen is not None and frozen.exited
+    # Left without a DISCONNECT, so the broker keeps the will: consumers see the panel
+    # lost until the reconnect republishes it, not a stale `ready`.
+    assert frozen is not None and frozen.dropped and not frozen.exited
     assert hooks == [[(RELAY_SETS, 1)]]
     [warning] = _warnings(caplog)
     assert "Operation timed out" in warning
@@ -421,7 +423,7 @@ async def test_a_failure_during_a_restore_cuts_it_short(fake_broker: FakeBroker)
 
     restored = await fake_broker.wait_for_live(after=restoring)
     await eventually(lambda: restored.subscribed)
-    assert restoring.exited
+    assert restoring.dropped, "the failed restore's session was not left"
     await link.disconnect()
 
 
@@ -535,4 +537,39 @@ async def test_an_unsubscribed_filter_is_neither_routed_nor_restored(
 
     assert second.subscribed == [(PRIORITY_SET, 1)]
     assert inbox.received == []
+    await link.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_connect_that_timed_out_is_withdrawn_before_its_connack_lands(
+    fake_broker: FakeBroker,
+) -> None:
+    """aiomqtt gives up on a CONNACK but leaves paho's socket open, so a broker that
+    answers later connects a client nobody owns, under the panel's id and will, that
+    outlives even a stopped panel. The link withdraws such a connect at once."""
+    link = await connected_link()
+    await outage(fake_broker, link)
+    fake_broker.withhold_connack = True
+    attempts = len(fake_broker.clients)
+    fake_broker.come_up()
+    await eventually(lambda: len(fake_broker.clients) > attempts)
+    await link.disconnect()
+
+    fake_broker.deliver_late_connacks()
+
+    timed_out = fake_broker.clients[attempts:]
+    assert all(client.withdrawn for client in timed_out)
+    assert fake_broker.live is None, "a connect the link gave up on came alive"
+
+
+@pytest.mark.asyncio
+async def test_a_reader_noticed_drop_leaves_cleanly(fake_broker: FakeBroker) -> None:
+    """Only a session an operation failed is left without DISCONNECT; one whose socket
+    already died goes through aiomqtt's own exit."""
+    link = await connected_link()
+    first = fake_broker.live
+
+    await outage(fake_broker, link)
+
+    assert first is not None and first.exited and not first.dropped
     await link.disconnect()

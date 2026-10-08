@@ -26,6 +26,23 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 
+class _FakePaho:
+    """The paho client inside an aiomqtt one, as far as the link reaches into it."""
+
+    def __init__(self, owner: FakeClient) -> None:
+        self._owner = owner
+
+    def disconnect(self) -> int:
+        """DISCONNECT, sent behind a CONNECT still waiting for its CONNACK."""
+        self._owner.withdrawn = True
+        return 0
+
+    def _sock_close(self) -> None:
+        """The socket closed with no DISCONNECT, so the broker keeps the will."""
+        self._owner.dropped = True
+        self._owner.sever()
+
+
 class FakeClient:
     """One connection attempt, successful or not, and everything done on it."""
 
@@ -39,6 +56,11 @@ class FakeClient:
         self.entered = False
         self.exited = False
         self.severed = False
+        # A connect that timed out waiting for its CONNACK, its socket still open.
+        self.awaiting_connack = False
+        self.withdrawn = False
+        self.dropped = False
+        self._client = _FakePaho(self)
         self._lost = asyncio.Event()
         self._inbox: asyncio.Queue[aiomqtt.Message] = asyncio.Queue()
         self.broker.clients.append(self)
@@ -47,12 +69,23 @@ class FakeClient:
     def connected(self) -> bool:
         return self.entered and not self.exited and not self.severed
 
+    def late_connack(self) -> None:
+        """The broker answers a connect aiomqtt gave up on: it connects unless withdrawn."""
+        if self.awaiting_connack and not self.withdrawn:
+            self.entered = True
+        self.awaiting_connack = False
+
     async def __aenter__(self) -> FakeClient:
         if self.broker.connect_gate is not None:
             # A TCP connect that takes its time: a black-holed host, slow DNS.
             await self.broker.connect_gate.wait()
         if not self.broker.up:
             raise aiomqtt.MqttError("[Errno 61] Connection refused")
+        if self.broker.withhold_connack:
+            # aiomqtt gives up on the CONNACK but leaves paho's socket open, so a
+            # CONNACK that arrives later still connects the client.
+            self.awaiting_connack = True
+            raise aiomqtt.MqttError("Operation timed out")
         self.entered = True
         if self.broker.drop_on_connect:
             self.sever()
@@ -133,6 +166,7 @@ class FakeBroker:
         # Every operation times out, as on a socket to a frozen broker, which stays open.
         self.time_out_operations = False
         self.refused_filters: set[str] = set()
+        self.withhold_connack = False
         self.connect_gate: asyncio.Event | None = None
         # Accept each connection, then drop it at once: what a broker does to a
         # client whose id another client has just taken over.
@@ -156,6 +190,11 @@ class FakeBroker:
 
     def come_up(self) -> None:
         self.up = True
+
+    def deliver_late_connacks(self) -> None:
+        self.withhold_connack = False
+        for client in self.clients:
+            client.late_connack()
 
     def send(self, topic: str, payload: bytes) -> None:
         """Route a message to each connected client subscribed to a matching filter."""
