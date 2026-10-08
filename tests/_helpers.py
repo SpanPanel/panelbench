@@ -8,6 +8,7 @@ would replay from the broker.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING, Final
 from zoneinfo import ZoneInfo
 
 import yaml
+from ebus_panel_sim.relay_resolver import RelayRequester, RelayState
 
 from panelbench.clone import TYPE_PV, translate_panel_tree
 from panelbench.emitter_adapter import runtime as emitter_runtime
@@ -123,3 +125,21 @@ async def pv_rating(path: Path, circuit_id: str = "solar_inverter") -> tuple[str
     produced = runtime.engine.modelled_circuit_power(circuit_id, NOON)
     assert produced > 0, "noon in June, so the inverter is producing"
     return pv.get_property("info", "nominal-power"), produced
+
+
+def settable_relays(runtime: CloneRuntime) -> list[str]:
+    """Circuits a relay command may move: every one not locked by commissioning."""
+    return [
+        uuid
+        for uuid in runtime.uuid_to_circuit_id
+        if runtime.emitter.relays.state(uuid)[1] != RelayRequester.CONFIGURATION
+    ]
+
+
+async def relay_opened_by_command(
+    runtime: CloneRuntime, uuid: str, *, within: float = 2.0
+) -> None:
+    """Wait until circuit *uuid*'s relay is open on a user's command."""
+    async with asyncio.timeout(within):
+        while runtime.emitter.relays.state(uuid) != (RelayState.OPEN, RelayRequester.USER):
+            await asyncio.sleep(0.005)

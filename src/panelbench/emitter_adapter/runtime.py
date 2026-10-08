@@ -10,12 +10,13 @@ across ticks.
 ``TickInputs`` and hands it to ``Emitter.publish_tick``. The emitter does the
 rest: BESS dispatch, load shedding, energy integration, panel meter aggregation,
 diff publication. /set commands are handled by the emitter's internal default
-handlers (no producer-side setter wiring needed)."""
+handlers (no producer-side setter wiring needed); the broker link routes each
+command to the handler the SDK subscribed with."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 import aiomqtt
 
@@ -33,6 +34,7 @@ from ebus_panel_sim import (
 )
 
 from panelbench.const import DEFAULT_WIFI_SSID
+from panelbench.emitter_adapter.broker_link import BrokerLink
 from panelbench.emitter_adapter.definition import bess_config, build_definition
 from panelbench.emitter_adapter.instance_ids import (
     evse_device_id,
@@ -64,25 +66,6 @@ class BrokerConnection:
     ca_cert_path: str | None = None
 
 
-@runtime_checkable
-class MqttPublisher(Protocol):
-    """Structural subset of the MQTT client interface the emitter consumes.
-
-    Mirrors the emitter's internal ``_MqttClientLike`` protocol; we redeclare
-    it here rather than import an underscore-private symbol across packages."""
-
-    def is_connected(self) -> bool: ...
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        qos: int = 0,
-        retain: bool = False,
-    ) -> None: ...
-    async def subscribe(self, topic: str) -> None: ...
-    async def disconnect(self) -> None: ...
-
-
 @dataclass(slots=True)
 class CloneRuntime:
     engine: DynamicSimulationEngine
@@ -91,78 +74,11 @@ class CloneRuntime:
     transport: MqttDeviceTransport
     emitter: Emitter
     uuid_to_circuit_id: dict[str, str]
-    mqtt: MqttPublisher | None = None
-    """The async client, when this runtime opened one.
+    mqtt: BrokerLink | None = None
+    """The broker link, when this runtime opened one.
 
     ``None`` when a transport was injected: whoever supplied it owns its
     lifecycle, which is the same rule the SDK follows for an injected client."""
-
-
-class _AiomqttPublisher:
-    """Adapter wrapping ``aiomqtt.Client`` to satisfy the emitter's duck-typed
-    MQTT interface (``is_connected``, ``publish``, ``subscribe``)."""
-
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        client_id: str,
-        username: str | None = None,
-        password: str | None = None,
-        will: aiomqtt.Will | None = None,
-        ca_cert_path: str | None = None,
-    ) -> None:
-        self._host = host
-        self._port = port
-        self._client_id = client_id
-        self._username = username
-        self._password = password
-        self._will = will
-        self._ca_cert_path = ca_cert_path
-        self._client: aiomqtt.Client | None = None
-
-    async def connect(self) -> None:
-        tls_params = (
-            aiomqtt.TLSParameters(ca_certs=self._ca_cert_path) if self._ca_cert_path else None
-        )
-        self._client = aiomqtt.Client(
-            hostname=self._host,
-            port=self._port,
-            identifier=self._client_id,
-            username=self._username,
-            password=self._password,
-            will=self._will,
-            tls_params=tls_params,
-        )
-        await self._client.__aenter__()
-
-    async def disconnect(self) -> None:
-        if self._client is not None:
-            await self._client.__aexit__(None, None, None)
-            self._client = None
-
-    def is_connected(self) -> bool:
-        """Return True once :meth:`connect` has constructed the underlying client.
-
-        Note: this is a coarse "ready to attempt publishing" gate, not a live
-        link check — aiomqtt does not surface broker reachability synchronously.
-        A True return indicates the emitter may issue publishes; transport
-        failures will surface as exceptions from :meth:`publish` / :meth:`subscribe`."""
-        return self._client is not None
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        qos: int = 0,
-        retain: bool = False,
-    ) -> None:
-        assert self._client is not None
-        await self._client.publish(topic, payload=payload, qos=qos, retain=retain)
-
-    async def subscribe(self, topic: str) -> None:
-        assert self._client is not None
-        await self._client.subscribe(topic)
 
 
 def bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | None:
@@ -257,11 +173,11 @@ async def start_clone(
     # defaults match what the SDK's own client applies to the same descriptor.
     lwt = Emitter.lwt_settings(manifest)
 
-    mqtt: MqttPublisher | None = None
+    link: BrokerLink | None = None
     if transport is None:
         broker_cfg: BrokerConfigYAML = engine.config.get("broker") or {}
         resolved = _resolve_broker(broker_cfg, broker)
-        aiomqtt_publisher = _AiomqttPublisher(
+        link = BrokerLink(
             host=resolved.host,
             port=resolved.port,
             client_id=f"span-sim-{engine.serial_number}",
@@ -275,17 +191,31 @@ async def start_clone(
             ),
             ca_cert_path=resolved.ca_cert_path,
         )
-        await aiomqtt_publisher.connect()
-        mqtt = aiomqtt_publisher
+        await link.connect()
         loop_bound = LoopBoundTransport(
-            publish=aiomqtt_publisher.publish,
-            subscribe=aiomqtt_publisher.subscribe,
-            connected=aiomqtt_publisher.is_connected,
+            publish=link.publish,
+            subscribe=link.subscribe,
+            connected=link.is_connected,
         )
         loop_bound.start()
         transport = loop_bound
 
-    emitter = Emitter.from_definition(definition, setters, mqttc=transport)
+    try:
+        emitter = Emitter.from_definition(definition, setters, mqttc=transport)
+    except BaseException:
+        # The link supervises itself, so one left open here would keep reconnecting
+        # for a panel that never started.
+        if link is not None:
+            if isinstance(transport, LoopBoundTransport):
+                await transport.aclose()
+            await link.disconnect()
+        raise
+    if link is not None:
+        # Built after the link because constructing it publishes the tree. The SDK
+        # wires this itself only for a client it builds, and leaves it to whoever
+        # injects one (`Emitter.republish_tree`): without it, a broker that comes
+        # back empty gets a few topics a tick and never a `$description`.
+        link.on_reconnect(emitter.republish_tree)
 
     runtime = CloneRuntime(
         engine=engine,
@@ -294,7 +224,7 @@ async def start_clone(
         transport=transport,
         emitter=emitter,
         uuid_to_circuit_id=uuid_to_circuit_id,
-        mqtt=mqtt,
+        mqtt=link,
     )
 
     # Synchronous, and returns immediately for an injected client rather than

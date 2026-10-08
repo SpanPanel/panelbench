@@ -24,18 +24,33 @@ paced each tick against the broker implicitly. Nothing about the SDK's contract
 preserves that, so the choice surfaces here as a bounded queue: a producer that
 outruns its broker fails loudly at a stated depth instead of growing the heap
 until the add-on is killed.
+
+**A subscription is a filter and a callback.** The SDK subscribes each settable
+property's ``/set`` topic with the callback that applies a command to it, and
+expects whatever carries the filter to call that callback with the topic and
+payload of each message on it, as ``ebus_mqtt_client.MqttClient`` does. Both go
+through the queue together, so the client behind it can route what arrives.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable
 
 _LOG = logging.getLogger(__name__)
+
+MessageCallback = Callable[[str, bytes], object]
+"""What the SDK subscribes with: called with a message's topic and payload.
+
+The contract ``ebus_mqtt_client.MqttClient`` keeps and ``Property._settable_callback``
+is written against. The return is discarded, which is why it is ``object``.
+"""
 
 # One tick of a 40-space panel publishes on the order of 500 topics, and the
 # cold-start tree is larger still. This holds several ticks' worth so a transient
@@ -46,6 +61,31 @@ DEFAULT_MAX_PENDING = 4096
 
 class TransportBacklogFull(RuntimeError):
     """The publish queue hit its bound: the producer is outrunning the broker."""
+
+
+class BrokerUnavailable(ConnectionError):
+    """The broker link is down, so the operation was not sent.
+
+    Raised by the client behind this transport rather than by the transport, and
+    dropped quietly when it reaches the drainer: the client reports an outage once,
+    and what an outage drops is restored when the link comes back, since the
+    subscriptions are replayed and the tree republished.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class _Publish:
+    topic: str
+    payload: bytes
+    qos: int
+    retain: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _Subscribe:
+    topic_filter: str
+    callback: MessageCallback
+    qos: int
 
 
 class LoopBoundTransport:
@@ -65,16 +105,14 @@ class LoopBoundTransport:
         self,
         *,
         publish: Callable[[str, bytes, int, bool], Awaitable[None]],
-        subscribe: Callable[[str], Awaitable[None]],
+        subscribe: Callable[[str, MessageCallback, int], Awaitable[None]],
         connected: Callable[[], bool],
         max_pending: int = DEFAULT_MAX_PENDING,
     ) -> None:
         self._publish = publish
         self._subscribe = subscribe
         self._connected = connected
-        self._queue: asyncio.Queue[tuple[str, bytes, int, bool] | str] = asyncio.Queue(
-            maxsize=max_pending
-        )
+        self._queue: asyncio.Queue[_Publish | _Subscribe] = asyncio.Queue(maxsize=max_pending)
         self._drainer: asyncio.Task[None] | None = None
         self.is_running = False
 
@@ -112,17 +150,17 @@ class LoopBoundTransport:
         return self._connected()
 
     def publish(self, topic: str, data: str, qos: int = 1, retain: bool = False) -> object:
-        self._submit((topic, str(data).encode(), qos, retain))
+        self._submit(_Publish(topic, str(data).encode(), qos, retain))
         return None
 
-    def subscribe(self, sub: str, param: Any = None, qos: int = 1) -> object:
-        del param, qos  # routing is the SDK's; this transport only carries the filter
-        self._submit(sub)
+    def subscribe(self, sub: str, param: MessageCallback, qos: int = 1) -> object:
+        """``param`` is the SDK's name for the callback, kept so it can pass it by name."""
+        self._submit(_Subscribe(sub, param, qos))
         return None
 
     # -- internals --------------------------------------------------------------
 
-    def _submit(self, item: tuple[str, bytes, int, bool] | str) -> None:
+    def _submit(self, item: _Publish | _Subscribe) -> None:
         try:
             self._queue.put_nowait(item)
         except asyncio.QueueFull as exc:
@@ -135,11 +173,14 @@ class LoopBoundTransport:
         while True:
             item = await self._queue.get()
             try:
-                if isinstance(item, str):
-                    await self._subscribe(item)
+                if isinstance(item, _Subscribe):
+                    await self._subscribe(item.topic_filter, item.callback, item.qos)
                 else:
-                    topic, payload, qos, retain = item
-                    await self._publish(topic, payload, qos, retain)
+                    await self._publish(item.topic, item.payload, item.qos, item.retain)
+            except BrokerUnavailable:
+                # Already reported, once, by the link. Logging every casualty would
+                # bury that line under one per topic per tick.
+                _LOG.debug("dropping an MQTT operation: the broker link is down")
             except Exception:
                 # One failed publish must not kill the drainer: the SDK has already
                 # been told the value went out and will not resend it, so a dead
