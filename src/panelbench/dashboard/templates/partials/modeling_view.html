@@ -913,7 +913,15 @@
           method: 'PUT',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({label: label}),
-        }).then(function() {
+        }).then(function(r) {
+          if (!r.ok) {
+            // Refused: the dialog stays open and says why; nothing changed.
+            return r.text().then(function(reason) {
+              dialogError.textContent = reason || ('Request failed (' + r.status + ')');
+              dialogError.style.display = '';
+              useRateBtn.disabled = false;
+            });
+          }
           loadCurrentRate();
           closeRateDialog();
           fetchModelingData(horizonSelect.value);

@@ -123,8 +123,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--config",
         default=os.environ.get("CONFIG_NAME"),
-        help="Name of a specific config file to load (e.g., default_config.yaml). "
-        "When omitted, loads default_config.yaml if it exists, otherwise all configs.",
+        help="Name of a specific config file to load (e.g., default_MAIN_16.yaml). "
+        "When omitted, resumes the last config run, or starts with no panel running.",
     )
     parser.add_argument(
         "--tick-interval",
@@ -169,6 +169,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=Path(os.environ.get("CERT_DIR", "/tmp/span-sim-certs")),
         help="Directory for generated TLS certificates",
+    )
+    parser.add_argument(
+        "--secrets-dir",
+        type=Path,
+        default=Path(secrets_dir) if (secrets_dir := os.environ.get("SECRETS_DIR")) else None,
+        help="Directory for source panels' passphrases and broker credentials "
+        "(default: .secrets in the config directory)",
     )
     parser.add_argument(
         "--dashboard-port",
@@ -272,6 +279,7 @@ def main(argv: list[str] | None = None) -> None:
         dashboard_port=args.dashboard_port,
         advertise_address=args.advertise_address,
         ha_config=ha_config,
+        secrets_dir=args.secrets_dir,
     )
 
     try:

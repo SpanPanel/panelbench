@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 
+import pytest
 import yaml
 from ebus_sdk import DiscoveredDevice
 
@@ -13,12 +15,20 @@ from panelbench.clone import (
     TYPE_CIRCUIT,
     TYPE_EVSE,
     TYPE_PV,
+    translate_panel_tree,
     translate_scraped_panel,
     update_config_from_scrape,
     write_clone_config,
 )
 from panelbench.scraper import ScrapedPanel
 from panelbench.validation import validate_yaml_config
+from tests._helpers import (
+    CAPTURED_MAIN_32,
+    CAPTURED_MAIN_32_SERIAL,
+    CURRENT_FIRMWARE,
+    EARLIER_FIRMWARE,
+    discovered_from_tree_snapshot,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -331,7 +341,8 @@ class TestTranslateScrapedPanel:
         assert ep["mode"] == "consumer"
 
     def test_non_controllable_relay(self) -> None:
-        """A circuit whose relay is not controllable maps to non_controllable.
+        """A circuit whose relay is not controllable maps to non-controllable, the
+        spelling the shipped configs write.
 
         v1.0 publishes `switch/relay-controllable` directly; the flat schema inferred
         this from `always-on`.
@@ -342,7 +353,7 @@ class TestTranslateScrapedPanel:
         # Solar inverter (positions 7,9) is not relay-controllable.
         t = templates["clone_7"]
         assert isinstance(t, dict)
-        assert t["relay_behavior"] == "non_controllable"
+        assert t["relay_behavior"] == "non-controllable"
 
     def test_controllable_relay(self) -> None:
         """Circuit with always-on=false gets controllable relay behavior."""
@@ -478,44 +489,36 @@ class TestEnergySeeding:
 
 
 class TestPanelSource:
-    """Tests for panel_source credential persistence."""
+    """Tests for the clone's record of where it came from."""
 
     def test_panel_source_written_when_host_provided(self) -> None:
         """panel_source block is written when host is passed to translate."""
-        config = translate_scraped_panel(
-            _make_scraped(), host="192.168.1.100", passphrase="secret"
-        )
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         ps = config.get("panel_source")
         assert isinstance(ps, dict)
         assert ps["origin_serial"] == _SERIAL
         assert ps["host"] == "192.168.1.100"
-        assert ps["passphrase"] == "secret"
         assert "last_synced" in ps
+
+    def test_the_clone_carries_no_passphrase(self) -> None:
+        """It is kept in the panel secrets store, never in a config users share."""
+        ps = translate_scraped_panel(_make_scraped(), host="192.168.1.100")["panel_source"]
+        assert isinstance(ps, dict)
+        assert "passphrase" not in ps
 
     def test_no_panel_source_without_host(self) -> None:
         """panel_source is omitted when host is not provided."""
         config = translate_scraped_panel(_make_scraped())
         assert "panel_source" not in config
 
-    def test_panel_source_null_passphrase(self) -> None:
-        """panel_source supports null passphrase (door-bypass)."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
-        ps = config.get("panel_source")
-        assert isinstance(ps, dict)
-        assert ps["passphrase"] is None
-
     def test_panel_source_validates(self) -> None:
         """Config with panel_source passes validation."""
-        config = translate_scraped_panel(
-            _make_scraped(), host="192.168.1.100", passphrase="secret"
-        )
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         validate_yaml_config(config)
 
     def test_panel_source_roundtrip(self, tmp_path: Path) -> None:
         """panel_source survives YAML write/load roundtrip."""
-        config = translate_scraped_panel(
-            _make_scraped(), host="192.168.1.100", passphrase="secret"
-        )
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         output = write_clone_config(config, tmp_path, _SERIAL)
         loaded = yaml.safe_load(output.read_text())
         validate_yaml_config(loaded)
@@ -529,7 +532,7 @@ class TestUpdateConfigFromScrape:
 
     def test_typical_power_not_overwritten(self) -> None:
         """Active power snapshot must not overwrite typical_power."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
 
         templates = config["circuit_templates"]
         assert isinstance(templates, dict)
@@ -552,7 +555,7 @@ class TestUpdateConfigFromScrape:
 
     def test_energy_seeds_updated(self) -> None:
         """Energy accumulators are updated from new scrape."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
 
         devices = _base_devices()
         # aaa111 is a load, so its consumption accumulator is exported-energy.
@@ -572,7 +575,7 @@ class TestUpdateConfigFromScrape:
 
     def test_last_synced_updated(self) -> None:
         """panel_source.last_synced is updated on refresh."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         ps = config.get("panel_source")
         assert isinstance(ps, dict)
         old_synced = ps["last_synced"]
@@ -591,3 +594,532 @@ class TestUpdateConfigFromScrape:
         # Remove panel_source to test pure data path
         changed = update_config_from_scrape(config, _make_scraped())
         assert changed is False
+
+    def test_a_refresh_leaves_the_clone_firmware_alone(self) -> None:
+        """A clone keeps the release it was taken at when its source later upgrades."""
+        before = _base_devices()
+        before[_SERIAL].update_property("info", "firmware-version", EARLIER_FIRMWARE)
+        config = translate_scraped_panel(_make_scraped(before), host="192.168.1.100")
+        assert config["firmware_version"] == EARLIER_FIRMWARE
+
+        after = _base_devices()
+        after[_SERIAL].update_property("info", "firmware-version", CURRENT_FIRMWARE)
+        update_config_from_scrape(config, _make_scraped(after))
+
+        assert config["firmware_version"] == EARLIER_FIRMWARE
+
+
+def _templates(config: dict[str, object]) -> dict[str, dict[str, object]]:
+    templates = config["circuit_templates"]
+    assert isinstance(templates, dict)
+    return templates
+
+
+def _panel_config(config: dict[str, object]) -> dict[str, object]:
+    panel = config["panel_config"]
+    assert isinstance(panel, dict)
+    return panel
+
+
+def _locked_circuit(
+    device_id: str,
+    name: str,
+    spaces: str,
+    *,
+    feeds: tuple[str, str] | None,
+) -> DiscoveredDevice:
+    """A circuit SPAN adds for a commissioned system: relay locked, priority locked
+    at NEVER. Whatever it is named, and whatever it feeds, is the test's to choose."""
+    return _circuit(
+        device_id,
+        name,
+        spaces,
+        rating="40",
+        priority="NEVER",
+        active_power="0.0",
+        controllable="false",
+        never_backup=True,
+        feeds=feeds,
+    )
+
+
+class TestCommissionedSystemByWhatItFeeds:
+    """A commissioned circuit is recognised by its locks and what it feeds.
+
+    SPAN names these circuits "Commissioned PV System" and "Commissioned Backup
+    System", but the name is the user's to change. Reading it as the commissioning
+    lost the lock from any clone of a renamed one.
+    """
+
+    def test_a_locked_circuit_feeding_an_inverter_is_the_pv_system_whatever_its_name(
+        self,
+    ) -> None:
+        devices = _base_devices()
+        devices["ccc333"] = _locked_circuit(
+            "ccc333", "Roof Array", "7,9", feeds=("pv-0", "energy.ebus.device.pv")
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _templates(config)["clone_7"].get("commissioned_system") == "pv"
+        validate_yaml_config(config)
+
+    def test_a_locked_circuit_feeding_a_battery_is_the_backup_system(self) -> None:
+        devices = _base_devices()
+        devices["ddd444"] = _locked_circuit(
+            "ddd444", "Powerwall", "11,13", feeds=("bess-0", "energy.ebus.device.bess")
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _templates(config)["clone_11"].get("commissioned_system") == "backup"
+        validate_yaml_config(config)
+
+    def test_what_it_feeds_outranks_its_name(self) -> None:
+        """A locked circuit feeding a SPAN Drive is no PV system, whatever it is called."""
+        devices = _base_devices()
+        devices["eee555"] = _locked_circuit(
+            "eee555",
+            "Commissioned PV System",
+            "15,17",
+            feeds=("evse-0", "energy.ebus.device.evse"),
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert "commissioned_system" not in _templates(config)["clone_15"]
+
+    def test_without_connection_data_the_name_decides(self) -> None:
+        """The fallback, for a panel that publishes no `connection` on the circuit."""
+        devices = _base_devices()
+        devices["ccc333"] = _locked_circuit("ccc333", "Commissioned PV System", "7,9", feeds=None)
+        devices["ddd444"] = _locked_circuit("ddd444", "Battery Storage", "11,13", feeds=None)
+
+        templates = _templates(translate_scraped_panel(_make_scraped(devices)))
+
+        assert templates["clone_7"].get("commissioned_system") == "pv"
+        assert "commissioned_system" not in templates["clone_11"]
+
+    def test_feeding_an_inverter_without_both_locks_is_not_commissioned(self) -> None:
+        """The base fixture's solar circuit: relay locked, priority still settable."""
+        templates = _templates(translate_scraped_panel(_make_scraped()))
+
+        assert "commissioned_system" not in templates["clone_7"]
+
+
+class TestPanelSize:
+    """The panel's size is the model it publishes, not its highest occupied space."""
+
+    def test_the_model_names_the_size(self) -> None:
+        """A MAIN 40 whose circuits stop at space 17 is still a 40-space panel."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_40")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 40
+        assert config["unmapped_tabs"] == [
+            t for t in range(1, 41) if t not in {1, 3, 5, 7, 9, 11, 13, 15, 17}
+        ]
+        validate_yaml_config(config)
+
+    def test_the_model_itself_is_kept(self) -> None:
+        """Published verbatim, rather than re-derived from the size it implies."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_40")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["model"] == "MAIN_40"
+
+    def test_a_model_its_highest_circuit_just_fits_is_kept(self) -> None:
+        """The boundary: a circuit on the model's last space fits it."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_17")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["total_tabs"] == 17
+
+    def test_a_model_without_a_size_falls_back_to_the_highest_space(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "UNKNOWN")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["total_tabs"] == 24
+
+    def test_a_model_smaller_than_the_circuits_falls_back(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A size the circuits do not fit in would make a clone the panel refuses."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_16")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 24
+        assert "MAIN_16" in caplog.text
+        validate_yaml_config(config)
+
+
+class TestPanelSiteValues:
+    """The panel's time zone and line voltages travel with the clone."""
+
+    def test_the_time_zone_is_copied(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("status", "time-zone", "America/Denver")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["time_zone"] == "America/Denver"
+        validate_yaml_config(config)
+
+    def test_the_line_voltages_are_copied(self) -> None:
+        """One per-leg voltage is all a simulated panel publishes, so the clone takes
+        the legs' mean, and their sum as the service voltage."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("meter", "voltage-a", "121.8")
+        devices[_SERIAL].update_property("meter", "voltage-b", "122.1")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert panel["line_voltage_v"] == 121.95
+        assert panel["service_voltage_v"] == 243.9
+
+    def test_one_leg_stands_for_both(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("meter", "voltage-a", "121.8")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert panel["line_voltage_v"] == 121.8
+        assert panel["service_voltage_v"] == 243.6
+
+    def test_nothing_published_writes_nothing(self) -> None:
+        """Absent, the config's defaults apply rather than a guess written into it."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("meter", "voltage-a", "0.0")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert "time_zone" not in panel
+        assert "line_voltage_v" not in panel
+        assert "service_voltage_v" not in panel
+        assert "postal_code" not in panel
+
+
+class TestDefaultedBreakerRatings:
+    """A rating the panel does not publish is carried through as absent where the
+    config can say so, and reported where it cannot yet."""
+
+    def test_a_missing_main_breaker_rating_is_reported(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        devices = _base_devices()
+        devices[_SERIAL] = _device(
+            _SERIAL,
+            TYPE_PANEL,
+            {"info": {"serial-number": _SERIAL, "data-model-version": "1.0"}},
+            children=[device_id for device_id in devices if device_id != _SERIAL],
+        )
+
+        with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
+            config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["main_size"] == 200
+        assert any(
+            _SERIAL in r.getMessage() and "200" in r.getMessage()
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+        )
+
+    def test_a_missing_circuit_rating_stays_missing(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A clone is faithful to what the panel publishes: a circuit that publishes no
+        rating gets none in the clone, rather than an invented one with a warning."""
+        devices = _base_devices()
+        devices["aaa111"].properties["breaker"].pop("rating")
+
+        with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
+            config = translate_scraped_panel(_make_scraped(devices))
+
+        templates = _templates(config)
+        assert templates["clone_1"]["breaker_rating"] is None
+        assert templates["clone_3"]["breaker_rating"] == 20
+        assert not [r for r in caplog.records if "aaa111" in r.getMessage()]
+        validate_yaml_config(config)
+
+
+class TestFeedLookupStaysInThePanel:
+    """Finding the circuit that feeds a device reads only this panel's circuits."""
+
+    def test_another_panels_circuit_naming_the_same_inverter_is_ignored(self) -> None:
+        """A broker serving two panels hands back both trees. A circuit of the other
+        panel, listed first, that names this panel's inverter must not take its
+        nameplate, which then lands on no template at all."""
+        foreign = _device(
+            "000foreign",
+            TYPE_CIRCUIT,
+            {
+                "info": {"name": "Other Panel Solar", "spaces": "1"},
+                "connection": {
+                    "feeds-device-id": "pv-0",
+                    "feeds-device-type": "energy.ebus.device.pv",
+                },
+            },
+            parent="other-panel",
+        )
+        foreign_description = dict(foreign.description or {})
+        foreign_description["root"] = "other-panel"
+        foreign.update_description(json.dumps(foreign_description))
+        devices = {"000foreign": foreign, **_base_devices()}
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        ep = _templates(config)["clone_7"]["energy_profile"]
+        assert isinstance(ep, dict)
+        assert ep["nameplate_capacity_w"] == 5000.0
+
+
+class TestTheCapturedPanel:
+    """The release's masked capture of a real MAIN 32 on SPAN release 202639."""
+
+    def test_a_clone_of_it_reads_what_the_panel_publishes(self) -> None:
+        devices = discovered_from_tree_snapshot(CAPTURED_MAIN_32)
+
+        config = translate_panel_tree(CAPTURED_MAIN_32_SERIAL, devices)
+
+        panel = _panel_config(config)
+        assert panel["total_tabs"] == 32
+        assert panel["time_zone"] == "America/Los_Angeles"
+        assert panel["line_voltage_v"] == 121.95
+        assert panel["service_voltage_v"] == 243.9
+        commissioned = [
+            t for t in _templates(config).values() if t.get("commissioned_system") == "pv"
+        ]
+        assert len(commissioned) == 1
+        validate_yaml_config(config)
+
+
+def _circuits_by_id(config: dict[str, object]) -> dict[str, dict[str, object]]:
+    circuits = config["circuits"]
+    assert isinstance(circuits, list)
+    return {str(c["id"]): c for c in circuits}
+
+
+class TestWhatTheClonePublishesComesFromThePanel:
+    """Values a panel publishes reach its clone, rather than PanelBench's defaults."""
+
+    def test_each_circuits_pcs_priority_is_copied(self) -> None:
+        devices = _base_devices()
+        devices["aaa111"].update_property("pcs", "priority", "7")
+
+        circuits = _circuits_by_id(translate_scraped_panel(_make_scraped(devices)))
+
+        assert circuits["circuit_1"]["pcs_priority"] == 7
+
+    def test_a_circuit_without_a_pcs_priority_has_none(self) -> None:
+        """The capture's commissioned PV circuit publishes none."""
+        devices = _base_devices()
+        devices["aaa111"].properties["pcs"].pop("priority")
+
+        circuits = _circuits_by_id(translate_scraped_panel(_make_scraped(devices)))
+
+        assert circuits["circuit_1"]["pcs_priority"] is None
+
+    def test_the_shed_threshold_is_copied(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property(
+            "shed",
+            "policy",
+            '{"algorithm": "soc-priority.v1", "parameters": '
+            '{"soc-threshold-shed": 49, "soc-threshold-release": 51}}',
+        )
+
+        assert (
+            _panel_config(translate_scraped_panel(_make_scraped(devices)))["soc_shed_threshold"]
+            == 49
+        )
+
+    def test_the_panel_vendor_is_copied(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "vendor-name", "SPAN")
+
+        assert _panel_config(translate_scraped_panel(_make_scraped(devices)))["vendor_name"] == (
+            "SPAN"
+        )
+
+
+class TestBatteryPowerLimits:
+    """A battery's charge and discharge limits follow the battery, not a constant."""
+
+    def test_a_published_nominal_power_sets_both_limits(self) -> None:
+        devices = _base_devices()
+        devices["bess-0"].update_property("info", "nominal-power", "11500")
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert (bess["max_charge_w"], bess["max_discharge_w"]) == (11500.0, 11500.0)
+
+    def test_without_one_the_limits_scale_with_the_capacity(self) -> None:
+        """5 kW per 13.5 kWh, a Powerwall 2's continuous rating: six of them, as the
+        real MAIN 32 capture has, are 81 kWh and 30 kW, where the clone gave 3.5 kW."""
+        devices = _base_devices()
+        devices["bess-0"].update_property("info", "nameplate-capacity", "81")
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["max_charge_w"] == pytest.approx(30000.0)
+        assert bess["max_discharge_w"] == pytest.approx(30000.0)
+
+
+class TestMicrogridInterconnect:
+    """The MID's own identity reaches the clone, not one derived from the battery's."""
+
+    def test_the_mids_serial_and_firmware_are_copied(self) -> None:
+        devices = _base_devices()
+        devices["mid-0"] = _device(
+            "mid-0",
+            "energy.ebus.device.mid",
+            {"info": {"serial-number": "example-mid-0001", "firmware-version": "1.2.3"}},
+            parent="bess-0",
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["mid_serial_number"] == "example-mid-0001"
+        assert bess["mid_firmware_version"] == "1.2.3"
+
+    def test_the_mids_vendor_model_and_hardware_are_copied(self) -> None:
+        devices = _base_devices()
+        devices["mid-0"] = _device(
+            "mid-0",
+            "energy.ebus.device.mid",
+            {
+                "info": {
+                    "vendor-name": "Example Gateway Co",
+                    "model": "Example Gateway",
+                    "hardware-version": "B",
+                }
+            },
+            parent="bess-0",
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["mid_vendor"] == "Example Gateway Co"
+        assert bess["mid_product_name"] == "Example Gateway"
+        assert bess["mid_hardware_version"] == "B"
+
+    def test_only_the_batterys_own_mid_is_read(self) -> None:
+        """A MID listed first that belongs to no battery here must not lend its serial."""
+        devices = _base_devices()
+        devices["mid-a"] = _device(
+            "mid-a",
+            "energy.ebus.device.mid",
+            {"info": {"serial-number": "example-stray-mid"}},
+            parent="another-bess",
+        )
+        devices["mid-b"] = _device(
+            "mid-b",
+            "energy.ebus.device.mid",
+            {"info": {"serial-number": "example-mid-0001"}},
+            parent="bess-0",
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["mid_serial_number"] == "example-mid-0001"
+
+
+class TestNetworkAndEnvelope:
+    """The panel's network configuration travels with the clone, absences included;
+    its live state does not.
+
+    The captured MAIN 32 is on Ethernet: `status/wifi` false, `status/ethernet` true
+    and no SSID. A clone that published Wi-Fi up on `sim-wifi` invented a network.
+    """
+
+    def test_an_ethernet_panel_clones_with_no_wifi_and_no_ssid(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("status", "wifi", "false")
+        devices[_SERIAL].update_property("status", "ethernet", "true")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert (panel["wifi_link"], panel["ethernet_link"]) == (False, True)
+        assert "wifi_ssid" in panel and panel["wifi_ssid"] is None
+
+    def test_a_wifi_panel_keeps_its_ssid(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("status", "wifi", "true")
+        devices[_SERIAL].update_property("status", "wifi-ssid", "example-net")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert (panel["wifi_link"], panel["wifi_ssid"]) == (True, "example-net")
+
+    def test_the_door_and_cloud_state_are_live_state_and_not_copied(self) -> None:
+        """Copied, they would be frozen at the moment of the clone: a door opened to
+        register the clone, or a cloud outage then, reported by the clone for good."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("door", "state", "OPEN")
+        devices[_SERIAL].update_property("status", "cloud-connection", "UNKNOWN")
+
+        panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert not {"door_state", "cloud_connection"} & panel.keys()
+
+    def test_a_panel_that_publishes_none_of_it_gets_none_written(self) -> None:
+        panel = _panel_config(translate_scraped_panel(_make_scraped()))
+
+        assert (
+            not {
+                "wifi_link",
+                "ethernet_link",
+                "wifi_ssid",
+                "door_state",
+                "cloud_connection",
+                "model",
+            }
+            & panel.keys()
+        )
+
+
+class TestUnreadableNumbers:
+    """A non-finite number a panel publishes is read as unpublished, not as a value."""
+
+    @pytest.mark.parametrize("raw", ["inf", "-inf", "nan"])
+    def test_a_non_finite_pcs_priority_is_absent(self, raw: str) -> None:
+        devices = _base_devices()
+        devices["aaa111"].update_property("pcs", "priority", raw)
+
+        assert (
+            _circuits_by_id(translate_scraped_panel(_make_scraped(devices)))["circuit_1"][
+                "pcs_priority"
+            ]
+            is None
+        )
+
+    @pytest.mark.parametrize("raw", ["inf", "nan", "0", "-5"])
+    def test_an_unusable_battery_power_falls_back_to_the_scaled_one(self, raw: str) -> None:
+        devices = _base_devices()
+        devices["bess-0"].update_property("info", "nominal-power", raw)
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["max_charge_w"] == pytest.approx(13.5 * 5000.0 / 13.5)
+
+    def test_a_shed_policy_without_a_threshold_is_reported_and_skipped(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("shed", "policy", '{"algorithm": "soc-priority.v1"}')
+
+        with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
+            panel = _panel_config(translate_scraped_panel(_make_scraped(devices)))
+
+        assert "soc_shed_threshold" not in panel
+        assert "soc-threshold-shed" in caplog.text

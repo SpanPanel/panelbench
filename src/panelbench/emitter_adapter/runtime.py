@@ -1,31 +1,32 @@
 """Per-clone wiring between simulator engine and emitter wire layer.
 
-``start_clone`` builds the manifest from the engine's config, instantiates an
-``Emitter`` (with optional BESS + load-shedding native-device configs), opens the
-per-clone MQTT client, runs the cold-start lifecycle, and returns a ``CloneRuntime``
-the simulator's panel instance holds across ticks.
+``start_clone`` builds the panel's ``PanelDefinition`` from the engine's config
+(manifest, optional native BESS, load-shedding policy), instantiates an
+``Emitter`` from it, opens the per-clone MQTT client, runs the cold-start
+lifecycle, and returns a ``CloneRuntime`` the simulator's panel instance holds
+across ticks.
 
 ``publish_tick`` collects the engine's per-circuit signed power into a
 ``TickInputs`` and hands it to ``Emitter.publish_tick``. The emitter does the
 rest: BESS dispatch, load shedding, energy integration, panel meter aggregation,
 diff publication. /set commands are handled by the emitter's internal default
-handlers (no producer-side setter wiring needed)."""
+handlers (no producer-side setter wiring needed); the broker link routes each
+command to the handler the SDK subscribed with."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 import aiomqtt
 
 # Not re-exported from the package root, unlike every other name above.
 from ebus_panel_sim import (
+    BESSCommunication,
     BESSConfig,
-    ChargeMode,
     DeviceManifest,
     EbusPanelSnapshot,
     Emitter,
-    LoadSheddingConfig,
     MqttDeviceTransport,
     PanelEnvelopeTick,
     SetterRegistry,
@@ -33,12 +34,12 @@ from ebus_panel_sim import (
 )
 
 from panelbench.const import DEFAULT_WIFI_SSID
+from panelbench.emitter_adapter.broker_link import BrokerLink
+from panelbench.emitter_adapter.definition import bess_config, build_definition
 from panelbench.emitter_adapter.instance_ids import (
-    bess_device_id,
     evse_device_id,
     stable_circuit_uuid,
 )
-from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.transport import LoopBoundTransport
 
 if TYPE_CHECKING:
@@ -65,25 +66,6 @@ class BrokerConnection:
     ca_cert_path: str | None = None
 
 
-@runtime_checkable
-class MqttPublisher(Protocol):
-    """Structural subset of the MQTT client interface the emitter consumes.
-
-    Mirrors the emitter's internal ``_MqttClientLike`` protocol; we redeclare
-    it here rather than import an underscore-private symbol across packages."""
-
-    def is_connected(self) -> bool: ...
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        qos: int = 0,
-        retain: bool = False,
-    ) -> None: ...
-    async def subscribe(self, topic: str) -> None: ...
-    async def disconnect(self) -> None: ...
-
-
 @dataclass(slots=True)
 class CloneRuntime:
     engine: DynamicSimulationEngine
@@ -92,105 +74,17 @@ class CloneRuntime:
     transport: MqttDeviceTransport
     emitter: Emitter
     uuid_to_circuit_id: dict[str, str]
-    mqtt: MqttPublisher | None = None
-    """The async client, when this runtime opened one.
+    mqtt: BrokerLink | None = None
+    """The broker link, when this runtime opened one.
 
     ``None`` when a transport was injected: whoever supplied it owns its
     lifecycle, which is the same rule the SDK follows for an injected client."""
 
 
-class _AiomqttPublisher:
-    """Adapter wrapping ``aiomqtt.Client`` to satisfy the emitter's duck-typed
-    MQTT interface (``is_connected``, ``publish``, ``subscribe``)."""
-
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        client_id: str,
-        username: str | None = None,
-        password: str | None = None,
-        will: aiomqtt.Will | None = None,
-        ca_cert_path: str | None = None,
-    ) -> None:
-        self._host = host
-        self._port = port
-        self._client_id = client_id
-        self._username = username
-        self._password = password
-        self._will = will
-        self._ca_cert_path = ca_cert_path
-        self._client: aiomqtt.Client | None = None
-
-    async def connect(self) -> None:
-        tls_params = (
-            aiomqtt.TLSParameters(ca_certs=self._ca_cert_path) if self._ca_cert_path else None
-        )
-        self._client = aiomqtt.Client(
-            hostname=self._host,
-            port=self._port,
-            identifier=self._client_id,
-            username=self._username,
-            password=self._password,
-            will=self._will,
-            tls_params=tls_params,
-        )
-        await self._client.__aenter__()
-
-    async def disconnect(self) -> None:
-        if self._client is not None:
-            await self._client.__aexit__(None, None, None)
-            self._client = None
-
-    def is_connected(self) -> bool:
-        """Return True once :meth:`connect` has constructed the underlying client.
-
-        Note: this is a coarse "ready to attempt publishing" gate, not a live
-        link check — aiomqtt does not surface broker reachability synchronously.
-        A True return indicates the emitter may issue publishes; transport
-        failures will surface as exceptions from :meth:`publish` / :meth:`subscribe`."""
-        return self._client is not None
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        qos: int = 0,
-        retain: bool = False,
-    ) -> None:
-        assert self._client is not None
-        await self._client.publish(topic, payload=payload, qos=qos, retain=retain)
-
-    async def subscribe(self, topic: str) -> None:
-        assert self._client is not None
-        await self._client.subscribe(topic)
-
-
 def bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | None:
     """Build the emitter-side BESSConfig from the engine's loaded clone profile.
     Returns None when the profile has no BESS enabled."""
-    bess = engine.config.get("bess") or {}
-    return _build_bess_config(engine.serial_number, bess)
-
-
-def _build_bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig | None:
-    """Build a BESSConfig dataclass from a typed YAML section."""
-    if not bess.get("enabled"):
-        return None
-    raw_mode = bess.get("charge_mode", "self-consumption")
-    mode: ChargeMode = "backup-only" if raw_mode == "backup-only" else "self-consumption"
-    return BESSConfig(
-        instance_id=bess_device_id(serial_number, bess),
-        nameplate_capacity_kwh=float(bess.get("nameplate_capacity_kwh", 13.5)),
-        max_charge_w=float(bess.get("max_charge_w", 3500.0)),
-        max_discharge_w=float(bess.get("max_discharge_w", 3500.0)),
-        charge_efficiency=float(bess.get("charge_efficiency", 0.95)),
-        discharge_efficiency=float(bess.get("discharge_efficiency", 0.95)),
-        backup_reserve_pct=float(bess.get("backup_reserve_pct", 20.0)),
-        charge_mode=mode,
-        charge_hours=tuple(bess.get("charge_hours", [10, 11, 12, 13, 14, 15])),
-        discharge_hours=tuple(bess.get("discharge_hours", [17, 18, 19, 20, 21])),
-    )
+    return bess_config(engine.serial_number, engine.config.get("bess") or {})
 
 
 def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) -> None:
@@ -205,15 +99,6 @@ def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) ->
     if new_cfg is None:
         return
     runtime.emitter.update_bess_config(new_cfg)
-
-
-def _load_shedding_config_from_engine(
-    engine: DynamicSimulationEngine,
-) -> LoadSheddingConfig:
-    panel_cfg = engine.config["panel_config"]
-    return LoadSheddingConfig(
-        soc_threshold_pct=float(panel_cfg.get("soc_shed_threshold", 20.0)),
-    )
 
 
 def _resolve_broker(
@@ -253,8 +138,8 @@ async def start_clone(
     broker: BrokerConnection | None = None,
     transport: MqttDeviceTransport | None = None,
 ) -> CloneRuntime:
-    """Assemble the emitter for ``engine``: build manifest, open MQTT, run
-    lifecycle. Returns a runtime the panel holds across ticks.
+    """Assemble the emitter for ``engine``: build its definition, open MQTT,
+    run lifecycle. Returns a runtime the panel holds across ticks.
 
     Broker connection precedence (highest first):
         1. ``broker:`` section in the YAML config (config explicitness wins).
@@ -270,7 +155,8 @@ async def start_clone(
     does. Its lifecycle stays with whoever supplied it — the same rule the SDK
     applies to an injected client, and the reason ``MqttDeviceTransport`` has no
     ``start`` or ``stop``."""
-    manifest = build_manifest(engine.config)
+    definition = build_definition(engine.config)
+    manifest = definition.manifest
 
     panel_id = engine.config["panel_config"]["serial_number"]
     uuid_to_circuit_id = {
@@ -287,11 +173,11 @@ async def start_clone(
     # defaults match what the SDK's own client applies to the same descriptor.
     lwt = Emitter.lwt_settings(manifest)
 
-    mqtt: MqttPublisher | None = None
+    link: BrokerLink | None = None
     if transport is None:
         broker_cfg: BrokerConfigYAML = engine.config.get("broker") or {}
         resolved = _resolve_broker(broker_cfg, broker)
-        aiomqtt_publisher = _AiomqttPublisher(
+        link = BrokerLink(
             host=resolved.host,
             port=resolved.port,
             client_id=f"span-sim-{engine.serial_number}",
@@ -305,29 +191,38 @@ async def start_clone(
             ),
             ca_cert_path=resolved.ca_cert_path,
         )
-        await aiomqtt_publisher.connect()
-        mqtt = aiomqtt_publisher
+        await link.connect()
         loop_bound = LoopBoundTransport(
-            publish=aiomqtt_publisher.publish,
-            subscribe=aiomqtt_publisher.subscribe,
-            connected=aiomqtt_publisher.is_connected,
+            publish=link.publish,
+            subscribe=link.subscribe,
+            unsubscribe=link.unsubscribe,
+            connected=link.is_connected,
         )
         loop_bound.start()
         transport = loop_bound
 
-    # The emitter Phase 2 reshape pluralised the BESS-config parameter:
-    # ``bess_configs`` is a tuple keyed internally by ``instance_id``. The
-    # simulator models a single BESS per panel today, so we wrap the
-    # optional config in a one-element tuple (or empty tuple when absent).
-    bess_cfg = bess_config_from_engine(engine)
-    bess_configs: tuple[BESSConfig, ...] = (bess_cfg,) if bess_cfg is not None else ()
-    emitter = Emitter(
-        manifest,
-        setters,
-        mqttc=transport,
-        bess_configs=bess_configs,
-        load_shedding_config=_load_shedding_config_from_engine(engine),
-    )
+    try:
+        emitter = Emitter.from_definition(definition, setters, mqttc=transport)
+        # Synchronous, and returns immediately for an injected client rather than
+        # polling is_connected for the connect timeout: the SDK never starts a client
+        # it did not build, so nothing would change during the wait.
+        emitter.start()
+    except BaseException:
+        # The link supervises itself, so one left open here would keep reconnecting
+        # for a panel that never started. What construction had already queued is
+        # drained first, so a panel that fails here can leave part of its tree
+        # retained; the emitter has no ungraceful stop to withdraw it with.
+        if link is not None:
+            if isinstance(transport, LoopBoundTransport):
+                await transport.aclose()
+            await link.disconnect()
+        raise
+    if link is not None:
+        # Built after the link because constructing it publishes the tree. The SDK
+        # wires this itself only for a client it builds, and leaves it to whoever
+        # injects one (`Emitter.republish_tree`): without it, a broker that comes
+        # back empty gets a few topics a tick and never a `$description`.
+        link.on_reconnect(emitter.republish_tree)
 
     runtime = CloneRuntime(
         engine=engine,
@@ -336,13 +231,9 @@ async def start_clone(
         transport=transport,
         emitter=emitter,
         uuid_to_circuit_id=uuid_to_circuit_id,
-        mqtt=mqtt,
+        mqtt=link,
     )
 
-    # Synchronous, and returns immediately for an injected client rather than
-    # polling is_connected for the connect timeout: the SDK never starts a client
-    # it did not build, so nothing would change during the wait.
-    emitter.start()
     return runtime
 
 
@@ -351,13 +242,28 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
     and hand it to the emitter for publication."""
     raw = await runtime.engine.get_tick_inputs()
     tick = TickInputs(
-        current_time=raw["current_time"],
-        grid_online=raw["grid_online"],
-        circuits=raw["circuits"],
-        evse=_evse_tick_inputs(runtime.engine.config, raw["circuits"]),
+        current_time=raw.current_time,
+        grid_online=raw.grid_online,
+        circuits=raw.circuits,
+        evse=_evse_tick_inputs(runtime.engine.config, raw.circuits),
         envelope=_panel_envelope(runtime.engine.config),
+        bess_communication=_bess_communication(runtime.engine, raw.bess_link),
     )
     return runtime.emitter.publish_tick(tick)
+
+
+def _bess_communication(
+    engine: DynamicSimulationEngine, link: BESSCommunication
+) -> dict[str, BESSCommunication]:
+    """The link keyed by the battery the engine's config enables now.
+
+    Empty without one, because the emitter refuses a tick that names a battery it
+    was not configured with, and a battery left out of the tick reads as ``OK``.
+    Keyed from the live config rather than the emitter, so a battery disabled
+    mid-run stops receiving the link on the next tick.
+    """
+    battery = bess_config_from_engine(engine)
+    return {} if battery is None else {battery.instance_id: link}
 
 
 async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
@@ -381,19 +287,28 @@ async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
 def _panel_envelope(config: SimulationConfig) -> PanelEnvelopeTick:
     """Panel-envelope facts the emitter cannot derive from circuit physics.
 
-    Only the Wi-Fi SSID is overridden; the rest of ``PanelEnvelopeTick``'s
-    defaults (door closed, links up, cloud connected) already describe the panel
-    this simulator models.
+    The links come from the config, which a clone fills from its panel;
+    ``PanelEnvelopeTick``'s defaults (links up) stand for a config that names none.
+    The door and cloud state are always the envelope's own (door closed, cloud
+    connected): live state the emulator simulates, not configuration.
 
     The SSID is here rather than in the manifest because the emitter resolves
     ``status/wifi-ssid`` from ``snapshot.status.wifi_ssid``, which it fills from
     this envelope — ``status`` is per-tick state, not identity. It has to be
     supplied: the enclosure profile declares the property, ``status/wifi``
     reports the interface up, and the envelope's own default is ``None``, so
-    leaving it unset publishes a declaration a consumer waits on forever.
+    leaving it unset publishes a declaration a consumer waits on forever. Unless
+    Wi-Fi is down, or the config names no network, as a clone of a panel on
+    Ethernet does: then there is no SSID to publish, as on that panel.
     """
+    panel = config["panel_config"]
+    wifi = panel.get("wifi_link", True)
+    ssid = panel.get("wifi_ssid", DEFAULT_WIFI_SSID if wifi else None)
+    defaults = PanelEnvelopeTick()
     return PanelEnvelopeTick(
-        wifi_ssid=str(config["panel_config"].get("wifi_ssid", DEFAULT_WIFI_SSID)),
+        wlan_link=wifi,
+        eth0_link=panel.get("ethernet_link", defaults.eth0_link),
+        wifi_ssid=None if ssid is None else str(ssid),
     )
 
 

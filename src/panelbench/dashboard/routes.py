@@ -13,20 +13,27 @@ import aiohttp
 import aiohttp_jinja2
 import yaml
 from aiohttp import web
+from ebus_panel_sim import EmitterError
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable, Mapping
     from pathlib import Path
 
     import multidict
 
     from panelbench.dashboard.context import DashboardContext
+    from panelbench.panel_secrets import PanelSecretsStore
+    from panelbench.scraper import SuppliedBroker
 
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.const import https_port_for
+from panelbench.dashboard.config_store import ConfigStore, EditRefused
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
+    APP_KEY_PANEL_SECRETS,
     APP_KEY_PENDING_CLONES,
     APP_KEY_PRESET_REGISTRY,
     APP_KEY_RATE_CACHE,
@@ -38,6 +45,9 @@ from panelbench.dashboard.presets import (
     is_random_days_preset,
     match_battery_preset,
 )
+from panelbench.definition_export import definition_for_config_file, definition_text
+from panelbench.definition_import import config_from_definition_text, is_definition_text
+from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior
 from panelbench.ha_api.opower import (
     async_discover_opower,
     async_get_opower_cost,
@@ -53,7 +63,7 @@ from panelbench.solar import compute_solar_curve
 from panelbench.weather import fetch_historical_weather, get_cached_weather
 
 if TYPE_CHECKING:
-    from panelbench.dashboard.config_store import ConfigStore
+    from panelbench.dashboard.config_store import EntityView
     from panelbench.rates.cache import RateCache
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,7 +85,7 @@ PRIORITIES = [
     "SOC_THRESHOLD",
     "OFF_GRID",
 ]
-RELAY_BEHAVIORS = ["controllable", "non_controllable"]
+RELAY_BEHAVIORS = ["controllable", "non-controllable"]
 ENTITY_TYPES = ["circuit", "pv", "evse"]
 # Infrastructure types that should only appear once in a panel config.
 _SINGLETON_TYPES = {"pv"}
@@ -94,6 +104,10 @@ def _store(request: web.Request) -> ConfigStore:
     return request.app[APP_KEY_STORE]
 
 
+def _panel_secrets(request: web.Request) -> PanelSecretsStore:
+    return request.app[APP_KEY_PANEL_SECRETS]
+
+
 def _rate_cache(request: web.Request) -> RateCache:
     return request.app[APP_KEY_RATE_CACHE]
 
@@ -104,6 +118,20 @@ def _ctx(request: web.Request) -> DashboardContext:
 
 def _presets(request: web.Request) -> PresetRegistry:
     return request.app[APP_KEY_PRESET_REGISTRY]
+
+
+async def _json_object(request: web.Request) -> dict[str, object]:
+    """The request body as a JSON object, or a 400 when it is not one.
+
+    A malformed body is the caller's error, so it must not surface as a 500.
+    """
+    try:
+        data = await request.json()
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="Request body must be JSON") from exc
+    if not isinstance(data, dict):
+        raise web.HTTPBadRequest(text="Request body must be a JSON object")
+    return data
 
 
 def _render(template: str, request: web.Request, context: dict[str, Any]) -> web.Response:
@@ -119,6 +147,48 @@ def _available_configs(request: web.Request) -> list[str]:
     for pattern in ("*.yaml", "*.yml"):
         files.extend(p.name for p in ctx.config_dir.glob(pattern))
     return sorted(set(files))
+
+
+@web.middleware
+async def refuse_unloadable_edits(
+    request: web.Request, handler: Callable[[web.Request], Awaitable[web.StreamResponse]]
+) -> web.StreamResponse:
+    """Answer an edit the panel would not load, from any handler, in one way.
+
+    The store has already refused it and is as it was, so the answer is 422 with the
+    reason. An htmx request also reloads the page, which then shows what the store
+    holds and the reason, rather than an edit the store does not. A script's request
+    gets the reason in the response, for it to show where it asked.
+    """
+    try:
+        return await handler(request)
+    except EditRefused as exc:
+        reason = f"Not changed: {exc}"
+        if request.headers.get("HX-Request") != "true":
+            return web.Response(status=422, text=reason)
+        _ctx(request).notice = reason
+        return web.Response(status=422, text=reason, headers={"HX-Refresh": "true"})
+
+
+def _open_in_editor(request: web.Request, filename: str) -> None:
+    """Load *filename* into the editor and make it the file being edited.
+
+    Answers 400 with the panel's reason when it would refuse the file, and the editor
+    keeps what it had.
+    """
+    reason = _try_open_in_editor(request, filename)
+    if reason is not None:
+        raise web.HTTPBadRequest(text=f"{filename} was not opened: {reason}")
+
+
+def _try_open_in_editor(request: web.Request, filename: str) -> str | None:
+    """``_open_in_editor``, answering why the panel would refuse the file instead."""
+    try:
+        _store(request).load_from_file(_ctx(request).config_dir / filename)
+    except (ValueError, TypeError, yaml.YAMLError) as exc:
+        return str(exc)
+    _ctx(request).edit(filename)
+    return None
 
 
 def _first_default_config(config_dir: Path) -> str | None:
@@ -193,6 +263,8 @@ def _dashboard_context(request: web.Request) -> dict[str, Any]:
         "panels": _all_panels(request),
         "readonly": _is_readonly(ctx),
         "bess_config": store.get_bess_config(),
+        "load_error": ctx.load_error,
+        "notice": ctx.take_notice(),
     }
 
 
@@ -201,11 +273,17 @@ def _presets_for_type(request: web.Request, entity_type: str) -> dict[str, str]:
     return _presets(request).presets_for_type(entity_type)
 
 
-def _entity_list_context(request: web.Request, editing_id: str | None = None) -> dict[str, Any]:
+def _entity_list_context(
+    request: web.Request,
+    editing_id: str | None = None,
+    *,
+    restore_error: str | None = None,
+) -> dict[str, Any]:
     """Build the entity-list template context.
 
     When *editing_id* is set, the template renders that entity in edit
-    mode and all others as collapsed rows.
+    mode and all others as collapsed rows. *restore_error* says why a restore
+    from the source panel failed.
     """
     store = _store(request)
     dash_ctx = _ctx(request)
@@ -217,6 +295,7 @@ def _entity_list_context(request: web.Request, editing_id: str | None = None) ->
         "unmapped_tabs": store.get_unmapped_tabs(),
         "readonly": _is_readonly(dash_ctx),
         "restorable_templates": set(recorder_map.keys()),
+        "restore_error": restore_error,
     }
     if editing_id is not None:
         entity = store.get_entity(editing_id)
@@ -487,12 +566,14 @@ async def handle_put_current_rate(request: web.Request) -> web.Response:
     label = body.get("label", "").strip()
     if not label:
         return web.json_response({"error": "label is required"}, status=400)
-    _rate_cache(request).set_current_rate_label(label)
 
+    # The battery's edit first: if the panel would refuse it, the current rate stays
+    # as it was too.
     store = _store(request)
     if store.get_battery_charge_mode() == "custom":
         store.update_battery_charge_mode("custom", rate_label=label)
         _persist_config(request)
+    _rate_cache(request).set_current_rate_label(label)
 
     return web.json_response({"ok": True})
 
@@ -627,6 +708,7 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_post("/set-acceleration", handle_set_acceleration)
     app.router.add_post("/set-grid-state", handle_set_grid_state)
     app.router.add_post("/set-grid-islandable", handle_set_grid_islandable)
+    app.router.add_post("/set-bess-link", handle_set_bess_link)
     app.router.add_post("/entities/{id}/relay", handle_set_relay)
     app.router.add_post("/entities/{id}/toggle-replay", handle_toggle_replay)
     app.router.add_post("/entities/{id}/restore-recorder", handle_restore_recorder)
@@ -639,6 +721,7 @@ def setup_routes(app: web.Application) -> None:
 
     # File operations
     app.router.add_get("/export", handle_export)
+    app.router.add_get("/export-definition", handle_export_definition)
     app.router.add_post("/import", handle_import)
     app.router.add_post("/load-config", handle_load_config)
     app.router.add_post("/clone", handle_clone)
@@ -787,9 +870,21 @@ def _persist_config(request: web.Request) -> None:
     if not filename or filename.startswith("default_"):
         return
     output_path = ctx.config_dir / filename
-    _store(request).save_to_file(output_path)
+    _save_or_refuse(_store(request), output_path)
     _LOGGER.info("Config saved to %s", output_path)
     ctx.start_panel(filename)
+
+
+def _save_or_refuse(store: ConfigStore, output_path: Path) -> None:
+    """Save *store* to *output_path*, or answer 422 with why the panel would refuse it.
+
+    Every edit is validated as it is made, so this answers only for a store changed
+    some other way; nothing is written then.
+    """
+    try:
+        store.save_to_file(output_path)
+    except ValueError as exc:
+        raise web.HTTPUnprocessableEntity(text=f"Not saved: {exc}") from exc
 
 
 def _persist_config_live_bess(request: web.Request) -> None:
@@ -803,7 +898,7 @@ def _persist_config_live_bess(request: web.Request) -> None:
         return
     output_path = ctx.config_dir / filename
     store = _store(request)
-    store.save_to_file(output_path)
+    _save_or_refuse(store, output_path)
     _LOGGER.info("Config saved to %s (live BESS apply)", output_path)
     bess_yaml = store.get_bess_config()
     if not ctx.apply_bess_config_live(filename, bess_yaml):
@@ -812,33 +907,71 @@ def _persist_config_live_bess(request: web.Request) -> None:
         ctx.start_panel(filename)
 
 
+def _refuse_locked_priority_change(entity: EntityView, priority: str) -> None:
+    """Raise 409 when *priority* would change a priority-locked circuit's priority."""
+    if not entity.priority_locked or priority == entity.priority:
+        return
+    if entity.commissioned_system is not None:
+        reason = (
+            f"{entity.name} is the commissioned {entity.commissioned_system} system's "
+            f"circuit, so it is permanently {entity.priority} and publishes "
+            "load-shed/priority without $settable."
+        )
+    else:
+        reason = (
+            f"{entity.name} is commissioned never-backup, so it is permanently "
+            f"{entity.priority} and publishes load-shed/priority without "
+            "$settable. Clear never_backup to re-prioritise it."
+        )
+    raise web.HTTPConflict(text=reason)
+
+
+def _commissioned_relay_reason(entity: EntityView, system: str) -> str:
+    """Why a commissioned *system*'s circuit refuses any change to its relay."""
+    return (
+        f"{entity.name} is the commissioned {system} system's circuit, so its relay is "
+        "locked and publishes switch/relay without $settable and relay-controllable=false."
+    )
+
+
+def _refuse_commissioned_relay_change(entity: EntityView, relay_behavior: str) -> None:
+    """Raise 409 when *relay_behavior* would change a commissioned-system circuit's."""
+    if entity.commissioned_system is None or (
+        normalise_relay_behavior(relay_behavior) == entity.relay_behavior_option
+    ):
+        return
+    raise web.HTTPConflict(text=_commissioned_relay_reason(entity, entity.commissioned_system))
+
+
 async def handle_put_entity(request: web.Request) -> web.Response:
     """Save a circuit's edited fields.
 
-    A priority change is refused on a never-backup circuit, for the same reason
-    `handle_set_relay` refuses a locked relay: this panel publishes
-    `load-shed/priority` without `$settable` there, so no consumer is offered the
-    write and the dashboard must not offer it either. The commissioning lock also
-    *is* permanently `OFF_GRID` — the emitter rejects a manifest that says
-    otherwise at construction — so accepting the edit would produce a config that
-    cannot start the panel.
+    A priority change is refused on a priority-locked circuit (never-backup, or a
+    commissioned PV or battery system's), for the same reason `handle_set_relay`
+    refuses a locked relay: this panel publishes `load-shed/priority` without
+    `$settable` there, so no consumer is offered the write and the dashboard must
+    not offer it either. Each lock also fixes the priority — permanently `OFF_GRID`
+    for never-backup, `NEVER` for a commissioned system — and the emitter rejects a
+    manifest that says otherwise at construction, so accepting the edit would
+    produce a config that cannot start the panel.
+
+    A `relay_behavior` change is refused on a commissioned-system circuit for the
+    second half of that reason: its relay is locked too, and validation refuses a
+    commissioned template whose relay is controllable, so the saved config would
+    not start the panel either.
     """
     entity_id = request.match_info["id"]
     data = await request.post()
     store = _store(request)
-    if "priority" in data:
+    if "priority" in data or "relay_behavior" in data:
         try:
             entity = store.get_entity(entity_id)
         except KeyError:
             raise web.HTTPNotFound(text=f"Entity not found: {entity_id}") from None
-        if entity.never_backup and str(data["priority"]) != entity.priority:
-            raise web.HTTPConflict(
-                text=(
-                    f"{entity.name} is commissioned never-backup, so it is permanently "
-                    f"{entity.priority} and publishes load-shed/priority without "
-                    "$settable. Clear never_backup to re-prioritise it."
-                )
-            )
+        if "priority" in data:
+            _refuse_locked_priority_change(entity, str(data["priority"]))
+        if "relay_behavior" in data:
+            _refuse_commissioned_relay_change(entity, str(data["relay_behavior"]))
     store.update_entity(entity_id, dict(data))
     # Push priority change to the running engine immediately
     if "priority" in data:
@@ -896,10 +1029,11 @@ async def handle_put_profile(request: web.Request) -> web.Response:
         if key in data:
             multipliers[h] = float(str(data[key]))
     store = _store(request)
-    store.update_entity_profile(entity_id, multipliers)
-    active = _parse_active_days(data)
-    if active is not None:
-        store.update_active_days(entity_id, active)
+    with store.edit():
+        store.update_entity_profile(entity_id, multipliers)
+        active = _parse_active_days(data)
+        if active is not None:
+            store.update_active_days(entity_id, active)
     return _render("partials/profile_editor.html", request, _profile_context(request, entity_id))
 
 
@@ -972,10 +1106,11 @@ async def handle_put_bess_schedule(request: web.Request) -> web.Response:
         mode = str(data.get(key, "idle"))
         hour_modes[h] = mode if mode in ("charge", "discharge", "idle") else "idle"
     store = _store(request)
-    store.update_battery_profile(hour_modes)
-    active = _parse_active_days(data)
-    if active is not None:
-        store.update_bess_active_days(active)
+    with store.edit():
+        store.update_battery_profile(hour_modes)
+        active = _parse_active_days(data)
+        if active is not None:
+            store.update_bess_active_days(active)
     _persist_config(request)
     return _render("partials/bess_card.html", request, _bess_card_context(request, editing=True))
 
@@ -1054,10 +1189,11 @@ async def handle_put_evse_schedule(request: web.Request) -> web.Response:
     start = int(str(data.get("charge_start", "0")))
     duration = int(str(data.get("charge_duration", "6")))
     store = _store(request)
-    store.update_evse_schedule(entity_id, start, duration)
-    active = _parse_active_days(data)
-    if active is not None:
-        store.update_active_days(entity_id, active)
+    with store.edit():
+        store.update_evse_schedule(entity_id, start, duration)
+        active = _parse_active_days(data)
+        if active is not None:
+            store.update_active_days(entity_id, active)
     return _render(
         "partials/evse_schedule.html",
         request,
@@ -1279,6 +1415,16 @@ async def handle_set_grid_islandable(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "islandable": islandable})
 
 
+async def handle_set_bess_link(request: web.Request) -> web.Response:
+    """Set the health of the panel's link to its battery."""
+    data = await _json_object(request)
+    link = str(data.get("link", "OK")).upper()
+    if not is_bess_link(link):
+        raise web.HTTPBadRequest(text=f"link must be one of {sorted(BESS_LINKS)}, got {link!r}")
+    _ctx(request).set_bess_link(link)
+    return web.json_response({"ok": True, "link": link})
+
+
 async def handle_set_relay(request: web.Request) -> web.Response:
     """Toggle a circuit relay (OPEN/CLOSED).
 
@@ -1309,11 +1455,13 @@ async def handle_set_relay(request: web.Request) -> web.Response:
         entity = _store(request).get_entity(entity_id)
     except KeyError:
         raise web.HTTPNotFound(text=f"Entity not found: {entity_id}") from None
+    if entity.commissioned_system is not None:
+        raise web.HTTPConflict(text=_commissioned_relay_reason(entity, entity.commissioned_system))
     if entity.relay_locked:
         raise web.HTTPConflict(
             text=(
                 f"{entity.name} has a locked relay (relay_behavior="
-                f"{entity.relay_behavior!r}), so it publishes switch/relay without "
+                f"{entity.relay_behavior_option!r}), so it publishes switch/relay without "
                 "$settable and relay-controllable=false. Set relay_behavior to "
                 "'controllable' to command it."
             )
@@ -1338,9 +1486,13 @@ async def handle_toggle_replay(request: web.Request) -> web.Response:
 
     if entity.user_modified:
         # SYN → REC: full restore
-        if not store.restore_recorder(entity_id):
-            await _rescrape_snapshots(request)
-            store.restore_recorder(entity_id)
+        failure = await _restore_recorder(request, entity_id)
+        if failure is not None:
+            return _render(
+                "partials/entity_list.html",
+                request,
+                _entity_list_context(request, restore_error=failure),
+            )
         _persist_config(request)
     else:
         # REC → SYN: flip the flag and persist so the engine matches the UI
@@ -1357,40 +1509,59 @@ async def handle_restore_recorder(request: web.Request) -> web.Response:
     needed — no other templates are touched.
     """
     entity_id = request.match_info["id"]
-    store = _store(request)
 
-    if not store.restore_recorder(entity_id):
-        # No snapshot — try a targeted re-scrape
-        await _rescrape_snapshots(request)
-        store.restore_recorder(entity_id)
+    failure = await _restore_recorder(request, entity_id)
+    if failure is not None:
+        return _render(
+            "partials/entity_list.html",
+            request,
+            _entity_list_context(request, restore_error=failure),
+        )
 
     _persist_config(request)
     return _render("partials/entity_list.html", request, _entity_list_context(request))
 
 
+async def _restore_recorder(request: web.Request, entity_id: str) -> str | None:
+    """Restore *entity_id* from its snapshot, re-scraping the source panel for one.
+
+    Answers why the restore failed, or None. A re-scrape that fails is reported, as
+    a sync's is, rather than leaving the circuit as it was without a word.
+    """
+    from panelbench.scraper import ScrapeError
+
+    store = _store(request)
+    if store.restore_recorder(entity_id):
+        return None
+    try:
+        await _rescrape_snapshots(request)
+    except ScrapeError as exc:
+        return f"Restore failed: [{exc.phase}] {exc}"
+    store.restore_recorder(entity_id)
+    return None
+
+
 async def _rescrape_snapshots(request: web.Request) -> None:
-    """Re-scrape source panel and store snapshots without modifying templates."""
+    """Re-scrape source panel and store snapshots without modifying templates.
+
+    Raises:
+        ScrapeError: The config has no source panel, or it could not be scraped.
+    """
     import copy
 
     from panelbench.clone import translate_scraped_panel
-    from panelbench.scraper import register_with_panel, scrape_ebus
+    from panelbench.scraper import ScrapeError, scrape_panel
 
     store = _store(request)
     panel_source = store.get_panel_source()
     if not panel_source:
-        return
+        raise ScrapeError("source", "This config was not cloned from a panel")
 
     host = panel_source.get("host", "")
-    passphrase = panel_source.get("passphrase")
-
-    try:
-        creds, ca_pem = await register_with_panel(host, passphrase)
-        scraped = await scrape_ebus(creds, ca_pem)
-    except Exception:
-        return
+    scraped = await scrape_panel(host, _panel_secrets(request))
 
     # Build a fresh config to get original template values
-    fresh = translate_scraped_panel(scraped, host=host, passphrase=passphrase)
+    fresh = translate_scraped_panel(scraped, host=host)
     fresh_templates = fresh.get("circuit_templates")
     if not isinstance(fresh_templates, dict):
         return
@@ -1421,12 +1592,7 @@ async def _rescrape_snapshots(request: web.Request) -> None:
             snapshots[tpl_name] = copy.deepcopy(tpl)
 
     # Persist map and snapshots without touching current templates
-    ps = store._state.setdefault("panel_source", {})
-    if isinstance(ps, dict):
-        if recorder_map:
-            ps["recorder_map"] = recorder_map
-        ps["recorder_snapshots"] = snapshots
-    store._dirty = True
+    store.record_recorder_snapshots(recorder_map, snapshots)
 
 
 # -- Energy projection --
@@ -1576,6 +1742,27 @@ async def handle_export(request: web.Request) -> web.Response:
     )
 
 
+async def handle_export_definition(request: web.Request) -> web.Response:
+    """The loaded config's makeup as a panel definition, without its behaviour."""
+    ctx = _ctx(request)
+    if not ctx.config_filter:
+        raise web.HTTPBadRequest(text="No config file is loaded")
+    if _store(request).dirty:
+        raise web.HTTPConflict(text="Save the config before exporting its definition")
+    path = ctx.config_dir / ctx.config_filter
+    if path.resolve().parent != ctx.config_dir.resolve() or not path.is_file():
+        raise web.HTTPBadRequest(text=f"Config file not found: {ctx.config_filter}")
+    try:
+        definition = await definition_for_config_file(path)
+    except (ValueError, TypeError, yaml.YAMLError, EmitterError) as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+    return web.Response(
+        text=definition_text(definition),
+        content_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{path.stem}.definition.yaml"'},
+    )
+
+
 async def handle_import(request: web.Request) -> web.Response:
     data = await request.post()
     upload = data.get("file")
@@ -1584,8 +1771,11 @@ async def handle_import(request: web.Request) -> web.Response:
     raw = upload.file.read()
     try:
         text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-        _store(request).load_from_yaml(text)
-    except (ValueError, TypeError) as exc:
+        if is_definition_text(text):
+            _store(request).load_from_mapping(config_from_definition_text(text), saved=False)
+        else:
+            _store(request).load_from_yaml(text, saved=False)
+    except (ValueError, TypeError, yaml.YAMLError, EmitterError) as exc:
         raise web.HTTPBadRequest(text=str(exc)) from exc
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
@@ -1603,14 +1793,9 @@ async def handle_load_config(request: web.Request) -> web.Response:
     # Prevent path traversal
     if config_path.resolve().parent != ctx.config_dir.resolve():
         raise web.HTTPBadRequest(text="Invalid config file path")
-    try:
-        _store(request).load_from_file(config_path)
-    except (ValueError, TypeError) as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
-
     # Track which file the editor is working on.  Does NOT affect
     # running engines — use Start/Stop/Restart in the panels list.
-    ctx.config_filter = filename
+    _open_in_editor(request, filename)
 
     # Full page redirect so HTMX replaces the entire document
     return web.Response(status=200, headers={"HX-Redirect": "./"})
@@ -1678,6 +1863,18 @@ async def handle_clone(request: web.Request) -> web.Response:
     else:
         yaml_content = _store(request).export_yaml()
 
+    # Refused before anything is written: a copy of a config the panel would not
+    # load is not a clone of anything. A clone is a write the user asked for, so it
+    # is written as the loader reads it, a stale rating copy already gone, rather
+    # than warning every reader after; content the loader changes nothing in keeps
+    # its text, comments and all.
+    clone = ConfigStore(secrets=_panel_secrets(request))
+    try:
+        clone.load_from_yaml(yaml_content, source=str(output_path))
+    except (ValueError, TypeError, yaml.YAMLError) as exc:
+        raise web.HTTPBadRequest(text=f"Not cloned: {exc}") from exc
+    if yaml.safe_load(clone.export_yaml()) != yaml.safe_load(yaml_content):
+        yaml_content = clone.export_yaml()
     output_path.write_text(yaml_content, encoding="utf-8")
     _LOGGER.info("Config cloned to %s", output_path)
 
@@ -1697,8 +1894,7 @@ async def handle_clone(request: web.Request) -> web.Response:
 
     # Auto-switch the editor to the newly cloned config so the entity
     # list, runtime controls, and modeling view all reflect the clone.
-    _store(request).load_from_file(output_path)
-    ctx.config_filter = filename
+    _open_in_editor(request, filename)
 
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
@@ -1745,8 +1941,7 @@ async def handle_get_panel_source(request: web.Request) -> web.Response:
 
 async def handle_sync_panel_source(request: web.Request) -> web.Response:
     """Re-scrape the source panel and overwrite typical_power + energy seeds."""
-    from panelbench.clone import update_config_from_scrape
-    from panelbench.scraper import ScrapeError, register_with_panel, scrape_ebus
+    from panelbench.scraper import ScrapeError, scrape_panel
 
     store = _store(request)
     panel_source = store.get_panel_source()
@@ -1757,21 +1952,23 @@ async def handle_sync_panel_source(request: web.Request) -> web.Response:
         )
 
     host = panel_source.get("host", "")
-    passphrase = panel_source.get("passphrase")
 
     try:
-        creds, ca_pem = await register_with_panel(host, passphrase)
-        scraped = await scrape_ebus(creds, ca_pem)
+        scraped = await scrape_panel(host, _panel_secrets(request))
     except ScrapeError as exc:
         return web.Response(
             text=f'<div class="flash error">Sync failed: [{exc.phase}] {exc}</div>',
             content_type="text/html",
         )
 
-    update_config_from_scrape(store._state, scraped)
+    changed = store.update_from_scrape(scraped)
 
     ctx = _panel_source_context(request)
-    ctx["sync_message"] = "Updated energy seeds from source panel."
+    ctx["sync_message"] = (
+        "Updated energy seeds from source panel. Save to keep it."
+        if changed
+        else "The energy seeds already match the source panel."
+    )
     return _render("partials/panel_source.html", request, ctx)
 
 
@@ -1830,10 +2027,10 @@ async def handle_start_panel(request: web.Request) -> web.Response:
     if err is not None:
         return err
     ctx = _ctx(request)
+    # Opened first: the engine refuses what the editor refuses, and a requested start
+    # also becomes the config the next boot tries.
+    _open_in_editor(request, filename)
     ctx.start_panel(filename)
-    # Auto-switch the editor to this panel so entity list stays in sync.
-    _store(request).load_from_file(ctx.config_dir / filename)
-    ctx.config_filter = filename
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -1843,9 +2040,12 @@ async def handle_stop_panel(request: web.Request) -> web.Response:
     if err is not None:
         return err
     ctx = _ctx(request)
+    # Stopping does not need the file, so a panel whose file has gone bad still stops,
+    # and the page says the editor did not open it.
     ctx.stop_panel(filename)
-    _store(request).load_from_file(ctx.config_dir / filename)
-    ctx.config_filter = filename
+    reason = _try_open_in_editor(request, filename)
+    if reason is not None:
+        ctx.load_error = f"Stopped {filename}; it was not opened in the editor: {reason}"
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -1855,9 +2055,9 @@ async def handle_restart_panel(request: web.Request) -> web.Response:
     if err is not None:
         return err
     ctx = _ctx(request)
+    # Opened first: a running panel is not taken down for a start the engine refuses.
+    _open_in_editor(request, filename)
     ctx.restart_panel(filename)
-    _store(request).load_from_file(ctx.config_dir / filename)
-    ctx.config_filter = filename
     return web.Response(status=200, headers={"HX-Redirect": "./"})
 
 
@@ -2000,9 +2200,10 @@ async def handle_delete_config(request: web.Request) -> web.Response:
     # the first default template (read-only).
     if filename == ctx.config_filter:
         first_default = _first_default_config(ctx.config_dir)
-        ctx.config_filter = first_default
         if first_default:
-            _store(request).load_from_file(ctx.config_dir / first_default)
+            _open_in_editor(request, first_default)
+        else:
+            ctx.edit(None)
         return web.Response(
             status=200,
             headers={"HX-Redirect": "./"},
@@ -2012,6 +2213,47 @@ async def handle_delete_config(request: web.Request) -> web.Response:
         text=f'<div class="flash success">Deleted {filename}</div>',
         content_type="text/html",
         headers={"HX-Trigger": "refreshPanels"},
+    )
+
+
+_SPAN_MQTTS_PORT = 8883
+
+
+def _supplied_broker(form: Mapping[str, object]) -> SuppliedBroker | None:
+    """Broker credentials the clone form was given in place of registering, if any.
+
+    All of serial, username and password, or none of them; the port defaults to
+    the one SPAN's broker listens on, and a blank CA is fetched from the panel.
+
+    Raises:
+        ValueError: Some of the three were given, but not all.
+    """
+    from panelbench.scraper import SuppliedBroker
+
+    fields = {
+        key: str(form.get(key, "")).strip()
+        for key in ("broker_serial", "broker_username", "broker_password")
+    }
+    if not any(fields.values()):
+        return None
+    missing = [key.removeprefix("broker_") for key, value in fields.items() if not value]
+    if missing:
+        raise ValueError(
+            "Existing broker credentials need the panel's serial, a username and a "
+            f"password; missing: {', '.join(missing)}."
+        )
+    port_text = str(form.get("broker_port", "")).strip()
+    try:
+        port = int(port_text) if port_text else _SPAN_MQTTS_PORT
+    except ValueError:
+        raise ValueError(f"The broker port must be a number, not {port_text!r}.") from None
+    ca_pem = str(form.get("broker_ca", "")).strip()
+    return SuppliedBroker(
+        serial=fields["broker_serial"],
+        username=fields["broker_username"],
+        password=fields["broker_password"],
+        port=port,
+        ca_pem=f"{ca_pem}\n" if ca_pem else None,
     )
 
 
@@ -2111,9 +2353,7 @@ async def _finalize_clone(
     clone_path = write_clone_config(config, ctx.config_dir, origin_serial, filename=filename)
 
     # Load the clone config into the dashboard editor
-    store = _store(request)
-    store.load_from_file(clone_path)
-    ctx.config_filter = clone_path.name
+    _open_in_editor(request, clone_path.name)
 
     _LOGGER.info("Panel cloned from %s -> %s", host, clone_path.name)
 
@@ -2172,7 +2412,7 @@ async def _finalize_clone(
 
     if profiles_imported:
         # Re-read config after profile application
-        store.load_from_file(clone_path)
+        _open_in_editor(request, clone_path.name)
 
     # Redirect to refresh the full dashboard with the new config
     return web.Response(status=200, headers={"HX-Redirect": "./"})
@@ -2222,7 +2462,7 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
         clone_config_path,
         translate_scraped_panel,
     )
-    from panelbench.scraper import ScrapeError, register_with_panel, scrape_ebus
+    from panelbench.scraper import ScrapeError, scrape_panel
 
     data = await request.post()
     host = str(data.get("host", "")).strip()
@@ -2235,20 +2475,19 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
             _clone_panel_context(request, clone_error="Panel IP or hostname is required."),
         )
 
-    if not passphrase:
+    try:
+        supplied = _supplied_broker(data)
+    except ValueError as exc:
         return _render(
             "partials/clone_panel.html",
             request,
-            _clone_panel_context(
-                request,
-                clone_error="Passphrase is required.",
-                clone_host=host,
-            ),
+            _clone_panel_context(request, clone_error=str(exc), clone_host=host),
         )
 
     try:
-        creds, ca_pem = await register_with_panel(host, passphrase)
-        scraped = await scrape_ebus(creds, ca_pem)
+        scraped = await scrape_panel(
+            host, _panel_secrets(request), passphrase=passphrase, supplied=supplied
+        )
     except ScrapeError as exc:
         return _render(
             "partials/clone_panel.html",
@@ -2260,7 +2499,7 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
             ),
         )
 
-    config = translate_scraped_panel(scraped, host=host, passphrase=passphrase)
+    config = translate_scraped_panel(scraped, host=host)
 
     ctx = _ctx(request)
 
@@ -2276,13 +2515,20 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
                     panel_cfg["longitude"] = lon
 
                     # Derive IANA timezone from coordinates so profile
-                    # builder can bucket hour_factors in local time.
-                    from timezonefinder import TimezoneFinder
+                    # builder can bucket hour_factors in local time, unless the
+                    # panel published its own, which the clone already holds.
+                    if "time_zone" not in panel_cfg:
+                        from timezonefinder import TimezoneFinder
 
-                    tz_result = TimezoneFinder().timezone_at(lat=lat, lng=lon)
-                    tz_name = str(tz_result) if tz_result else "America/Los_Angeles"
-                    panel_cfg["time_zone"] = tz_name
-                    _LOGGER.info("Applied HA home location: %.4f, %.4f → %s", lat, lon, tz_name)
+                        tz_result = TimezoneFinder().timezone_at(lat=lat, lng=lon)
+                        tz_name = str(tz_result) if tz_result else "America/Los_Angeles"
+                        panel_cfg["time_zone"] = tz_name
+                    _LOGGER.info(
+                        "Applied HA home location: %.4f, %.4f → %s",
+                        lat,
+                        lon,
+                        panel_cfg["time_zone"],
+                    )
         except Exception:
             _LOGGER.debug("Could not fetch HA location", exc_info=True)
 

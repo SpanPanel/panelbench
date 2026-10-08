@@ -3,8 +3,15 @@ from pathlib import Path
 import pytest
 import yaml
 
+from panelbench.config_types import (
+    BESSConfigYAML,
+    CircuitDefinitionExtended,
+    CircuitTemplateExtended,
+    SimulationConfig,
+)
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.spec_generator import build_manifest
+from tests._helpers import default_config
 
 _SERIAL = "sim-40t-001"
 """The serial `default_MAIN_40.yaml` declares.
@@ -220,3 +227,125 @@ def test_circuit_relay_behavior_translates_underscore_to_hyphen() -> None:
     c = build_manifest(profile).of_class("circuit")[0]
     assert c.metadata["relay-behavior"] == "always-on"
     assert c.metadata["always-on"] == "true"
+
+
+def _template() -> CircuitTemplateExtended:
+    return {
+        "energy_profile": {
+            "mode": "consumer",
+            "power_range": [0.0, 100.0],
+            "typical_power": 10.0,
+            "power_variation": 0.1,
+        },
+        "relay_behavior": "controllable",
+        "priority": "NEVER",
+    }
+
+
+def _circuit() -> CircuitDefinitionExtended:
+    return {"id": "c", "name": "C", "template": "t", "tabs": [1]}
+
+
+def _one_circuit_profile(
+    template: CircuitTemplateExtended | None = None,
+    circuit: CircuitDefinitionExtended | None = None,
+) -> SimulationConfig:
+    """The shipped MAIN 40, reduced to one circuit and no battery, to change in place."""
+    config = default_config()
+    config["panel_config"]["serial_number"] = "abc-123"
+    config["circuit_templates"] = {"t": template or _template()}
+    config["circuits"] = [circuit or _circuit()]
+    config["bess"] = None
+    config["pv"] = None
+    config["evse"] = None
+    return config
+
+
+def _battery_profile(bess: BESSConfigYAML) -> SimulationConfig:
+    """The reduced panel with *bess*, a commissioned battery, so grid-forming with a MID."""
+    config = _one_circuit_profile()
+    config["bess"] = {"enabled": True, "nameplate_capacity_kwh": 13.5, **bess}
+    return config
+
+
+def test_a_rating_recorded_as_absent_reaches_the_emitter_as_the_placeholder() -> None:
+    """The emitter requires a rating, so a clone's absent one is given its documented
+    placeholder rather than refused; the fidelity test pins what that publishes."""
+    template = _template()
+    template["breaker_rating"] = None
+
+    [circuit] = build_manifest(_one_circuit_profile(template)).of_class("circuit")
+
+    assert circuit.metadata["breaker-rating-a"] == "20.0"
+
+
+def test_a_pcs_priority_recorded_as_absent_gives_the_emitter_none() -> None:
+    unpublished, named = _circuit(), _circuit()
+    unpublished["pcs_priority"] = None
+    named["pcs_priority"] = 7
+
+    [absent] = build_manifest(_one_circuit_profile(circuit=unpublished)).of_class("circuit")
+    [given] = build_manifest(_one_circuit_profile(circuit=named)).of_class("circuit")
+    [positional] = build_manifest(_one_circuit_profile()).of_class("circuit")
+
+    assert "pcs-priority" not in absent.metadata
+    assert given.metadata["pcs-priority"] == "7"
+    assert positional.metadata["pcs-priority"] == "1"
+
+
+def test_the_panel_publishes_the_vendor_its_config_names() -> None:
+    profile = _one_circuit_profile()
+    profile["panel_config"]["vendor_name"] = "SPAN"
+
+    assert build_manifest(profile).of_class("panel")[0].metadata["vendor-name"] == "SPAN"
+
+
+def test_the_panel_publishes_the_model_its_config_names() -> None:
+    """Verbatim, where it was re-derived from the size."""
+    profile = _one_circuit_profile()
+    profile["panel_config"]["model"] = "MAIN_32"
+
+    assert build_manifest(profile).of_class("panel")[0].metadata["panel-model"] == "MAIN_32"
+
+
+def test_a_mid_publishes_its_own_serial_where_the_config_names_one() -> None:
+    profile = _battery_profile(
+        {"serial_number": "example-bess-0001", "mid_serial_number": "example-mid-0001"}
+    )
+
+    [mid] = build_manifest(profile).of_class("mid")
+
+    assert mid.metadata["serial-number"] == "example-mid-0001"
+
+
+def test_a_mid_publishes_its_own_vendor_where_the_config_names_one() -> None:
+    profile = _battery_profile(
+        {"vendor": "Example Battery Co", "mid_vendor": "Example Gateway Co"}
+    )
+
+    [mid] = build_manifest(profile).of_class("mid")
+
+    assert mid.metadata["vendor-name"] == "Example Gateway Co"
+
+
+def test_a_clones_energy_seeds_reach_the_emitter() -> None:
+    """Without them a clone's energy registers start at zero, whatever the panel's read."""
+    template = _template()
+    template["energy_profile"]["initial_consumed_energy_wh"] = 129126.5
+    template["energy_profile"]["initial_produced_energy_wh"] = 11355.5
+
+    [circuit] = build_manifest(_one_circuit_profile(template)).of_class("circuit")
+
+    assert circuit.metadata["initial-consumed-wh"] == "129126.5"
+    assert circuit.metadata["initial-produced-wh"] == "11355.5"
+
+
+def test_the_battery_mid_and_lugs_are_named_after_their_ids() -> None:
+    """As SPAN release 202639 names them on the wire (the captured MAIN 32 does), where
+    PanelBench named them "Battery", "Microgrid Interconnect Device" and "Upstream lugs"."""
+    manifest = build_manifest(_battery_profile({}))
+
+    devices = [*manifest.of_class("bess"), *manifest.of_class("mid"), *manifest.of_class("lugs")]
+
+    assert len(devices) == 4, "the profile names no battery and MID, so the test proves less"
+    assert all(device.display_name == device.instance_id for device in devices)

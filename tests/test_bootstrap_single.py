@@ -17,9 +17,14 @@ from panelbench.bootstrap import BootstrapHttpServer
 from panelbench.certs import generate_certificates
 from panelbench.const import DEFAULT_FIRMWARE_VERSION
 from panelbench.schema import load_schema, render_for_panel
+from tests._helpers import CURRENT_FIRMWARE
+
+_BUNDLED_SCHEMA = (
+    Path(__file__).parent.parent / "src" / "panelbench" / "data" / "homie_schema.json"
+)
 
 
-def _make_server() -> BootstrapHttpServer:
+def _make_server(*, hardware_version: str | None = None) -> BootstrapHttpServer:
     """Create a BootstrapHttpServer with mocked certs and schema."""
     certs = MagicMock()
     certs.ca_cert_pem = b"-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"
@@ -35,6 +40,7 @@ def _make_server() -> BootstrapHttpServer:
         broker_username="span",
         broker_password="sim-password",
         broker_host="localhost",
+        hardware_version=hardware_version,
     )
 
 
@@ -48,6 +54,22 @@ async def test_status_returns_single_panel() -> None:
         assert data["serialNumber"] == "sim-test-001"
         assert data["firmwareVersion"] == DEFAULT_FIRMWARE_VERSION
         assert data["proximityProven"] is True
+
+
+async def test_status_reports_the_hardware_version_from_202639() -> None:
+    """A server handed a hardware version reports it, as `StatusV2Out` requires from r202639."""
+    server = _make_server(hardware_version="1.2")
+    async with TestClient(TestServer(server._app)) as client:
+        data = await (await client.get("/api/v2/status")).json()
+        assert data["hardwareVersion"] == "1.2"
+
+
+async def test_status_omits_the_hardware_version_before_202639() -> None:
+    """The r202633 `StatusV2Out` has no `hardwareVersion`; earlier firmware keeps it out."""
+    server = _make_server()
+    async with TestClient(TestServer(server._app)) as client:
+        data = await (await client.get("/api/v2/status")).json()
+        assert "hardwareVersion" not in data
 
 
 async def test_status_ignores_serial_query_param() -> None:
@@ -109,10 +131,8 @@ async def test_no_admin_endpoints() -> None:
 
 async def test_schema_endpoint_serves_40_tab_format() -> None:
     """Bootstrap HTTP endpoint serves a rendered schema whose space.format matches panel size."""
-    template = load_schema(
-        Path(__file__).parent.parent / "src" / "panelbench" / "data" / "homie_schema.json"
-    )
-    rendered = render_for_panel(template, 40)
+    template = load_schema(_BUNDLED_SCHEMA)
+    rendered = render_for_panel(template, 40, firmware=DEFAULT_FIRMWARE_VERSION)
 
     certs = MagicMock()
     certs.ca_cert_pem = b"-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"
@@ -138,6 +158,30 @@ async def test_schema_endpoint_serves_40_tab_format() -> None:
             + hashlib.sha256(json.dumps(data["types"], sort_keys=True).encode()).hexdigest()[:16]
         )
         assert data["typesSchemaHash"] == expected_hash
+
+
+async def test_schema_endpoint_reports_the_panel_firmware() -> None:
+    """The schema's `firmwareVersion` is the panel's, as the status reports it.
+
+    A panel serves the schema its own firmware generated, so the bundled document's
+    firmware string must not reach a consumer reading the endpoint.
+    """
+    template = load_schema(_BUNDLED_SCHEMA)
+    assert template.firmware_version != CURRENT_FIRMWARE
+    rendered = render_for_panel(template, 40, firmware=CURRENT_FIRMWARE)
+
+    server = BootstrapHttpServer(
+        serial="sim-40t-001",
+        firmware=CURRENT_FIRMWARE,
+        certs=MagicMock(),
+        schema=rendered,
+    )
+
+    async with TestClient(TestServer(server._app)) as client:
+        status = await (await client.get("/api/v2/status")).json()
+        schema = await (await client.get("/api/v2/homie/schema")).json()
+    assert rendered.firmware_version == CURRENT_FIRMWARE
+    assert schema["firmwareVersion"] == status["firmwareVersion"] == CURRENT_FIRMWARE
 
 
 def _free_port() -> int:

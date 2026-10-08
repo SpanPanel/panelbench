@@ -27,7 +27,6 @@ from panelbench.const import (
     DEFAULT_BASE_HTTP_PORT,
     DEFAULT_BROKER_PASSWORD,
     DEFAULT_BROKER_USERNAME,
-    DEFAULT_FIRMWARE_VERSION,
     DEFAULT_TICK_INTERVAL_S,
     MQTTS_PORT,
     https_port_for,
@@ -37,10 +36,13 @@ from panelbench.discovery import PanelAdvertiser, PanelBrowser
 from panelbench.emitter_adapter.runtime import BrokerConnection
 from panelbench.panel import PanelInstance
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
+from panelbench.panel_secrets import SECRETS_FILENAME, PanelSecretsStore
 from panelbench.recorder import RecorderDataSource
 from panelbench.schema import HomieSchemaRegistry, load_schema, render_for_panel
 
 if TYPE_CHECKING:
+    from ebus_panel_sim import BESSCommunication
+
     from panelbench.certs import CertificateBundle
     from panelbench.config_types import BESSConfigYAML
     from panelbench.engine import DynamicSimulationEngine
@@ -117,11 +119,16 @@ class SimulatorApp:
         dashboard_port: int = DASHBOARD_PORT,
         advertise_address: str | None = None,
         ha_config: HAConnectionConfig | None = None,
+        secrets_dir: Path | None = None,
     ) -> None:
         self._config_dir = config_dir
+        self._panel_secrets = (
+            PanelSecretsStore(secrets_dir / SECRETS_FILENAME)
+            if secrets_dir is not None
+            else PanelSecretsStore.in_config_dir(config_dir)
+        )
         self._config_filter = config_filter
         self._tick_interval = tick_interval
-        self._firmware = DEFAULT_FIRMWARE_VERSION
         self._broker_username = broker_username
         self._broker_password = broker_password
         self._broker_host = broker_host
@@ -249,6 +256,11 @@ class SimulatorApp:
         if engine is not None:
             engine.set_grid_islandable(islandable)
 
+    def _set_bess_link(self, link: BESSCommunication) -> None:
+        engine = self._get_first_engine()
+        if engine is not None:
+            engine.set_bess_link(link)
+
     def _set_circuit_priority(self, circuit_id: str, priority: str) -> None:
         engine = self._get_first_engine()
         if engine is not None:
@@ -306,7 +318,9 @@ class SimulatorApp:
             recorder=recorder,
             broker=broker,
         )
-        serial = await panel.start()
+        serial = await panel.start(
+            running={s: p.config_path for s, p in self._serial_to_panel.items()}
+        )
 
         # Validate panel size and render schema before registering. If the
         # panel's total_tabs is not a SPAN model size, stop the started panel
@@ -314,32 +328,16 @@ class SimulatorApp:
         # without a bootstrap HTTP server to match.
         try:
             total_tabs = panel.total_tabs
-            panel_model = PANEL_SIZE_TO_MODEL[total_tabs]
-            panel_schema = render_for_panel(self._schema, total_tabs)
+            if total_tabs not in PANEL_SIZE_TO_MODEL:
+                raise KeyError(f"total_tabs {total_tabs} is not a SPAN panel size")
+            # The model MQTT publishes, so mDNS cannot advertise another.
+            panel_model = panel.model
+            firmware = panel.firmware_version
+            status_hardware = panel.status_hardware_version
+            panel_schema = render_for_panel(self._schema, total_tabs, firmware=firmware)
         except Exception:
             await panel.stop()
             raise
-
-        # Ensure unique serial — cloned configs may share the same serial.
-        # Append a suffix to avoid MQTT topic and mDNS name collisions.
-        # Moved below validation — no point renaming a panel we are about to discard.
-        if serial in self._serial_to_panel:
-            base_serial = serial
-            suffix = 2
-            while f"{base_serial}-{suffix}" in self._serial_to_panel:
-                suffix += 1
-            serial = f"{base_serial}-{suffix}"
-            # Serial-override post-cutover requires emitter restart to propagate the
-            # new serial through the manifest + lifecycle. For v0.1.0 of the emitter
-            # integration this is a degraded path: log the duplicate and skip the
-            # rename. Follow-up: implement runtime serial override by tearing down
-            # and restarting the panel's CloneRuntime with the new serial.
-            _LOGGER.warning(
-                "Duplicate serial %s detected — renamed to %s "
-                "(emitter restart required to take effect)",
-                base_serial,
-                serial,
-            )
 
         self._panels[config_path] = panel
         self._serial_to_panel[serial] = panel
@@ -352,7 +350,7 @@ class SimulatorApp:
         def _build(http_port: int) -> BootstrapHttpServer:
             return BootstrapHttpServer(
                 serial,
-                self._firmware,
+                firmware,
                 certs,
                 panel_schema,
                 broker_username=self._broker_username,
@@ -360,6 +358,7 @@ class SimulatorApp:
                 broker_host=self._broker_host,
                 port=http_port,
                 https_port=https_port_for(http_port),
+                hardware_version=status_hardware,
             )
 
         port = self._allocate_port()
@@ -391,7 +390,7 @@ class SimulatorApp:
         if self._advertiser is not None:
             await self._advertiser.register_panel(
                 serial,
-                self._firmware,
+                firmware,
                 model=panel_model,
                 port=port,
                 https_port=https_port_for(port),
@@ -578,6 +577,10 @@ class SimulatorApp:
         stopped, or reloaded. Errors for affected filenames are stored
         on ``self._panel_start_errors`` so the dashboard can surface them.
         """
+        # A clone written before the secrets store existed carries its source panel's
+        # passphrase. It moves out on the first scan that finds it, every file in the
+        # directory alike, and before anything hashes or reads them.
+        self._panel_secrets.migrate_config_files(self._config_dir)
         current = _discover_configs(self._config_dir, self._config_filter)
 
         # Exclude configs the user explicitly stopped via the dashboard
@@ -834,6 +837,7 @@ class SimulatorApp:
             set_time_acceleration=self._set_time_acceleration,
             set_grid_online=self._set_grid_online,
             set_grid_islandable=self._set_grid_islandable,
+            set_bess_link=self._set_bess_link,
             set_circuit_priority=self._set_circuit_priority,
             set_circuit_relay=self._set_circuit_relay,
             apply_bess_config_live=self.apply_bess_config_live,
@@ -841,6 +845,7 @@ class SimulatorApp:
             ha_client=ha_client,
             history_provider=ha_client,
             panel_browser=browser,
+            panel_secrets=self._panel_secrets,
         )
         dashboard_app = create_dashboard_app(dashboard_ctx)
         self._dashboard_runner = web.AppRunner(dashboard_app)

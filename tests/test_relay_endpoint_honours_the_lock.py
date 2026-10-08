@@ -104,7 +104,9 @@ async def test_a_controllable_circuit_is_still_commandable(client_and_calls) -> 
 
 @pytest.mark.parametrize(
     ("entity_id", "spelling"),
-    [("chest_freezer", "non_controllable"), ("fire_pump", "always_on")],
+    # Configured `non_controllable` and `always_on`; the refusal names each the way the
+    # shipped configs spell it.
+    [("chest_freezer", "non-controllable"), ("fire_pump", "always-on")],
 )
 async def test_a_locked_circuit_is_refused(client_and_calls, entity_id, spelling) -> None:
     """Both spellings lock. `relay-behavior: always-on` and `non-controllable` are one

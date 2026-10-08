@@ -1,11 +1,11 @@
-"""Structural comparison of two producers over one config.
+"""Structural comparison of two producers over one panel.
 
 Conformance asks whether everything a producer publishes is legal, and the
 specification permits omission — so a producer that publishes almost nothing is
 perfectly conformant. This asks the other question: does panelbench publish what
 the reference producer publishes?
 
-Two comparisons live here, and they answer different questions.
+Three comparisons live here, and they answer different questions.
 
 ``compare`` is structural: which devices exist, and which properties each
 declares. Numeric payloads and timestamps vary by design between the two and are
@@ -19,45 +19,60 @@ node whose properties resolve from ``DeviceInstance.metadata``, so it is exactly
 the surface a manifest builder decides. Every other node resolves from tick
 physics, where divergence is expected.
 
-Devices are aligned by declared ``type`` and ``name``, never by instance id. The
-reference hashes ids with ``sha256("panel-sim-example:" + id)[:32]`` while
-panelbench uses ``uuid5``, and panelbench additionally prefixes the panel serial
-with ``sim-``, so an id-keyed diff reports every device as a mismatch and nothing
-useful.
+``compare_settable`` measures the ``$settable`` declarations the commissioning
+locks reach the wire as, which neither of the other two can see.
+
+Devices are never aligned by instance id: the two producers derive ids
+differently, so an id-keyed diff reports every device as a mismatch and nothing
+useful. ``role_key`` aligns them instead. Most devices align by declared
+``type`` and ``name``, and circuits also by the breaker spaces they occupy,
+because a SPAN panel gives two commissioned PV circuits the same name. A
+battery, its MID, an inverter and a SPAN Drive align by where they hang,
+because SPAN firmware names such devices after their own device ids.
+
+Neither producer can read the other's input any more — upstream's input is a
+panel definition and PanelBench's is a behaviour config — so each cell gives
+both producers the same *panel* by a different route. The example cell runs
+upstream's shipped definition through upstream's emitter and through
+PanelBench's import of it. The PanelBench cell runs PanelBench's own config and
+lets upstream's capture read PanelBench's published tree back into a definition.
+The captured cell runs a real panel's masked capture, shipped with the pinned
+release, through upstream's emitter and through PanelBench's import of it.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ebus_panel_sim import Emitter, SetterRegistry
+from ebus_panel_sim import (
+    Emitter,
+    PanelDefinition,
+    SetterRegistry,
+    TickInputs,
+    load_definition,
+    load_ticks,
+)
+from ebus_panel_sim.capture import definition_from_tree, tree_from_retained, tree_from_snapshot
 
-from panelbench.emitter_adapter.wire_capture import capture
+from panelbench.definition_import import config_from_definition
+from panelbench.emitter_adapter.wire_capture import (
+    RecordingTransport,
+    as_capture,
+    capture_retained,
+)
+from tests._helpers import DEFAULT_CONFIG, write_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 UPSTREAM = FIXTURES / "upstream"
-REFERENCE_CONFIG = UPSTREAM / "forty_tab_minimal.yaml"
-REFERENCE_RUNNER = UPSTREAM / "run_forty_tab_minimal.py"
+REFERENCE_DEFINITION = UPSTREAM / "forty_tab_minimal.yaml"
+REFERENCE_TICKS = UPSTREAM / "forty_tab_minimal.ticks.yaml"
 
-_REPO = Path(__file__).resolve().parent.parent.parent
-PANELBENCH_CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
-"""The tracked 40-tab template, extended to a superset both producers read.
-
-Not a fixture copy. The reference runner reads a narrow slice of the YAML and
-ignores the rest, and panelbench loads with ``yaml.safe_load`` into TypedDicts,
-so each side takes the keys it understands from one file. A second copy under
-``fixtures/`` would drift, and the rich cell would then measure a config nobody
-runs.
-"""
-
-# Homie topics are `ebus/<version>/<device-id>/<rest...>`.
-_DEVICE_SEGMENT = 2
-_MIN_SEGMENTS = 4
+PANELBENCH_CONFIG = DEFAULT_CONFIG
+"""The tracked 40-tab template, PanelBench's own richest config: the one `tests._helpers` names."""
 
 IDENTITY_NODE = "info"
 """The catalog node carrying manifest-derived identity, per ``wire/catalogs/info.json``.
@@ -67,88 +82,91 @@ are the properties a *manifest builder* decides, which is what makes them
 comparable across producers at all.
 """
 
+Capture = dict[str, dict[str, str]]
 
-class RecordingTransport:
-    """Bring-your-own-transport recorder for the reference emitter.
+_IDLE_TICK = TickInputs(current_time=0.0, grid_online=True, circuits={})
 
-    This is why the BYO work came first: without an injectable transport the
-    reference emitter can only publish to a real broker, which would make this a
-    integration test needing mosquitto rather than a unit one.
+
+def publish_reference(definition: PanelDefinition, ticks: Sequence[TickInputs]) -> Capture:
+    """Upstream's emitter publishing *definition* through *ticks*: the reference producer.
+
+    Recorded with the same last-wins transport PanelBench's captures use, so both
+    sides of a cell are seen the way a consumer replaying retained topics sees them.
     """
-
-    def __init__(self) -> None:
-        self.published: list[tuple[str, str, int, bool]] = []
-        self.is_running = True
-
-    def is_connected(self) -> bool:
-        return True
-
-    def publish(self, topic: str, data: str, qos: int = 1, retain: bool = False) -> object:
-        self.published.append((topic, str(data), qos, retain))
-        return None
-
-    def subscribe(self, sub: str, param: object = None, qos: int = 1) -> object:
-        return None
-
-
-def _load_reference_runner() -> Any:
-    """Import the vendored example script as a module.
-
-    Its manifest builders are pure functions over the parsed YAML, and they are
-    the reference's own reading of that config. Reimplementing them would compare
-    our interpretation against our emitter and call it fidelity.
-    """
-    spec = importlib.util.spec_from_file_location("_fidelity_reference", REFERENCE_RUNNER)
-    if spec is None or spec.loader is None:  # pragma: no cover - import plumbing
-        raise RuntimeError(f"cannot import vendored reference runner at {REFERENCE_RUNNER}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["_fidelity_reference"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _regroup(published: list[tuple[str, str, int, bool]]) -> dict[str, dict[str, str]]:
-    """Retained topics, grouped by device id, keyed the way a consumer sees them."""
-    devices: dict[str, dict[str, str]] = {}
-    for topic, data, _qos, retain in published:
-        if not retain:
-            continue
-        parts = topic.split("/")
-        if len(parts) < _MIN_SEGMENTS:
-            continue
-        devices.setdefault(parts[_DEVICE_SEGMENT], {})["/".join(parts[_DEVICE_SEGMENT + 1 :])] = (
-            data
-        )
-    return devices
-
-
-def capture_reference(config: Path = REFERENCE_CONFIG) -> dict[str, dict[str, str]]:
-    """Run the reference emitter over *config* and return its retained tree."""
-    runner = _load_reference_runner()
-    profile = runner._load_profile(config)
-    manifest = runner._build_manifest(profile)
-    bess_config = runner._build_bess_config(profile)
-
     transport = RecordingTransport()
-    emitter = Emitter(
-        manifest,
-        SetterRegistry(),
-        mqttc=transport,
-        bess_configs=(bess_config,) if bess_config is not None else (),
-    )
+    emitter = Emitter.from_definition(definition, SetterRegistry(), mqttc=transport)
     emitter.start()
-    for tick in runner._ticks(profile):
+    for tick in ticks:
         emitter.publish_tick(tick)
-    return _regroup(transport.published)
+    return as_capture(transport.retained)
 
 
-async def capture_panelbench(config: Path = REFERENCE_CONFIG) -> dict[str, dict[str, str]]:
-    """Run panelbench over *config* through its real clone assembly."""
-    return await capture(config)
+def reference_example() -> Capture:
+    """Upstream's shipped example, published by upstream."""
+    return publish_reference(load_definition(REFERENCE_DEFINITION), load_ticks(REFERENCE_TICKS))
+
+
+async def panelbench_imported(definition: PanelDefinition, workdir: Path) -> Capture:
+    """PanelBench running its own import of *definition*, as the dashboard's Import does."""
+    path = write_config(workdir / "imported.yaml", config_from_definition(definition))
+    return as_capture(await capture_retained(path))
+
+
+async def panelbench_example(workdir: Path) -> Capture:
+    """PanelBench running its own import of upstream's shipped example."""
+    return await panelbench_imported(load_definition(REFERENCE_DEFINITION), workdir)
+
+
+def reference_reading(retained: Mapping[str, bytes]) -> Capture:
+    """Upstream's reading of a published tree, republished by upstream's emitter."""
+    tree = tree_from_retained({topic: payload.decode() for topic, payload in retained.items()})
+    definition, _notes = definition_from_tree(tree, variant="span", mask=False)
+    return publish_reference(definition, (_IDLE_TICK,))
+
+
+async def example_pair(workdir: Path) -> tuple[Capture, Capture]:
+    """The example cell: (reference, PanelBench)."""
+    return reference_example(), await panelbench_example(workdir)
+
+
+async def panelbench_pair(workdir: Path) -> tuple[Capture, Capture]:
+    """The PanelBench cell: (reference, PanelBench)."""
+    del workdir
+    retained = await capture_retained(PANELBENCH_CONFIG)
+    return reference_reading(retained), as_capture(retained)
+
+
+CAPTURED_PANEL = UPSTREAM / "main32_r202639-tree-v1.json"
+"""The pinned release's masked capture of a real panel on SPAN release 202639 or later."""
+
+
+def captured_definition(path: Path = CAPTURED_PANEL) -> PanelDefinition:
+    """Upstream's definition of the captured panel, read by upstream's own readers.
+
+    The ``tree-v1`` snapshot is mapped by ``definition_from_tree`` without masking
+    again, because upstream masked it before shipping it. The variant is inferred,
+    as upstream's capture infers it for a live panel.
+    """
+    tree = tree_from_snapshot(json.loads(path.read_text(encoding="utf-8")))
+    definition, _notes = definition_from_tree(tree, mask=False)
+    return definition
+
+
+async def captured_pair(workdir: Path) -> tuple[Capture, Capture]:
+    """The captured cell: (upstream publishing the captured panel, PanelBench's import of it)."""
+    definition = captured_definition()
+    return publish_reference(definition, (_IDLE_TICK,)), await panelbench_imported(
+        definition, workdir
+    )
 
 
 def role_of(device_id: str, properties: dict[str, str]) -> str:
-    """A stable cross-producer identity: declared ``type::name``.
+    """A device's declared ``type::name``.
+
+    Stable across producers for the devices both name the same way: the panel, its
+    lugs, and a circuit, whose name is the one a user gave it. Not for a battery,
+    its MID, an inverter or a SPAN Drive, which SPAN firmware names after their own
+    device ids (``role_key``).
 
     Falls back to the raw id when a device published no parsable
     ``$description``, which is itself worth surfacing as a mismatch rather than
@@ -164,8 +182,128 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
     return f"{parsed.get('type', '?')}::{parsed.get('name', device_id)}"
 
 
+_KEYED_BY_FEED = frozenset({"bess", "evse", "pv"})
+"""Device classes keyed by what they hang from rather than by name."""
+
+
+def role_key(device_id: str, devices: dict[str, dict[str, str]]) -> str:
+    """A cross-producer key for *device_id*, one of *devices*.
+
+    A circuit's key is its role plus the breaker spaces it occupies. A SPAN panel
+    names every commissioned PV circuit "Commissioned PV System", so a role alone
+    collapses two such circuits into one, and a producer that dropped either would
+    still compare equal. The spaces are applied to every circuit, not only to
+    repeated names, so a key does not depend on what else the capture holds. A
+    circuit publishing no spaces falls back to its id, which surfaces as a mismatch
+    rather than hiding one.
+
+    A battery, its MID and an inverter are keyed by topology, never by name. SPAN
+    firmware names each after its own device id (both public MAIN 32 captures,
+    r202633 and r202639, do), and the two producers' ids differ by construction,
+    so no name could align them. What both share is where the device hangs: an
+    inverter or an in-panel battery by the spaces of the circuit that feeds it, a
+    battery upstream of the panel by the direction of the lugs it feeds, and a MID
+    by its battery's key. A device whose place cannot be resolved is refused rather
+    than keyed by its name, which would only reintroduce the misalignment quietly.
+
+    A SPAN Drive is keyed by the spaces of the circuit that feeds it, for the same
+    reason. Neither public capture has one, but upstream's capture keeps a Drive's
+    published name exactly as it keeps the others', so a firmware that names the
+    Drive after its id, as it does every other device it proxies, would misalign it
+    the same way.
+
+    Lugs are keyed by the direction they publish, for the same reason: SPAN release
+    202639 names them after their own ids, as PanelBench now does, and upstream's
+    emitter names them "Upstream lugs" and "Downstream lugs".
+
+    Every other device keeps its ``role_of``.
+    """
+    props = devices[device_id]
+    device_class = class_of(props)
+    if device_class == "circuit":
+        return f"{role_of(device_id, props)} @{props.get('info/spaces', device_id)}"
+    if device_class in _KEYED_BY_FEED:
+        return f"{_declared(props, 'type')} @{_feed_of(device_id, devices)}"
+    if device_class == "mid":
+        return f"{_declared(props, 'type')} of {_battery_key(device_id, devices)}"
+    if device_class == "lugs":
+        return f"{_declared(props, 'type')} @{props.get('info/direction', device_id)}"
+    return role_of(device_id, props)
+
+
+def _declared(body: dict[str, str], field_name: str) -> str | None:
+    """The ``$description``'s *field_name* as a string, or None when it has none."""
+    description = body.get("$description")
+    if not description:
+        return None
+    try:
+        value = json.loads(description).get(field_name)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _feed_of(device_id: str, devices: dict[str, dict[str, str]]) -> str:
+    """Where *device_id* hangs: its feeding circuit's spaces, or ``<direction> lugs``.
+
+    A circuit names the device it feeds in ``connection/feeds-device-id``; lugs
+    fed by an upstream battery name it in ``connection/fed-by-device-id``. Exactly
+    one of them must name the device.
+    """
+    places: list[str] = []
+    for other_id, body in devices.items():
+        other_class = class_of(body)
+        if other_class == "circuit" and body.get("connection/feeds-device-id") == device_id:
+            spaces = body.get("info/spaces")
+            if spaces is None:
+                raise ValueError(
+                    f"circuit {other_id!r} feeds {device_id!r} but publishes no info/spaces"
+                )
+            places.append(spaces)
+        elif other_class == "lugs" and body.get("connection/fed-by-device-id") == device_id:
+            direction = body.get("info/direction")
+            if direction is None:
+                raise ValueError(
+                    f"lugs {other_id!r} are fed by {device_id!r} but publish no info/direction"
+                )
+            places.append(f"{direction} lugs")
+    if len(places) != 1:
+        raise ValueError(
+            f"{device_id!r} hangs from {len(places)} circuits or lugs, not one, so it cannot "
+            "be keyed by topology"
+        )
+    return places[0]
+
+
+def _battery_key(device_id: str, devices: dict[str, dict[str, str]]) -> str:
+    """The key of the battery a MID belongs to, which ``$description.parent`` names."""
+    parent = _declared(devices[device_id], "parent")
+    if parent is None or class_of(devices.get(parent, {})) != "bess":
+        raise ValueError(
+            f"MID {device_id!r} names no published battery as its parent, so it cannot be "
+            "keyed by topology"
+        )
+    return role_key(parent, devices)
+
+
+def keyed_devices(devices: dict[str, dict[str, str]]) -> dict[str, tuple[str, dict[str, str]]]:
+    """Each device's id and properties, keyed by ``role_key``.
+
+    Any repeated key is refused: merging two devices would hide one of them. Every
+    instrument that keys by role goes through here, so none can merge them quietly.
+    """
+    keyed: dict[str, tuple[str, dict[str, str]]] = {}
+    for device_id, props in devices.items():
+        key = role_key(device_id, devices)
+        if key in keyed:
+            raise ValueError(f"two devices share the role {key!r}; comparing would merge them")
+        keyed[key] = (device_id, props)
+    return keyed
+
+
 def by_role(devices: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
-    return {role_of(did, props): props for did, props in devices.items()}
+    """Devices' properties keyed by ``role_key``, refusing a repeat as ``keyed_devices`` does."""
+    return {key: props for key, (_device_id, props) in keyed_devices(devices).items()}
 
 
 def declared_properties(body: dict[str, str]) -> set[str]:
@@ -216,7 +354,7 @@ class ParityReport:
         )
 
     def as_baseline(self) -> dict[str, Any]:
-        """The JSON-comparable form committed as the baseline."""
+        """The JSON-comparable form, compared with an empty report or a cell's baseline."""
         return {
             "missing_devices": self.missing_devices,
             "extra_devices": self.extra_devices,
@@ -264,8 +402,8 @@ def compare_identity_values(
     """Diff ``info/*`` payloads for devices and keys both producers publish.
 
     Keys only one side publishes are ``compare``'s finding, not this one.
-    Reporting them here too would couple the two baselines, so that a single
-    missing property has to be recorded — and later cleared — in two files.
+    Reporting them here too would couple the two instruments, so that a single
+    missing property has to be recorded — and later cleared — in two places.
     """
     ref = by_role(reference)
     sub = by_role(subject)
@@ -304,3 +442,45 @@ def compare(
             if set(sub[r]) - set(ref[r])
         },
     )
+
+
+def settable_properties(body: dict[str, str]) -> set[str]:
+    """``node/property`` keys a device declares ``$settable``.
+
+    The commissioning locks reach the wire only as the absence of this attribute,
+    so ``compare``, which diffs which properties exist, cannot see a lost lock.
+    """
+    description = body.get("$description")
+    if not description:
+        return set()
+    try:
+        nodes = json.loads(description).get("nodes") or {}
+    except json.JSONDecodeError:
+        return set()
+    return {
+        f"{node_id}/{prop}"
+        for node_id, node in nodes.items()
+        for prop, declaration in (node.get("properties") or {}).items()
+        if isinstance(declaration, dict) and declaration.get("settable") is True
+    }
+
+
+def compare_settable(
+    reference: dict[str, dict[str, str]], subject: dict[str, dict[str, str]]
+) -> dict[str, dict[str, list[str]]]:
+    """Per shared role, the ``$settable`` declarations only one producer makes.
+
+    Devices only one side publishes are ``compare``'s finding, not this one.
+    """
+    ref = by_role(reference)
+    sub = by_role(subject)
+    differing: dict[str, dict[str, list[str]]] = {}
+    for role in sorted(set(ref) & set(sub)):
+        ref_settable = settable_properties(ref[role])
+        sub_settable = settable_properties(sub[role])
+        if ref_settable != sub_settable:
+            differing[role] = {
+                "reference_only": sorted(ref_settable - sub_settable),
+                "panelbench_only": sorted(sub_settable - ref_settable),
+            }
+    return differing

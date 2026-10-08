@@ -3,6 +3,8 @@
     <h2>Simulation Config</h2>
     <div style="display:flex; gap:0.5rem; align-items:center">
       <a href="export" class="btn btn-sm btn-secondary">Export</a>
+      <a href="export-definition" class="btn btn-sm btn-secondary"
+         title="The panel's makeup as a panel-sim-definition file">Export definition</a>
       {% if not readonly %}
       <button class="btn btn-sm btn-primary"
               hx-post="save-reload" hx-target="#flash-area" hx-swap="innerHTML" hx-disabled-elt="this">

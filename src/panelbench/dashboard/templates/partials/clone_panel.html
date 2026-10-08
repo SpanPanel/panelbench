@@ -36,12 +36,36 @@
       </label>
       {% endif %}
       <label>Passphrase
-        <input type="text" name="passphrase" placeholder="required"
-               value="{{ clone_passphrase | default('', true) }}" required>
+        <input type="password" name="passphrase" autocomplete="off"
+               placeholder="unless already registered">
       </label>
       <button type="submit" class="btn btn-sm btn-primary">Clone</button>
       <span id="clone-spinner" class="htmx-indicator">&#x23F3;</span>
     </div>
+    <details>
+      <summary>Use existing broker credentials instead of registering</summary>
+      <p class="hint">
+        PanelBench registers with a panel once and keeps what it is given. Credentials
+        you already hold for its broker can be used instead, and nothing is registered.
+      </p>
+      <div class="form-row">
+        <label>Panel serial
+          <input type="text" name="broker_serial" autocomplete="off">
+        </label>
+        <label>Broker username
+          <input type="text" name="broker_username" autocomplete="off">
+        </label>
+        <label>Broker password
+          <input type="password" name="broker_password" autocomplete="off">
+        </label>
+        <label>MQTTS port
+          <input type="number" name="broker_port" value="8883" min="1" max="65535">
+        </label>
+      </div>
+      <label>Broker CA certificate (PEM; fetched from the panel when left blank)
+        <textarea name="broker_ca" rows="4"></textarea>
+      </label>
+    </details>
   </form>
 </div>
 <script>

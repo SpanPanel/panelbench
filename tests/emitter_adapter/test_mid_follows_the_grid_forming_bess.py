@@ -182,7 +182,7 @@ def test_every_shipped_config_with_a_battery_publishes_a_mid() -> None:
     the configs off disk, which is the only way that gap was ever going to be caught.
     """
     config_dir = Path(__file__).resolve().parents[2] / "configs"
-    shipped = sorted(config_dir.glob("*.yaml"))
+    shipped = sorted(config_dir.glob("default_*.yaml"))
     assert shipped, f"no configs found under {config_dir}"
 
     missing = []

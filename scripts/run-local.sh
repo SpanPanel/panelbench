@@ -28,7 +28,7 @@ Options:
 Environment variables:
   ADVERTISE_ADDRESS Override mDNS advertised IP (auto-detected from en0/en1)
   CONFIG_DIR        Config directory (default: ./configs)
-  CONFIG_NAME       Specific config file to load (e.g., default_config.yaml)
+  CONFIG_NAME       Specific config file to load (e.g., default_MAIN_16.yaml)
   TICK_INTERVAL     Simulation tick interval in seconds (default: 1.0)
   LOG_LEVEL         Logging level (default: INFO)
   BROKER_USERNAME   MQTT broker username (default: span)

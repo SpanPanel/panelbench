@@ -230,6 +230,34 @@ unit, and the conformance checker rejects one that reaches the wire.
 The `conformance` package deliberately imports nothing from the rest of this simulator and nothing MQTT-related — a test enforces it. That keeps it a general
 eBus publisher checker rather than a SPAN-specific one, and it is why the rules describe _any_ publisher's output rather than just ours.
 
+### Fidelity: the same panel through the reference emitter
+
+Conformance asks whether what PanelBench publishes is legal, and the specification permits omission, so it cannot ask whether PanelBench publishes what a panel
+does. `tests/fidelity/` asks that. Each cell hands one panel to the pinned `ebus-panel-sim` release, the reference, and to PanelBench, and compares what the two
+publish:
+
+| Cell         | Reference (`ebus-panel-sim`)                                   | PanelBench                                    |
+| ------------ | -------------------------------------------------------------- | --------------------------------------------- |
+| `example`    | the release's example definition and ticks                     | its import of that definition, run as a clone |
+| `panelbench` | the release's capture reading PanelBench's published tree      | `configs/default_MAIN_40.yaml`                |
+| `captured`   | the release's reading of a real panel's capture on SPAN 202639 | its import of that definition, run as a clone |
+
+Every cell is at full structural parity and asserts it directly, and both producers must agree on what is settable. Identity values, device ids and the
+properties both producers declare but neither values are held to baselines in `tests/fidelity/fixtures/`, so any movement fails. Devices are aligned by where
+they hang rather than by name, because real firmware names a battery, MID or inverter after its own device id: a PV inverter, an in-panel battery or a SPAN
+Drive by the circuit that feeds it, an upstream battery by the lugs it feeds, and a MID by its battery. The module docstring of
+`tests/fidelity/test_upstream_parity.py` describes each cell and what it cannot see.
+
+The reference data is the release's own, vendored byte-identical under `tests/fidelity/fixtures/upstream/` (see its `PROVENANCE.md`). No upstream code is
+copied: reading a definition or a capture is the pinned package's public API. `test_vendored_example_matches_the_pinned_release` compares the vendored bytes
+with the release's tag in a local checkout of the upstream repository, and skips without one:
+
+```bash
+EBUS_EMITTER_CHECKOUT=/path/to/distribution-enclosure-simulator uv run pytest tests/fidelity
+```
+
+When the pin moves, re-copy every vendored file from the new tag and re-review every fidelity baseline.
+
 ## Running Locally
 
 There are three ways to run the simulator locally, depending on what you're testing:
@@ -324,6 +352,13 @@ panel_config:
   longitude: float # Degrees east (default: -122.4)
   time_zone: str # IANA timezone (default: resolved from lat/lon)
   soc_shed_threshold: float # SOC % for SOC_THRESHOLD shedding (default: 20)
+  vendor_name: str # Published as info/vendor-name (default: Span); a clone keeps its panel's
+  model: str # Published as info/model (default: the model total_tabs names); a clone keeps its panel's
+  # The panel's network configuration, as a clone keeps it from its panel (default: links up). Its door
+  # and cloud state are live state, always published as door CLOSED and cloud CONNECTED.
+  wifi_link: bool # status/wifi
+  ethernet_link: bool # status/ethernet
+  wifi_ssid: str | null # status/wifi-ssid (default: sim-wifi while Wi-Fi is up); null publishes none
 
 circuit_templates: # Reusable template definitions
   template_name:
@@ -333,10 +368,14 @@ circuit_templates: # Reusable template definitions
       typical_power: float # Base power in watts
       power_variation: float # Fraction (0.1 = +/-10%)
       efficiency: float # 0.0-1.0 (optional, PV/battery)
-      nameplate_capacity_w: float # PV nameplate rating in watts
+      nameplate_capacity_w:
+        float # The circuit's rating in watts, and its one source. A rating at the template's top level, in a
+        # circuit's overrides or in the pv section is moved here. Where this one is stated and another disagrees,
+        # a top-level or override copy is dropped with a warning (released templates left them stale beside a
+        # dashboard edit), and a pv section rating is refused.
       initial_consumed_energy_wh: float # Seed consumed energy (from clone)
       initial_produced_energy_wh: float # Seed produced energy (from clone)
-    relay_behavior: str # "controllable" | "non_controllable"
+    relay_behavior: str # "controllable" | "non-controllable" | "always-on" (underscore spellings are read the same)
     priority: str # "NEVER" | "SOC_THRESHOLD" | "OFF_GRID"
     never_backup:
       bool # Commissioning lock: no backup power, so permanently OFF_GRID
@@ -344,8 +383,15 @@ circuit_templates: # Reusable template definitions
       # priority: OFF_GRID; the emitter rejects any other pairing.
       # Independent of relay_behavior, and NOT priority == "NEVER",
       # which is an ordinary settable value meaning "never shed".
+    commissioned_system:
+      str # "pv" | "backup": the circuit a SPAN panel adds for a commissioned
+      # system. Locked relay and priority permanently NEVER, neither settable, so it
+      # requires priority: NEVER and relay_behavior: non-controllable, and a
+      # firmware_version naming release 202639 or later, or none. A clone sets it.
     device_type: str # "circuit" | "evse" | "pv" (default: "circuit")
-    breaker_rating: int # Amps (derived from power_range if not set)
+    breaker_rating:
+      int | null # Amps (default: 20). null records a panel that publishes no rating, as a clone writes
+      # it. The pinned emitter still requires one and publishes 20 for it until it accepts the absence.
 
     # Optional behavioral modules
     cycling_pattern:
@@ -395,10 +441,37 @@ circuits:
     template: str # References a circuit_templates key
     tabs: [int] # Tab positions ([1] = 120V, [1, 3] = 240V)
     breaker_rating: int # Per-circuit override (optional)
-    overrides: # Override any template field
+    pcs_priority:
+      int | null # Published as pcs/priority (default: the circuit's position). null records a panel that
+      # publishes none, as on a commissioned PV circuit; a clone keeps its panel's.
+    vendor: str # PV circuit: its inverter's vendor (the pv section's inverter: else pv.vendor)
+    model: str # PV circuit: its inverter's model (the pv section's inverter: else pv.product_name)
+    serial_number: str # PV circuit: its inverter's serial (the pv section's inverter: else pv.serial_number)
+    # EVSE circuit: its drive's serial (else evse.serial_number or the panel serial, by position)
+    firmware_version: str # PV circuit: its inverter's firmware (every inverter: else pv.firmware_version)
+    # EVSE circuit: its drive's firmware (every drive: else evse.firmware_version)
+    overrides: # Override any template field but its rating, which the loader moves into the template
       typical_power: 500.0
 
 unmapped_tabs: [int] # Tab numbers with no circuit assigned
+
+pv: # One inverter's identity, and every inverter's default firmware
+  enabled: bool # Publishes a PV device with no PV circuit, one upstream of the panel
+  instance_id: str # The single PV device's id when no serial_number is set
+  vendor: str # Default: Enphase
+  product_name: str # Published as info/model
+  serial_number: str
+  firmware_version: str # Every inverter's default, as a firmware version is not identity
+  inverter_type: str # "hybrid" | "ac-coupled"; else the PV circuit template's inverter_type
+  relative_position: str # "IN_PANEL" (default with a PV circuit) | "UPSTREAM" (default without) | "DOWNSTREAM"
+  nameplate_capacity_w:
+    float # The rating of an inverter with no PV circuit. With one, the rating belongs to that circuit's
+    # template, energy_profile.nameplate_capacity_w: the loader moves this value there, and refuses the
+    # config if the two disagree.
+  feed:
+    str # The id, under circuits, of the PV circuit feeding the inverter this section describes.
+    # Optional with one PV circuit; without it, several PV circuits each name their own inverter,
+    # and a firmware_version before release 202639 is refused. A value naming no PV circuit is refused.
 
 simulation_params:
   update_interval: int # Seconds between snapshots (default: 5)
@@ -406,13 +479,33 @@ simulation_params:
   noise_factor: float # Random noise fraction (0.02 = +/-2%)
   enable_realistic_behaviors: bool
 
+firmware_version:
+  str # Reported over MQTT, HTTP and mDNS (default: sim/v<package version>).
+  # A SPAN string naming a release before 202639 keeps that release's BESS sign and EVSE limit.
+  # The shipped configs name spanos3/r202639/03; to emulate r202633, name a 202633 string
+  # and remove commissioned_system, which an earlier release refuses.
+
+hardware_version:
+  str # Published as info/hardware-version (default: 1.2). From release 202639
+  # the status endpoint reports it as hardwareVersion if it is 1.2 or 2.0, else UNKNOWN.
+
 # Clone provenance (written by the clone pipeline)
 panel_source:
   origin_serial: str # Real panel's serial (immutable)
   host: str # IP or hostname of source panel
-  passphrase: str | null # Proximity code (null for door-bypass)
   last_synced: str # ISO 8601 timestamp
 ```
+
+A panel with two or more PV circuits publishes one PV device per inverter, as SPAN firmware does from release 202639. Every PV device is named after its own
+device id, as SPAN firmware names an inverter, so no name follows circuit order. A PV circuit's `vendor`, `model` and `serial_number` name its inverter. The
+top-level `pv` section names one inverter where its circuit does not: the one whose circuit `pv.feed` names, else the only PV circuit's. It never follows list
+order, because a real panel publishes the inverter its feeding circuit names, wherever that circuit sits; with several PV circuits and no `pv.feed` it names
+none of them. A PV circuit's `firmware_version` is its inverter's firmware, and `pv.firmware_version` is every inverter's default, because a firmware version is
+not identity. A panel whose `firmware_version` names an earlier release publishes a single PV device fed by the circuit `pv.feed` names, as that firmware did,
+so such a config with several PV circuits and no `pv.feed` is refused. A panel with one PV circuit keeps the single PV device and id it has always published.
+
+An EVSE circuit's `serial_number` and `firmware_version` are its SPAN Drive's, in the same way: the serial wins over one derived by position from
+`evse.serial_number` or the panel serial, and `evse.firmware_version` is every drive's default firmware.
 
 ### Shed Priority
 
@@ -436,12 +529,12 @@ User relay overrides (from dashboard or MQTT) take precedence over shedding — 
 
 These endpoints match the real SPAN panel's API exactly.
 
-| Method | Path                     | Description                                        |
-| ------ | ------------------------ | -------------------------------------------------- |
-| `GET`  | `/api/v2/status`         | Panel identity (`serialNumber`, `firmwareVersion`) |
-| `POST` | `/api/v2/auth/register`  | Returns MQTT credentials and broker details        |
-| `GET`  | `/api/v2/certificate/ca` | Self-signed CA certificate (PEM)                   |
-| `GET`  | `/api/v2/homie/schema`   | Homie v5 property schema                           |
+| Method | Path                     | Description                                                                               |
+| ------ | ------------------------ | ----------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v2/status`         | Panel identity (`serialNumber`, `firmwareVersion`; `hardwareVersion` from release 202639) |
+| `POST` | `/api/v2/auth/register`  | Returns MQTT credentials and broker details                                               |
+| `GET`  | `/api/v2/certificate/ca` | Self-signed CA certificate (PEM)                                                          |
+| `GET`  | `/api/v2/homie/schema`   | Homie v5 property schema                                                                  |
 
 Query `/api/v2/status?serial=XXX` to target a specific panel when multiple are loaded.
 
@@ -512,14 +605,26 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 
 ### What gets cloned
 
-- Panel identity (`sim-{serial}-clone`), main breaker rating, panel size
-- All circuits: name, tab position, breaker rating, relay behavior, priority
+- Panel identity (`sim-{serial}-clone`), vendor name, main breaker rating, and the panel size its model names
+- The panel's time zone, line voltages, off-grid SOC shed threshold, model, and its network links and SSID (or its absence),
+  but not its door or cloud state, which are live state the clone simulates as it does power
+- The panel's firmware version, so the clone publishes as that SPAN release does
+- The panel's hardware version
+- All circuits: name, tab position, breaker rating (or its absence), relay behavior, priority, PCS priority
+- Commissioned PV and battery system circuits, recognised by both locks and the inverter or battery they feed, as `commissioned_system`
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)
-- Energy accumulators seeded from the panel's imported/exported energy values
-- Battery behavior with sensible schedule defaults
-- PV nameplate capacity and production profile
-- EVSE night-charging time-of-day profile
-- Source panel credentials stored in `panel_source` for on-demand refresh
+- Energy accumulators seeded from the panel's imported/exported energy values, which the clone's registers carry on from
+- Battery behavior with sensible schedule defaults; the battery's vendor, model, part number, serial and firmware version; its charge and discharge limits from
+  its `info/nominal-power`, else 5 kW per 13.5 kWh; and its MID's own identity
+- PV nameplate capacity and production profile, and each inverter's vendor, model, serial and firmware version on the circuit that feeds it
+- EVSE night-charging time-of-day profile, and each SPAN Drive's serial and firmware version on the circuit that feeds it
+- The source panel's host in `panel_source`, for on-demand refresh
+
+PanelBench registers with a source panel once, as `panelbench-clone-<serial>`, and reuses the broker credentials that returns for every later clone, sync and
+restore, registering again only if the panel's broker refuses them. Broker credentials you already hold can be given in the clone form instead, and nothing is
+registered. The passphrase and broker credentials are kept outside every config, keyed by the panel's serial, in `<config dir>/.secrets/panel_sources.json` (or
+`SECRETS_DIR`; the add-on uses `/data/secrets`), readable only by its owner. A config written before this that carries a `panel_source.passphrase` gives it up
+to that store on the next scan of the config directory, and is never written with it again.
 
 ### Usage profile import
 

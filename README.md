@@ -20,7 +20,6 @@ Includes a web dashboard for real-time configuration, grid simulation, Home Assi
 | [`SpanPanel/simulator`](https://github.com/SpanPanel/simulator) | flat single-device                                    | `r202603`–`r202627` |
 
 Both ship the same certificate authority, so stopping one and starting the other rehearses a firmware upgrade on a single panel instead of reading as a panel
-
 substitution. Cloning follows the same schema line: PanelBench reads a panel running `r202633` or later and does not clone earlier firmware, because the two
 schemas are not convertible.
 
@@ -29,8 +28,8 @@ schemas are not convertible.
 Click a simulator configuration to view it. Templates are read-only. A running simulator appears as a discovered panel in the SpanPanel integration (default
 configs excluded).
 
-1. **Examine templates** — Load and run the included configs (`default_config.yaml`, `simple_test_config.yaml`, etc.) to see how circuits, PV, battery, and EVSE
-   are modeled. Pick one as a starting point for your own configuration.
+1. **Examine templates** — Load and run the included configs (`default_MAIN_40.yaml`, `default_MAIN_32.yaml` and `default_MAIN_16.yaml`) to see how circuits,
+   PV, battery, and EVSE are modeled. Pick one as a starting point for your own configuration.
 2. **Clone** — The **Clone** button creates an editable copy from a template, or from a panel running `r202633+` firmware; cloning a panel preserves recorder
    history per circuit.
 3. **Model** — The **Model** button on a running panel opens the what-if view; add battery, PV, or circuits and compare before/after. Edits mark equipment as
@@ -49,7 +48,7 @@ configs excluded).
 ## Home Assistant App
 
 PanelBench installs as a Home Assistant app from this repository. Images are published for `amd64` and `aarch64`, and the app is not distributed through HACS.
-It requires the `span-panel` integration **v2.1.0 or later**.
+It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish.
 
 1. Go to **Settings > Apps** > **App Store** > three-dot menu > **Repositories**
 2. Add `https://github.com/SpanPanel/panelbench`
@@ -106,6 +105,73 @@ using the port shown in the dashboard panel list:
 
 Each panel has a unique serial number, so there is no conflict between the auto-discovered panel and manually added ones.
 
+## Rehearsing a SPAN firmware upgrade
+
+A SPAN panel reads its firmware once, when it starts, and an over-the-air upgrade takes it offline and brings it back reporting the new release. PanelBench
+rehearses an upgrade the same way: two configs for one panel, run one after the other. The upgrade rehearsed here is to SPAN release 202639. The shipped
+templates name `spanos3/r202639/03` (see [Firmware Version](#firmware-version)) and so are panels after it, which is why the first config names an earlier
+release.
+
+A panel with a commissioned PV system has a circuit named "Commissioned PV System" before the upgrade. On a release before 202639 it is unlocked: its relay is
+switchable and not always-on, and its priority is `OFF_GRID` and can be changed, so it sheds like any other circuit. The upgrade to release 202639 locks it.
+
+1. **Before.** Clone your panel from the dashboard while it still runs a release before 202639, or clone one of the shipped templates. A clone keeps its
+   source's `firmware_version`, so it publishes what that release publishes, and a panel clone's **Update eBus Energy** button, which refreshes its energy
+   readings from the panel, never changes it. A clone of your panel already holds the "Commissioned PV System" circuit as the panel publishes it. A clone of a
+   template holds it locked, as release 202639 publishes it, so take the clone back to the earlier release: set its `firmware_version` to a 202633 release, for
+   example `spanos3/r202633/02`, and in the circuit's template remove `commissioned_system: pv` and set `relay_behavior: controllable` and `priority: OFF_GRID`.
+2. **After.** Copy the first config's YAML to a second file in the same config directory, under a name that does not start with `default_` (that prefix marks a
+   read-only template), and change two things in the copy:
+   - Set `firmware_version` to a 202639 release, for example `spanos3/r202639/03`.
+   - Lock the "Commissioned PV System" circuit as release 202639 does: give its template `commissioned_system: pv`, `priority: NEVER` and
+     `relay_behavior: non-controllable`. A circuit named "Commissioned Backup System" is locked the same way, with `commissioned_system: backup`. PanelBench
+     refuses `commissioned_system` on a config naming an earlier release, so these keys belong only in this file.
+
+   That is all for a panel with one inverter; [A second inverter](#a-second-inverter) adds to it. The serial number, circuits and tabs are what make the two
+   configs one panel.
+
+3. Start the first instance with `CONFIG_NAME=<before>.yaml ./scripts/run-local.sh` and add the panel to Home Assistant.
+4. Stop the first instance and start the second: `./scripts/run-local.sh --stop` from another terminal (or Ctrl+C in the first), then
+   `CONFIG_NAME=<after>.yaml ./scripts/run-local.sh`. `CONFIG_NAME=<after>.yaml ./scripts/run-local.sh --restart` does both at once. Home Assistant sees the
+   same panel come back on the new release.
+
+Run both from the same checkout with the same `HTTP_PORT`, `DASHBOARD_PORT` and `BROKER_PORT`; the defaults are fine. The second instance must answer where the
+first did. The two must never run at once: `run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number.
+
+From release 202639 the second instance does what SPAN's public [CHANGELOG](https://github.com/spanio/SPAN-API-Client-Docs) lists for that release. It publishes
+the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes the
+"Commissioned PV System" circuit locked, with no relay command and a priority fixed at `NEVER`. `GET /api/v2/status` reports `hardwareVersion`: `1.2` or `2.0`
+from the config's `hardware_version`, `1.2` when it sets none, and `UNKNOWN` for any other value. It publishes one solar device per inverter when the panel has
+more than one, and a panel with one keeps its device id.
+
+### A second inverter
+
+Before release 202639 a panel publishes one solar device, so a clone holds one PV circuit and models any other inverter's circuit as a load. To rehearse the
+upgrade of a panel with a second inverter, also make that circuit a commissioned inverter's, locked, in the second config.
+
+The second inverter's circuit is a 240 V two-pole circuit, two tabs on opposite legs, as the "Commissioned PV System" circuit is: a grid-tied inverter in a US
+panel, whether a string inverter or a set of microinverters, sits on a two-pole breaker. A clone of your panel already holds it, as a two-pole circuit modelled
+as a load, so pick that circuit. A clone of a template has no second inverter, so add its circuit to both configs on two free spaces on opposite legs, such as
+`24` and `26`, with the same `id` and `tabs` in both, a two-pole `breaker_rating` such as `20`, and a load's template in the first config; take the two spaces
+out of `unmapped_tabs`. PanelBench warns when a solar circuit sits on one tab. Then, in the second config:
+
+- Name the circuit as its inverter's, for example `Solar Inverter 2`, rather than leaving a load's name.
+- Give it a commissioned PV template: copy the "Commissioned PV System" circuit's template as this config has it, locked, under a new name. Release 202639
+  publishes each commissioned inverter fed by its own circuit and locks that circuit as it locks the "Commissioned PV System" one, so the copy keeps
+  `commissioned_system: pv`, `priority: NEVER` and `relay_behavior: non-controllable`; the template, not the name, is what locks it. PanelBench warns when a
+  solar circuit on a config naming release 202639 or later has no `commissioned_system: pv`. Set the copy's `energy_profile.nameplate_capacity_w` to the
+  inverter's rating, its producer `power_range` to match, such as `[-7600.0, 0.0]`, and its `typical_power` to about 60% of the rating, negative, such as
+  `-4560.0`, and point the circuit's `template` at the copy. Production follows the rating and the time of day, but `typical_power` seeds the energy total the
+  inverter's circuit starts from, so a copy that keeps the original's would start with a total sized for the original inverter. The dashboard's nameplate field
+  sets all three for you.
+- Remove the circuit's own `overrides`. They were the load's: a `power_range` there would cap the inverter's production, and a `typical_power` would replace the
+  template's.
+- Give the circuit, under `circuits`, its own inverter's `vendor`, `model` and `serial_number`. It takes `pv.firmware_version` unless it sets its own
+  `firmware_version`, which a config with no `pv` section needs.
+- Where the config has a top-level `pv` section, as a clone of a template does, set `pv.feed` to the `id` of the original inverter's circuit. The section
+  describes one inverter, the one whose circuit `pv.feed` names; with two PV circuits and no `pv.feed` it describes neither, and the original inverter would
+  lose the identity the first config gave it. A clone of your panel names each inverter on its own circuit instead, and needs no `pv.feed`.
+
 ## Running with Docker (Linux only)
 
 ```bash
@@ -123,11 +189,16 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 
 - **Multi-panel** — load multiple YAML configs; click a row to select, start/stop/restart individual panels. Running panels appear as discovered devices in the
   SpanPanel integration (default configs excluded).
-- **Clone** — create an editable copy from a template, or from a panel running `r202633+` firmware (IP + passphrase).
+- **Clone** — create an editable copy from a template, or from a panel running `r202633+` firmware (IP and passphrase, or broker credentials you already hold).
+  PanelBench registers with a panel once, keeps the passphrase and credentials outside the config, and reuses them for every sync.
 - **Model** — open the energy what-if view for a running panel.
 - **Purge** — remove recorder history written by the simulated panel's sensors when the simulated panel was added to HA's integration.
 - **File operations** — import/export YAML, save & reload
 - **Config persistence** — the simulator remembers the last running config across restarts
+
+Import also accepts a panel definition file (`panel-sim-definition/1`, as `panel-sim-capture` writes one). PanelBench builds a config from the panel's makeup
+and gives every circuit a default behaviour, which you then tune as for a clone. **Export definition** writes a saved config the other way, as a panel
+definition file holding the panel's makeup without PanelBench's behaviour settings.
 
 ### Simulation Controls
 
@@ -135,6 +206,7 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 - **Speed acceleration** — 1x to 360x time acceleration
 - **Grid online/offline** — toggle to test backup behavior and load shedding
 - **Islandable toggle** — controls whether PV operates during grid outage
+- **Battery link** — sets the health of the panel's link to its battery; Home Assistant's dominant power source control is honoured only while it is not OK
 - **Live power chart** — real-time grid, solar, and battery power flows
 
 ### Recorder Replay
@@ -184,8 +256,9 @@ Add, edit, and delete circuits with specialized editors per type:
 - **EVSE** — charging schedule with presets (Peak Solar, Evening, Night) or custom start/duration, 24-hour visual timeline
 - **Circuits** — typical power, 24-hour usage profile with presets, HVAC type selector with seasonal power modulation
 
-PV and Battery are singleton types — only one of each can exist per panel. Recorder-sourced entities preserve their original panel settings (priority, relay
-behavior) as read-only.
+The dashboard adds one PV circuit per panel, and a panel has one battery. A panel with more than one inverter gives each inverter its own PV circuit in the
+config's YAML, as [Rehearsing a SPAN firmware upgrade](#rehearsing-a-span-firmware-upgrade) shows. Recorder-sourced entities preserve their original panel
+settings (priority, relay behavior) as read-only.
 
 ### Relay Control and Load Shedding
 
@@ -253,38 +326,57 @@ simulation_params:
 
 ### Config Selection
 
-By default, the simulator loads `default_config.yaml`. To use a different config:
+To start a specific config:
 
 ```bash
-CONFIG_NAME=simple_test_config.yaml ./scripts/run-local.sh
+CONFIG_NAME=default_MAIN_16.yaml ./scripts/run-local.sh
 ```
 
-The simulator remembers the last running config and resumes it on restart. When no config is specified and no default exists, all YAML files in the config
-directory are loaded.
+Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts with no panel running until you pick one in the dashboard.
 
 ### Included Configs
 
 | File                   | Tabs | Description                                  |
 | ---------------------- | ---- | -------------------------------------------- |
 | `default_MAIN_40.yaml` | 40   | Full residential with solar, battery, 2 EVSE |
-| `default_main_32.yaml` | 32   | Full residential with solar, battery, 1 EVSE |
+| `default_MAIN_32.yaml` | 32   | Full residential with solar, battery, 1 EVSE |
 | `default_MAIN_16.yaml` | 16   | Minimal test: lights, outlets, HVAC, solar   |
+
+### Firmware Version
+
+`firmware_version` is the firmware string a panel reports over MQTT, its HTTP status endpoint and mDNS. It also decides which side of SPAN release 202639 the
+panel emulates: the battery's power sign, whether a SPAN Drive's user charge limit is published before a user sets one, one solar device per inverter, the
+status endpoint's hardware version, and commissioned-system circuits.
+
+The included configs name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639: their solar
+circuit is the locked "Commissioned PV System" circuit, and they report hardware version `1.2`. Read them with the `span-panel` integration v2.1.2 or later;
+v2.1.1 shows the battery's Meter Power with its sign flipped.
+
+To emulate the firmware before that upgrade, clone a template, since templates are read-only, and in the clone's YAML under `configs/` name a 202633 release and
+remove `commissioned_system` from its solar template, which PanelBench refuses on an earlier release:
+
+```yaml
+firmware_version: spanos3/r202633/02
+```
+
+A config naming no firmware reports `sim/v<package version>`, which names no SPAN release, and publishes r202639's conventions. A clone keeps its source panel's
+firmware.
 
 ## Environment Variables
 
 All variables can also be passed as CLI arguments (`--help` for full list).
 
-| Variable            | Default               | Description                               |
-| ------------------- | --------------------- | ----------------------------------------- |
-| `CONFIG_DIR`        | `./configs`           | Directory containing panel YAML configs   |
-| `CONFIG_NAME`       | `default_config.yaml` | Specific config file to load              |
-| `TICK_INTERVAL`     | `1.0`                 | Seconds between simulation ticks          |
-| `LOG_LEVEL`         | `INFO`                | `DEBUG`, `INFO`, `WARNING`, `ERROR`       |
-| `HTTP_PORT`         | `8081`                | Bootstrap HTTP server port (TLS on +1000) |
-| `DASHBOARD_PORT`    | `18080`               | Dashboard web UI port                     |
-| `BROKER_HOST`       | `localhost`           | MQTT broker hostname                      |
-| `BROKER_PORT`       | `18883`               | MQTTS broker port                         |
-| `ADVERTISE_ADDRESS` | auto-detected         | IP to advertise via mDNS                  |
+| Variable            | Default         | Description                               |
+| ------------------- | --------------- | ----------------------------------------- |
+| `CONFIG_DIR`        | `./configs`     | Directory containing panel YAML configs   |
+| `CONFIG_NAME`       | last config run | Specific config file to load              |
+| `TICK_INTERVAL`     | `1.0`           | Seconds between simulation ticks          |
+| `LOG_LEVEL`         | `INFO`          | `DEBUG`, `INFO`, `WARNING`, `ERROR`       |
+| `HTTP_PORT`         | `8081`          | Bootstrap HTTP server port (TLS on +1000) |
+| `DASHBOARD_PORT`    | `18080`         | Dashboard web UI port                     |
+| `BROKER_HOST`       | `localhost`     | MQTT broker hostname                      |
+| `BROKER_PORT`       | `18883`         | MQTTS broker port                         |
+| `ADVERTISE_ADDRESS` | auto-detected   | IP to advertise via mDNS                  |
 
 ## Development
 

@@ -51,6 +51,17 @@
       }
     });
 
+    // A refused request (a 4xx carrying the reason, such as a save the panel would
+    // not load) says why in the flash area, which htmx alone would leave blank.
+    document.body.addEventListener('htmx:responseError', function(evt) {
+      var area = document.getElementById('flash-area');
+      if (!area) return;
+      var flash = document.createElement('div');
+      flash.className = 'flash error';
+      flash.textContent = evt.detail.xhr.responseText || ('Request failed (' + evt.detail.xhr.status + ')');
+      area.replaceChildren(flash);
+    });
+
     // Toggle random preset parameters visibility
     function toggleRandomParams(sel, entityId) {
       var el = document.getElementById('random-params-' + entityId);

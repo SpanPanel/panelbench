@@ -1,8 +1,8 @@
 """eBus-to-YAML translation — converts a discovered panel into a simulator config.
 
-Pure data transformation: takes a ``ScrapedPanel`` (a tree of discovered Homie
-devices) and produces a complete YAML config dict matching the ``SimulationConfig``
-TypedDict shape.
+Pure data transformation: takes a panel's tree of discovered Homie devices — scraped
+from a live panel, or read back from a published capture — and produces a complete
+YAML config dict matching the ``SimulationConfig`` TypedDict shape.
 
 Design principles:
   - Each circuit gets its own template (``clone_{first position}``) for per-circuit
@@ -15,10 +15,14 @@ Design principles:
 
 from __future__ import annotations
 
+import json
 import logging
+import math
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Final
 
 import yaml
 from ebus_sdk import DiscoveredDevice
@@ -33,6 +37,36 @@ TYPE_CIRCUIT = "energy.ebus.device.circuit"
 TYPE_BESS = "energy.ebus.device.bess"
 TYPE_PV = "energy.ebus.device.pv"
 TYPE_EVSE = "energy.ebus.device.evse"
+TYPE_MID = "energy.ebus.device.mid"
+
+COMMISSIONED_SYSTEM_FEEDS: Final[Mapping[str, str]] = MappingProxyType(
+    {TYPE_PV: "pv", TYPE_BESS: "backup"}
+)
+"""The system a commissioned circuit belongs to, by the type of device it feeds."""
+
+COMMISSIONED_SYSTEM_NAMES: Final[Mapping[str, str]] = MappingProxyType(
+    {"Commissioned PV System": "pv", "Commissioned Backup System": "backup"}
+)
+"""The names a SPAN panel gives the circuits it adds for a commissioned system.
+
+Read only when a circuit publishes no ``connection`` to say what it feeds: the name
+is the user's to change, and a renamed circuit is commissioned all the same.
+"""
+
+# A main breaker rating for a panel that publishes none, reported when used: the
+# config has no way yet to say a panel has none.
+_DEFAULT_MAIN_BREAKER_A: Final = 200
+# What sizes the simulated power range of a circuit that publishes no rating. Only
+# that: the clone records the rating as absent, and publishes none of its own.
+_MODELLING_BREAKER_A: Final = 20
+
+# A battery that publishes no `info/nominal-power` is given 5 kW per 13.5 kWh, a
+# Powerwall 2's continuous rating: the most common battery behind these panels, and
+# one that scales exactly for a stack of them (six, 81 kWh, are 30 kW).
+_BESS_W_PER_KWH_UNPUBLISHED: Final = 5000.0 / 13.5
+
+# What a panel publishing no size is rounded up to from its highest occupied space.
+_STANDARD_PANEL_SIZES: Final = (16, 24, 32, 40, 48)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,6 +74,37 @@ if TYPE_CHECKING:
     from panelbench.scraper import ScrapedPanel
 
 _LOGGER = logging.getLogger(__name__)
+
+# The `info` properties a clone carries for each kind of DER, and the config key each
+# is written to. Each set is exactly what `spec_generator` publishes from that key, so
+# a clone republishes what it read: a PV circuit's and an EVSE circuit's keys, and the
+# top-level `bess` section's.
+_PV_IDENTITY: Final = (
+    ("serial-number", "serial_number"),
+    ("model", "model"),
+    ("vendor-name", "vendor"),
+    ("firmware-version", "firmware_version"),
+)
+_EVSE_IDENTITY: Final = (
+    ("serial-number", "serial_number"),
+    ("firmware-version", "firmware_version"),
+)
+# A battery's MID publishes its own identity, which the clone keeps on the battery's
+# section under the keys `spec_generator` builds the MID from.
+_MID_IDENTITY: Final = (
+    ("vendor-name", "mid_vendor"),
+    ("serial-number", "mid_serial_number"),
+    ("model", "mid_product_name"),
+    ("firmware-version", "mid_firmware_version"),
+    ("hardware-version", "mid_hardware_version"),
+)
+_BESS_IDENTITY: Final = (
+    ("vendor-name", "vendor"),
+    ("model", "model"),
+    ("part-number", "part_number"),
+    ("serial-number", "serial_number"),
+    ("firmware-version", "firmware_version"),
+)
 
 
 def make_clone_serial(original_serial: str) -> str:
@@ -90,34 +155,59 @@ def translate_scraped_panel(
     scraped: ScrapedPanel,
     *,
     host: str | None = None,
-    passphrase: str | None = None,
 ) -> dict[str, object]:
     """Translate a scraped panel into a simulator config dict.
 
     Args:
         scraped: The scraped panel data.
         host: Source panel IP/hostname (stored in panel_source for refresh).
-        passphrase: Source panel passphrase (stored in panel_source for refresh).
 
     Returns a dict matching the ``SimulationConfig`` TypedDict shape,
     ready for YAML serialisation and ``validate_yaml_config()``.
     """
-    root = scraped.serial_number
-    circuit_nodes = _devices_of_type(scraped.devices, root, TYPE_CIRCUIT)
-    bess_nodes = _devices_of_type(scraped.devices, root, TYPE_BESS)
-    pv_nodes = _devices_of_type(scraped.devices, root, TYPE_PV)
-    evse_nodes = _devices_of_type(scraped.devices, root, TYPE_EVSE)
+    return translate_panel_tree(scraped.serial_number, scraped.devices, host=host)
+
+
+def translate_panel_tree(
+    panel_device_id: str,
+    devices: Mapping[str, DiscoveredDevice],
+    *,
+    host: str | None = None,
+) -> dict[str, object]:
+    """Translate a panel's device tree into a simulator config dict.
+
+    Args:
+        panel_device_id: The panel's Homie device id, which roots the tree. On a
+            live SPAN panel it is the serial number.
+        devices: Every discovered device; only *panel_device_id*'s tree is read.
+        host: Source panel IP/hostname (stored in panel_source for refresh). What it
+            takes to reach the panel there is kept in the ``PanelSecretsStore``,
+            never in the config.
+
+    Returns a dict matching the ``SimulationConfig`` TypedDict shape,
+    ready for YAML serialisation and ``validate_yaml_config()``.
+    """
+    circuit_nodes = _devices_of_type(devices, panel_device_id, TYPE_CIRCUIT)
+    bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
+    pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
+    evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
 
     # Build feed cross-reference: circuit_uuid → device_type
-    feed_map = _build_feed_map(scraped.devices, circuit_nodes)
+    feed_map = _build_feed_map(devices, circuit_nodes)
 
     # Extract panel-level values
-    main_breaker = _int_prop(scraped.devices, scraped.serial_number, "breaker", "rating") or 200
+    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating")
+    if not main_breaker:
+        _LOGGER.warning(
+            "Panel %s publishes no breaker/rating; cloning it with a %d A main breaker",
+            panel_device_id,
+            _DEFAULT_MAIN_BREAKER_A,
+        )
+        main_breaker = _DEFAULT_MAIN_BREAKER_A
 
-    # Derive panel size from maximum space value across all circuits
-    total_tabs = _derive_total_tabs(scraped.devices, circuit_nodes)
+    total_tabs = _derive_total_tabs(devices, panel_device_id, circuit_nodes)
 
-    clone_serial = make_clone_serial(scraped.serial_number)
+    clone_serial = make_clone_serial(panel_device_id)
 
     panel_config: dict[str, object] = {
         "serial_number": clone_serial,
@@ -126,6 +216,21 @@ def translate_scraped_panel(
         "latitude": 37.7,
         "longitude": -122.4,
     }
+    panel_device = devices.get(panel_device_id)
+    panel_description = panel_device.description if panel_device is not None else None
+    if isinstance(panel_description, dict) and isinstance(panel_description.get("name"), str):
+        panel_config["display_name"] = panel_description["name"]
+    vendor = _get_prop(devices, panel_device_id, "info", "vendor-name")
+    if vendor:
+        panel_config["vendor_name"] = vendor
+    model = _get_prop(devices, panel_device_id, "info", "model")
+    if model:
+        panel_config["model"] = model
+    _copy_envelope(devices, panel_device_id, panel_config)
+    _copy_site_values(devices, panel_device_id, panel_config)
+    shed_threshold = _soc_shed_threshold(devices, panel_device_id)
+    if shed_threshold is not None:
+        panel_config["soc_shed_threshold"] = shed_threshold
 
     # Build per-circuit templates and definitions
     templates: dict[str, dict[str, object]] = {}
@@ -134,7 +239,7 @@ def translate_scraped_panel(
 
     for node_uuid in sorted(circuit_nodes):
         result = _translate_circuit(
-            scraped.devices,
+            devices,
             node_uuid,
             feed_map,
         )
@@ -148,11 +253,11 @@ def translate_scraped_panel(
 
     # Enrich PV circuit template
     for pv_id in pv_nodes:
-        _enrich_pv_template(scraped.devices, pv_id, feed_map, templates)
+        _enrich_pv_template(devices, circuit_nodes, pv_id, feed_map, templates, circuits)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(scraped.devices, evse_id, feed_map, templates)
+        _enrich_evse_template(devices, circuit_nodes, evse_id, feed_map, templates, circuits)
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -171,17 +276,30 @@ def translate_scraped_panel(
         },
     }
 
+    # The panel's firmware decides which side of SPAN release 202639 the clone
+    # publishes (the BESS meter's sign, the EVSE limit), so a clone of a panel on an
+    # earlier release must keep it rather than inherit the simulator's own string.
+    firmware = _get_prop(devices, panel_device_id, "info", "firmware-version")
+    if firmware:
+        config["firmware_version"] = firmware
+
+    # Published as info/hardware-version and, from SPAN release 202639, reported by
+    # the status endpoint, so a clone reports the source panel's value on both.
+    hardware = _get_prop(devices, panel_device_id, "info", "hardware-version")
+    if hardware:
+        config["hardware_version"] = hardware
+
     # Build top-level BESS config (only when a battery is actually connected)
+    mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
     for bess_id in bess_nodes:
-        bess_cfg = _build_bess_config(scraped.devices, bess_id)
+        bess_cfg = _build_bess_config(devices, bess_id, mid_nodes)
         if bess_cfg is not None:
             config["bess"] = bess_cfg
 
     if host is not None:
         panel_source: dict[str, object] = {
-            "origin_serial": scraped.serial_number,
+            "origin_serial": panel_device_id,
             "host": host,
-            "passphrase": passphrase,
             "last_synced": datetime.now(UTC).isoformat(),
         }
         # Snapshot the original BESS config so the modeling Before pass
@@ -403,9 +521,11 @@ def _float_prop(
     if raw is None:
         return None
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         return None
+    # `inf` and `nan` parse, and mean nothing a config can carry: read them as unpublished.
+    return value if math.isfinite(value) else None
 
 
 def _int_prop(
@@ -415,13 +535,8 @@ def _int_prop(
     prop: str,
 ) -> int | None:
     """An integer property, tolerating a float-formatted payload."""
-    raw = _get_prop(devices, device_id, capability, prop)
-    if raw is None:
-        return None
-    try:
-        return int(float(raw))
-    except ValueError:
-        return None
+    value = _float_prop(devices, device_id, capability, prop)
+    return None if value is None else int(value)
 
 
 def _bool_prop(
@@ -513,16 +628,19 @@ def _devices_of_type(
 
 def _circuit_feeding(
     devices: Mapping[str, DiscoveredDevice],
+    circuit_nodes: list[str],
     target_device_id: str,
 ) -> str | None:
-    """The circuit that feeds ``target_device_id``, or None.
+    """The circuit of this panel that feeds ``target_device_id``, or None.
 
     The reverse of the flat schema's lookup. A DER used to name its circuit through
     ``feed``; now the circuit names the DER through ``connection/feeds-device-id``,
     so finding a DER's circuit means searching the circuits rather than reading one
-    property off the DER.
+    property off the DER. Only *circuit_nodes*, this panel's circuits: a broker
+    serving two panels hands back both trees, and another device publishing
+    ``connection`` is not a circuit of this one.
     """
-    for device_id in devices:
+    for device_id in circuit_nodes:
         if _get_prop(devices, device_id, "connection", "feeds-device-id") == target_device_id:
             return device_id
     return None
@@ -560,27 +678,130 @@ def _build_feed_map(
 
 def _derive_total_tabs(
     devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
     circuit_nodes: list[str],
 ) -> int:
-    """Derive panel size from the highest breaker position any circuit occupies.
+    """The panel's size: what it publishes, else its highest occupied space.
 
-    v1.0 publishes the positions directly in ``info/spaces``, so a 240 V circuit
-    already reports both. The flat schema published one position plus a ``dipole``
-    flag and left the consumer to infer the companion as position + 2 — that
-    inference is gone, along with the class of bug where a panel wired against the
-    convention was silently mis-sized.
+    An ``info/panel-size``, where one is published, then the numeric suffix of
+    ``info/model`` (``MAIN_32``), as upstream's capture reads it. Only without either
+    does the highest breaker position decide, rounded up to a standard size, and
+    that undercounts any panel whose top spaces are empty.
+
+    A published size the circuits do not fit in is reported and set aside, since the
+    clone would place a circuit on a space the panel does not have.
     """
     max_space = 0
     for node_id in circuit_nodes:
         for space in _spaces_prop(devices, node_id):
             max_space = max(max_space, space)
 
-    # Round up to standard panel sizes
-    for standard_size in (16, 24, 32, 40, 48):
+    published = _published_panel_size(devices, panel_device_id)
+    if published is not None:
+        if published >= max_space:
+            return published
+        _LOGGER.warning(
+            "Panel %s publishes a size of %d (model %s) but has a circuit on space %d; "
+            "sizing the clone from its circuits",
+            panel_device_id,
+            published,
+            _get_prop(devices, panel_device_id, "info", "model"),
+            max_space,
+        )
+
+    for standard_size in _STANDARD_PANEL_SIZES:
         if max_space <= standard_size:
             return standard_size
 
     return max_space
+
+
+def _published_panel_size(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+) -> int | None:
+    """The size the panel's ``info/model`` names by its numeric suffix (``MAIN_32``).
+
+    A panel publishes no size of its own: upstream's capture derives one the same way.
+    """
+    model = _get_prop(devices, panel_device_id, "info", "model") or ""
+    suffix = re.search(r"(\d+)$", model)
+    return int(suffix.group(1)) if suffix else None
+
+
+def _soc_shed_threshold(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+) -> float | None:
+    """The off-grid SOC shed threshold from the panel's published ``shed/policy``."""
+    raw = _get_prop(devices, panel_device_id, "shed", "policy")
+    if raw is None:
+        return None
+    try:
+        threshold = json.loads(raw)["parameters"]["soc-threshold-shed"]
+        return float(threshold)
+    except (ValueError, KeyError, TypeError):
+        _LOGGER.warning(
+            "Panel %s publishes a shed/policy with no soc-threshold-shed", panel_device_id
+        )
+        return None
+
+
+# The panel envelope's network configuration: the links the panel says it has, and
+# the panel_config key each is kept under for the emitter's envelope to publish. Not
+# its door or cloud state: those are live state, which the emulator simulates, like
+# power, and a copy would freeze them at the moment of the clone.
+_ENVELOPE_FLAGS: Final = (("wifi", "wifi_link"), ("ethernet", "ethernet_link"))
+
+
+def _copy_envelope(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    panel_config: dict[str, object],
+) -> None:
+    """The panel's network configuration, absences included.
+
+    A panel on Ethernet publishes Wi-Fi down and no SSID; its clone records both, so
+    it publishes neither a Wi-Fi link nor PanelBench's default network. The SSID is
+    written as null only for a panel that states its links and names no network.
+    """
+    for prop, key in _ENVELOPE_FLAGS:
+        flag = _bool_prop(devices, panel_device_id, "status", prop)
+        if flag is not None:
+            panel_config[key] = flag
+    ssid = _get_prop(devices, panel_device_id, "status", "wifi-ssid")
+    if ssid:
+        panel_config["wifi_ssid"] = ssid
+    elif "wifi_link" in panel_config:
+        panel_config["wifi_ssid"] = None
+
+
+def _copy_site_values(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    panel_config: dict[str, object],
+) -> None:
+    """The panel's time zone and line voltages, where it publishes them.
+
+    A simulated panel publishes one per-leg voltage on both legs, so the clone takes
+    the mean of the legs the source publishes, and their sum (or twice the one) as
+    the service voltage. A value the panel does not publish is left unwritten, so
+    the config's default applies. The postal code is deliberately not copied.
+    """
+    time_zone = _get_prop(devices, panel_device_id, "status", "time-zone")
+    if time_zone:
+        panel_config["time_zone"] = time_zone
+
+    legs = [
+        voltage
+        for leg in ("voltage-a", "voltage-b")
+        if (voltage := _float_prop(devices, panel_device_id, "meter", leg)) is not None
+        and voltage > 0
+    ]
+    if legs:
+        line = sum(legs) / len(legs)
+        panel_config["line_voltage_v"] = round(line, 2)
+        panel_config["service_voltage_v"] = round(2 * line, 2)
 
 
 def _translate_circuit(
@@ -600,7 +821,11 @@ def _translate_circuit(
     space = tabs[0]
 
     name = _get_prop(devices, node_uuid, "info", "name") or f"Circuit {space}"
-    breaker_rating = _int_prop(devices, node_uuid, "breaker", "rating") or 20
+    # Faithful to what the panel publishes: a rating it does not publish stays absent
+    # in the clone. The simulated power range still needs a size, so a modelling one
+    # stands in for that alone.
+    breaker_rating = _int_prop(devices, node_uuid, "breaker", "rating") or None
+    modelling_rating = breaker_rating or _MODELLING_BREAKER_A
     active_power = _float_prop(devices, node_uuid, "meter", "active-power")
     priority = _get_prop(devices, node_uuid, "load-shed", "priority") or "NEVER"
     # v1.0 publishes controllability directly as `switch/relay-controllable`, where
@@ -622,7 +847,15 @@ def _translate_circuit(
     # Deliberately not derived from `priority == "NEVER"`. `NEVER` is an ordinary settable
     # value meaning "never shed"; a production capture publishes two `NEVER` circuits with
     # `$settable = true`, which no value-derived flag can produce.
-    never_backup = not _is_settable(devices, node_uuid, "load-shed", "priority")
+    priority_locked = not _is_settable(devices, node_uuid, "load-shed", "priority")
+    # A circuit SPAN adds for a commissioned PV or battery system is the third lock:
+    # priority locked at NEVER on a locked relay.
+    commissioned_system = (
+        _commissioned_system(devices, node_uuid, name)
+        if priority_locked and not relay_controllable and priority == "NEVER"
+        else None
+    )
+    never_backup = priority_locked and commissioned_system is None
     if never_backup and priority != "OFF_GRID":
         # The panel contradicted itself: a circuit commissioned never-backup *is*
         # permanently OFF_GRID, and the emitter rejects the pair at construction rather
@@ -645,10 +878,10 @@ def _translate_circuit(
     mode = _device_role_to_mode(device_role)
 
     # Relay behavior
-    relay_behavior = "controllable" if relay_controllable else "non_controllable"
+    relay_behavior = "controllable" if relay_controllable else "non-controllable"
 
     # Power range and typical power
-    max_power = breaker_rating * voltage
+    max_power = modelling_rating * voltage
     typical = abs(active_power) if active_power is not None else max_power * 0.3
     # Clamp typical to max
     typical = min(typical, max_power)
@@ -701,6 +934,12 @@ def _translate_circuit(
     if never_backup:
         template["never_backup"] = True
 
+    # A commissioned-system circuit, as capture's rule recognises it. Written with
+    # the locks it implies already present above (relay non-controllable, priority
+    # NEVER), so the cloned template validates.
+    if commissioned_system is not None:
+        template["commissioned_system"] = commissioned_system
+
     if device_role == "evse":
         template["device_type"] = "evse"
     elif device_role == "pv":
@@ -715,9 +954,30 @@ def _translate_circuit(
         "name": name,
         "template": template_name,
         "tabs": tabs,
+        # The panel's own value, or none where it publishes none, as a commissioned
+        # PV circuit does: never the position-derived one PanelBench's configs get.
+        "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
     }
 
     return template_name, template, circuit_def, tabs
+
+
+def _commissioned_system(
+    devices: Mapping[str, DiscoveredDevice],
+    node_uuid: str,
+    name: str,
+) -> str | None:
+    """The commissioned system a doubly locked circuit belongs to, if any.
+
+    What the circuit feeds decides it: an inverter makes it the PV system, a battery
+    the backup system, anything else neither. Only a circuit that publishes no
+    ``connection`` falls back to the name SPAN gives such a circuit, which the user
+    may since have changed.
+    """
+    feeds = _get_prop(devices, node_uuid, "connection", "feeds-device-type")
+    if feeds:
+        return COMMISSIONED_SYSTEM_FEEDS.get(feeds)
+    return COMMISSIONED_SYSTEM_NAMES.get(name)
 
 
 def _device_role_to_mode(device_role: str | None) -> str:
@@ -732,6 +992,7 @@ def _device_role_to_mode(device_role: str | None) -> str:
 def _build_bess_config(
     devices: Mapping[str, DiscoveredDevice],
     bess_node_id: str,
+    mid_nodes: list[str],
 ) -> dict[str, object] | None:
     """Build top-level bess config from scraped BESS node properties.
 
@@ -741,29 +1002,53 @@ def _build_bess_config(
     nameplate = _float_prop(devices, bess_node_id, "info", "nameplate-capacity")
     if not nameplate:
         return None
+    # `info/nominal-power` is the battery's "nameplate maximum rated power output"
+    # (eBus devices/bess.md, `info`); a battery that publishes none is scaled from its
+    # capacity by `_BESS_W_PER_KWH_UNPUBLISHED`. Either way, charge as discharge.
+    rated_power = _float_prop(devices, bess_node_id, "info", "nominal-power")
+    if rated_power is None or rated_power <= 0:
+        rated_power = nameplate * _BESS_W_PER_KWH_UNPUBLISHED
 
-    return {
+    bess: dict[str, object] = {
         "enabled": True,
         "charge_mode": "custom",
         "nameplate_capacity_kwh": nameplate,
         "backup_reserve_pct": 20.0,
         "charge_efficiency": 0.95,
         "discharge_efficiency": 0.95,
-        "max_charge_w": 3500.0,
-        "max_discharge_w": 3500.0,
+        "max_charge_w": rated_power,
+        "max_discharge_w": rated_power,
         "charge_hours": [0, 1, 2, 3, 4, 5],
         "discharge_hours": [16, 17, 18, 19, 20, 21],
     }
+    # The battery's identity, so a clone republishes the battery it read. Its serial
+    # also names its device id, `<panel>-<serial>`, under the clone's own panel id.
+    _copy_info(devices, bess_node_id, bess, _BESS_IDENTITY)
+    mid = next(
+        (
+            mid_id
+            for mid_id in mid_nodes
+            if (description := devices[mid_id].description) is not None
+            and description.get("parent") == bess_node_id
+        ),
+        None,
+    )
+    if mid is not None:
+        _copy_info(devices, mid, bess, _MID_IDENTITY)
+    return bess
 
 
 def _enrich_pv_template(
     devices: Mapping[str, DiscoveredDevice],
+    circuit_nodes: list[str],
     pv_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
+    circuits: list[dict[str, object]],
 ) -> None:
-    """Enrich the PV circuit template with nameplate capacity and solar profile."""
-    circuit_uuid = _circuit_feeding(devices, pv_node_id)
+    """Enrich the PV circuit template with nameplate capacity and solar profile, and
+    write the inverter's identity onto the circuit that feeds it."""
+    circuit_uuid = _circuit_feeding(devices, circuit_nodes, pv_node_id)
     template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
         return
@@ -777,15 +1062,24 @@ def _enrich_pv_template(
             ep["power_range"] = [-nameplate, 0.0]
             ep["typical_power"] = -nameplate * 0.6
 
+    # The inverter's identity and firmware belong to the circuit that feeds it, so a
+    # clone of a panel with several inverters republishes each as it was.
+    circuit = _circuit_using(template, templates, circuits)
+    if circuit is not None:
+        _copy_info(devices, pv_node_id, circuit, _PV_IDENTITY)
+
 
 def _enrich_evse_template(
     devices: Mapping[str, DiscoveredDevice],
+    circuit_nodes: list[str],
     evse_node_id: str,
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
+    circuits: list[dict[str, object]],
 ) -> None:
-    """Enrich the EVSE circuit template with time-of-day charging profile."""
-    circuit_uuid = _circuit_feeding(devices, evse_node_id)
+    """Enrich the EVSE circuit template with time-of-day charging profile, and write
+    the drive's serial and firmware onto the circuit that feeds it."""
+    circuit_uuid = _circuit_feeding(devices, circuit_nodes, evse_node_id)
     template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
         return
@@ -794,6 +1088,42 @@ def _enrich_evse_template(
         "enabled": True,
         "hour_factors": dict(_NIGHT_CHARGING_HOURS),
     }
+
+    # On the circuit, as for an inverter: the clone orders circuits by source device
+    # id, so a serial derived from position could move a drive's serial onto another
+    # drive. Verbatim, because the drive's device id is already scoped by the clone's
+    # own panel id and cannot collide with the source's on one broker.
+    circuit = _circuit_using(template, templates, circuits)
+    if circuit is not None:
+        _copy_info(devices, evse_node_id, circuit, _EVSE_IDENTITY)
+
+
+def _circuit_using(
+    template: dict[str, object],
+    templates: dict[str, dict[str, object]],
+    circuits: list[dict[str, object]],
+) -> dict[str, object] | None:
+    """The circuit definition built on *template*, which a clone gives one circuit."""
+    template_name = next((name for name, value in templates.items() if value is template), None)
+    return next((c for c in circuits if c.get("template") == template_name), None)
+
+
+def _copy_info(
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    target: dict[str, object],
+    keys: tuple[tuple[str, str], ...],
+) -> None:
+    """Write each of *device_id*'s published ``info`` values onto *target*.
+
+    *keys* pairs an ``info`` property with the config key it is written to. A
+    property the device does not value is left unwritten, so the config's default
+    applies to it.
+    """
+    for prop, key in keys:
+        value = _get_prop(devices, device_id, "info", prop)
+        if value:
+            target[key] = value
 
 
 def _find_template_for_feed(

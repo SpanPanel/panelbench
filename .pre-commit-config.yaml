@@ -1,3 +1,6 @@
+# Upstream's data, vendored byte-identical; test_vendored_example_matches_the_pinned_release
+# compares the bytes with the pinned release, so no hook may rewrite them.
+exclude: ^tests/fidelity/fixtures/upstream/.*\.(ya?ml|json)$
 repos:
   - repo: local
     hooks:
@@ -37,9 +40,10 @@ repos:
           # released versions from PyPI rather than a git ref: `ebus-panel-sim` used to
           # track the fork's moving `spanpanel/main` branch, so this hook could resolve a
           # different build on two consecutive runs with nothing in the repo changing.
-          - ebus-panel-sim==0.8.0
+          - ebus-panel-sim==0.9.0
           - ebus-sdk==0.22.0
-          - aiomqtt>=2.0.0
+          - aiomqtt>=2.5.1,<2.6
+          - paho-mqtt>=2.1,<2.2
           - aiohttp>=3.9.0
           - aiohttp-jinja2>=1.6
           - jinja2>=3.1.0

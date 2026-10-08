@@ -47,7 +47,6 @@ class SimulatedCircuit:
                 "typical_power",
                 "power_variation",
                 "efficiency",
-                "nameplate_capacity_w",
             }
             for key, value in circuit_def["overrides"].items():
                 if key in _ENERGY_PROFILE_KEYS:

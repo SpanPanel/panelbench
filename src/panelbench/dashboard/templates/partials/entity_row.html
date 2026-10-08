@@ -11,7 +11,7 @@
       would flip it optimistically against a 409. -#}
   {% if entity.relay_locked %}
   <span class="circuit-status" data-cid="{{ entity.id }}"
-        title="Relay locked ({{ entity.relay_behavior }}) — not commandable"></span>
+        title="Relay locked ({{ entity.relay_behavior_option }}) — not commandable"></span>
   {% else %}
   <span class="circuit-status circuit-status-toggle" data-cid="{{ entity.id }}" title="Toggle relay"></span>
   {% endif %}

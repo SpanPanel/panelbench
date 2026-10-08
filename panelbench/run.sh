@@ -54,6 +54,9 @@ detect_advertise_address() {
 ADVERTISE_ADDRESS="${ADVERTISE_ADDRESS:-$(detect_advertise_address)}"
 export ADVERTISE_ADDRESS
 export CERT_DIR="/data/certs"
+# Source panels' passphrases and broker credentials. In /data, which only the add-on
+# reads, rather than beside the configs in the folder Home Assistant shares.
+export SECRETS_DIR="/data/secrets"
 export BROKER_USERNAME="span"
 export BROKER_PASSWORD="sim-password"
 
@@ -69,17 +72,34 @@ LEGACY_CONFIG_DIR="/config/span_simulator"
 CONFIG_DIR="/config/panelbench"
 mkdir -p "${CONFIG_DIR}"
 
-# Seed the shipped defaults, still only where a file is missing, so an edited
-# config is never overwritten. The difference is that this directory starts empty
-# on an upgrade, so the shipped defaults actually land.
-for src in /app/configs/*.yaml /app/configs/*.yml; do
-    [ -f "${src}" ] || continue
-    dest="${CONFIG_DIR}/$(basename "${src}")"
-    if [ ! -f "${dest}" ]; then
-        cp "${src}" "${dest}"
-        echo "Seeded config: $(basename "${src}")"
-    fi
-done
+# Lay the shipped configs into the config directory.
+#
+# The `default_*` templates belong to PanelBench: the dashboard refuses to save,
+# delete or rename them, so a copy here can only ever be one a release laid
+# down. They are refreshed on every start. Seeding them only where they were
+# missing left an upgraded install on the previous release's copy, and a template
+# that names no SPAN firmware release publishes the newest release's conventions,
+# so the old copy silently changed what the panel published.
+#
+# Every other file here is the user's -- clones live in this directory -- so it is
+# never touched. Any other shipped file is seeded once, where it is missing.
+seed_configs() {
+    local shipped_dir="$1" config_dir="$2" src name dest
+    for src in "${shipped_dir}"/*.yaml "${shipped_dir}"/*.yml; do
+        [ -f "${src}" ] || continue
+        name="$(basename "${src}")"
+        dest="${config_dir}/${name}"
+        if [ ! -f "${dest}" ]; then
+            cp "${src}" "${dest}"
+            echo "Seeded config: ${name}"
+        elif [[ "${name}" == default_* ]] && ! cmp -s "${src}" "${dest}"; then
+            cp "${src}" "${dest}"
+            echo "Refreshed shipped template: ${name}"
+        fi
+    done
+}
+
+seed_configs /app/configs "${CONFIG_DIR}"
 
 # Nothing is migrated from the old directory. A file there may have been written
 # by either add-on and nothing distinguishes them, so copying would reintroduce

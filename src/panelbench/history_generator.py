@@ -25,8 +25,9 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from panelbench.config_defaults import normalize_config
 from panelbench.hvac import hvac_seasonal_factor
-from panelbench.solar import daily_weather_factor, solar_production_factor
+from panelbench.solar import daily_weather_factor, solar_production_factor, weather_seed
 from panelbench.sqlite_history import SCHEMA_SQL
 from panelbench.weather import fetch_historical_weather, get_cached_weather
 
@@ -96,6 +97,9 @@ class SyntheticHistoryGenerator:
         if not isinstance(raw, dict):
             msg = f"Invalid config: {config_path}"
             raise ValueError(msg)
+        # As the engine reads it, so the history is sized by the rating the panel
+        # produces at.
+        normalize_config(raw, source=str(config_path))
 
         anchor = anchor_time if anchor_time is not None else time.time()
         days_total = (years * 365) if years is not None else _DAYS_TOTAL
@@ -346,9 +350,7 @@ class SyntheticHistoryGenerator:
         # Mean of monthly factors for normalisation
         mean_mf = sum(monthly_factors.values()) / len(monthly_factors) if monthly_factors else 1.0
 
-        # Precompute deterministic seed from serial for weather factor
-        serial_bytes = str(serial).encode("utf-8")
-        serial_seed = int.from_bytes(hashlib.sha256(serial_bytes).digest()[:8], "big")
+        serial_seed = weather_seed(str(serial))
 
         batch: list[tuple[object, ...]] = []
         ts = start_ts

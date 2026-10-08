@@ -17,6 +17,7 @@ axis that decides whether a user's history survives.
     Lugs          <panel-serial>-lugs-{up,dn}
     Circuit       <circuit-uuid>   (uuid5 of <panel-serial>/<circuit-id>)
     BESS/PV/EVSE  <proxier-id>-<identifier>   (proxied; proxier is the panel)
+    PV, several   <panel>-<slug of serial or model>-<feed circuit uuid>
     MID           <bess-id>-mid
 
 `devices/distribution-enclosure.md` Example 1 shows the proxied form concretely:
@@ -33,6 +34,7 @@ diverge. Both now call these functions.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import TYPE_CHECKING
 
@@ -95,6 +97,23 @@ def mid_device_id(panel_id: str, bess: Mapping[str, object] | None) -> str:
 def pv_device_id(panel_id: str, pv: Mapping[str, object] | None) -> str:
     """`<panel>-<identifier>` for PV proxied by this panel."""
     return f"{panel_id}-{_der_identifier(pv, 'pv-1')}"
+
+
+_NOT_ID_CHARS = re.compile(r"[^a-z0-9]+")
+
+
+def pv_inverter_device_id(panel_id: str, identifier: str | None, feed_circuit_id: str) -> str:
+    """One inverter's device id on a panel publishing more than one.
+
+    `<panel>-<serial or model>-<feeding circuit id>`, the form ``ebus-panel-sim``'s
+    example gives a SPAN panel's inverters. Only the serial or model is slugged,
+    lowercased with every run of other characters as one hyphen; the panel and
+    circuit ids are device ids already. The circuit discriminates, because two
+    inverters may share a model and neither may publish a serial. A panel with one
+    inverter keeps `pv_device_id`.
+    """
+    slug = _NOT_ID_CHARS.sub("-", (identifier or "pv").lower()).strip("-") or "pv"
+    return f"{panel_id}-{slug}-{feed_circuit_id}"
 
 
 def evse_device_id(panel_id: str, evse: Mapping[str, object] | None, idx: int) -> str:

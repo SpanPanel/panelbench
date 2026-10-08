@@ -10,348 +10,6 @@
   "observations": [
     {
       "bucket": "extension",
-      "device": "df5d74733e435d53be69ee9edbbda675",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "df5d74733e435d53be69ee9edbbda675/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "df5d74733e435d53be69ee9edbbda675",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "df5d74733e435d53be69ee9edbbda675/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "a83191fcac585bda9d6fe05ca79b8a4f",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "a83191fcac585bda9d6fe05ca79b8a4f/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "a83191fcac585bda9d6fe05ca79b8a4f",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "a83191fcac585bda9d6fe05ca79b8a4f/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "f482dc963f2654de922bfd1a40d30ee0",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "f482dc963f2654de922bfd1a40d30ee0/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "f482dc963f2654de922bfd1a40d30ee0",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "f482dc963f2654de922bfd1a40d30ee0/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "51ab52ca7e085204bd300a35731c1501",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "51ab52ca7e085204bd300a35731c1501/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "51ab52ca7e085204bd300a35731c1501",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "51ab52ca7e085204bd300a35731c1501/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "9c22d40aa8f25a82bf22e62aa1891c4b",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "9c22d40aa8f25a82bf22e62aa1891c4b/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "9c22d40aa8f25a82bf22e62aa1891c4b",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "9c22d40aa8f25a82bf22e62aa1891c4b/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "72b4343c886e5c98bca64a131b6003ce",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "72b4343c886e5c98bca64a131b6003ce/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "72b4343c886e5c98bca64a131b6003ce",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "72b4343c886e5c98bca64a131b6003ce/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "cafc279d283d567280deb2fce6be8438",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "cafc279d283d567280deb2fce6be8438/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "cafc279d283d567280deb2fce6be8438",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "cafc279d283d567280deb2fce6be8438/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "e87d68b509855856a61570c7a7d95c07",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "e87d68b509855856a61570c7a7d95c07/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "e87d68b509855856a61570c7a7d95c07",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "e87d68b509855856a61570c7a7d95c07/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "bc07adcee8ff5945a29c618a54bef7e6",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "bc07adcee8ff5945a29c618a54bef7e6/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "bc07adcee8ff5945a29c618a54bef7e6",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "bc07adcee8ff5945a29c618a54bef7e6/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "3feb088e635f50bcad1ad38c9e79f82c",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "3feb088e635f50bcad1ad38c9e79f82c/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "3feb088e635f50bcad1ad38c9e79f82c",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "3feb088e635f50bcad1ad38c9e79f82c/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "768f5f7afac95b09a32fa6b8ece84041",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "768f5f7afac95b09a32fa6b8ece84041/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "768f5f7afac95b09a32fa6b8ece84041",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "768f5f7afac95b09a32fa6b8ece84041/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "c48878d21ad9590882e5c369f23a9a4e",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "c48878d21ad9590882e5c369f23a9a4e/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "c48878d21ad9590882e5c369f23a9a4e",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "c48878d21ad9590882e5c369f23a9a4e/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "be87c32bda4f5cd9abbf6d3995ae28c0",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "be87c32bda4f5cd9abbf6d3995ae28c0/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "be87c32bda4f5cd9abbf6d3995ae28c0",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "be87c32bda4f5cd9abbf6d3995ae28c0/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "f58f82be999a59d6b795c45cbde9ea63",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "f58f82be999a59d6b795c45cbde9ea63/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "f58f82be999a59d6b795c45cbde9ea63",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "f58f82be999a59d6b795c45cbde9ea63/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "d163b097bbfb5cf1af4420f396c76e2d",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "d163b097bbfb5cf1af4420f396c76e2d/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "d163b097bbfb5cf1af4420f396c76e2d",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "d163b097bbfb5cf1af4420f396c76e2d/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "bb8914a16ba2543a82a88c22e461943e",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "bb8914a16ba2543a82a88c22e461943e/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "bb8914a16ba2543a82a88c22e461943e",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "bb8914a16ba2543a82a88c22e461943e/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "9a67992e4e735d8a81340adb44120c11",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "9a67992e4e735d8a81340adb44120c11/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "9a67992e4e735d8a81340adb44120c11",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "9a67992e4e735d8a81340adb44120c11/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "93294e528d045baa9190721acfb243d3",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "93294e528d045baa9190721acfb243d3/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "93294e528d045baa9190721acfb243d3",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "93294e528d045baa9190721acfb243d3/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "d6e020a36d315281b4cac1cfd10f0cce",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "d6e020a36d315281b4cac1cfd10f0cce/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "d6e020a36d315281b4cac1cfd10f0cce",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "d6e020a36d315281b4cac1cfd10f0cce/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
       "device": "09a79266163d540c862d5efbe8ef67d3",
       "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
@@ -365,24 +23,6 @@
       "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
       "path": "09a79266163d540c862d5efbe8ef67d3/info/spaces",
-      "property": "spaces",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "ddab4e77c47d577192911fd8db925a27",
-      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "ddab4e77c47d577192911fd8db925a27/info/name",
-      "property": "name",
-      "rule": "O6"
-    },
-    {
-      "bucket": "extension",
-      "device": "ddab4e77c47d577192911fd8db925a27",
-      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
-      "node": "info",
-      "path": "ddab4e77c47d577192911fd8db925a27/info/spaces",
       "property": "spaces",
       "rule": "O6"
     },
@@ -406,19 +46,19 @@
     },
     {
       "bucket": "extension",
-      "device": "68213a7c393f54918706bf62a3b92047",
+      "device": "14c507fcbb5f539ba40b60b5e5655a72",
       "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "68213a7c393f54918706bf62a3b92047/info/name",
+      "path": "14c507fcbb5f539ba40b60b5e5655a72/info/name",
       "property": "name",
       "rule": "O6"
     },
     {
       "bucket": "extension",
-      "device": "68213a7c393f54918706bf62a3b92047",
+      "device": "14c507fcbb5f539ba40b60b5e5655a72",
       "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "68213a7c393f54918706bf62a3b92047/info/spaces",
+      "path": "14c507fcbb5f539ba40b60b5e5655a72/info/spaces",
       "property": "spaces",
       "rule": "O6"
     },
@@ -442,6 +82,42 @@
     },
     {
       "bucket": "extension",
+      "device": "3feb088e635f50bcad1ad38c9e79f82c",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "3feb088e635f50bcad1ad38c9e79f82c/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "3feb088e635f50bcad1ad38c9e79f82c",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "3feb088e635f50bcad1ad38c9e79f82c/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "51ab52ca7e085204bd300a35731c1501",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "51ab52ca7e085204bd300a35731c1501/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "51ab52ca7e085204bd300a35731c1501",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "51ab52ca7e085204bd300a35731c1501/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
       "device": "5239be04f4725708a6f37d750fd5b4ae",
       "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
@@ -460,19 +136,55 @@
     },
     {
       "bucket": "extension",
-      "device": "be820f5432c353e8b60329b6ee8e2a9b",
+      "device": "68213a7c393f54918706bf62a3b92047",
       "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "be820f5432c353e8b60329b6ee8e2a9b/info/name",
+      "path": "68213a7c393f54918706bf62a3b92047/info/name",
       "property": "name",
       "rule": "O6"
     },
     {
       "bucket": "extension",
-      "device": "be820f5432c353e8b60329b6ee8e2a9b",
+      "device": "68213a7c393f54918706bf62a3b92047",
       "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "be820f5432c353e8b60329b6ee8e2a9b/info/spaces",
+      "path": "68213a7c393f54918706bf62a3b92047/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "72b4343c886e5c98bca64a131b6003ce",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "72b4343c886e5c98bca64a131b6003ce/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "72b4343c886e5c98bca64a131b6003ce",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "72b4343c886e5c98bca64a131b6003ce/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "768f5f7afac95b09a32fa6b8ece84041",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "768f5f7afac95b09a32fa6b8ece84041/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "768f5f7afac95b09a32fa6b8ece84041",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "768f5f7afac95b09a32fa6b8ece84041/info/spaces",
       "property": "spaces",
       "rule": "O6"
     },
@@ -496,19 +208,289 @@
     },
     {
       "bucket": "extension",
-      "device": "14c507fcbb5f539ba40b60b5e5655a72",
+      "device": "93294e528d045baa9190721acfb243d3",
       "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "14c507fcbb5f539ba40b60b5e5655a72/info/name",
+      "path": "93294e528d045baa9190721acfb243d3/info/name",
       "property": "name",
       "rule": "O6"
     },
     {
       "bucket": "extension",
-      "device": "14c507fcbb5f539ba40b60b5e5655a72",
+      "device": "93294e528d045baa9190721acfb243d3",
       "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "14c507fcbb5f539ba40b60b5e5655a72/info/spaces",
+      "path": "93294e528d045baa9190721acfb243d3/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "9a67992e4e735d8a81340adb44120c11",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "9a67992e4e735d8a81340adb44120c11/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "9a67992e4e735d8a81340adb44120c11",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "9a67992e4e735d8a81340adb44120c11/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "9c22d40aa8f25a82bf22e62aa1891c4b",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "9c22d40aa8f25a82bf22e62aa1891c4b/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "9c22d40aa8f25a82bf22e62aa1891c4b",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "9c22d40aa8f25a82bf22e62aa1891c4b/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "a83191fcac585bda9d6fe05ca79b8a4f",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "a83191fcac585bda9d6fe05ca79b8a4f/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "a83191fcac585bda9d6fe05ca79b8a4f",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "a83191fcac585bda9d6fe05ca79b8a4f/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "bb8914a16ba2543a82a88c22e461943e",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "bb8914a16ba2543a82a88c22e461943e/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "bb8914a16ba2543a82a88c22e461943e",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "bb8914a16ba2543a82a88c22e461943e/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "bc07adcee8ff5945a29c618a54bef7e6",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "bc07adcee8ff5945a29c618a54bef7e6/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "bc07adcee8ff5945a29c618a54bef7e6",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "bc07adcee8ff5945a29c618a54bef7e6/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "be820f5432c353e8b60329b6ee8e2a9b",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "be820f5432c353e8b60329b6ee8e2a9b/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "be820f5432c353e8b60329b6ee8e2a9b",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "be820f5432c353e8b60329b6ee8e2a9b/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "be87c32bda4f5cd9abbf6d3995ae28c0",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "be87c32bda4f5cd9abbf6d3995ae28c0/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "be87c32bda4f5cd9abbf6d3995ae28c0",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "be87c32bda4f5cd9abbf6d3995ae28c0/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "c48878d21ad9590882e5c369f23a9a4e",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "c48878d21ad9590882e5c369f23a9a4e/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "c48878d21ad9590882e5c369f23a9a4e",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "c48878d21ad9590882e5c369f23a9a4e/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "cafc279d283d567280deb2fce6be8438",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "cafc279d283d567280deb2fce6be8438/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "cafc279d283d567280deb2fce6be8438",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "cafc279d283d567280deb2fce6be8438/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "d163b097bbfb5cf1af4420f396c76e2d",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "d163b097bbfb5cf1af4420f396c76e2d/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "d163b097bbfb5cf1af4420f396c76e2d",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "d163b097bbfb5cf1af4420f396c76e2d/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "d6e020a36d315281b4cac1cfd10f0cce",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "d6e020a36d315281b4cac1cfd10f0cce/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "d6e020a36d315281b4cac1cfd10f0cce",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "d6e020a36d315281b4cac1cfd10f0cce/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "db9deedb6ba7580397507c1dac4d4da4",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "db9deedb6ba7580397507c1dac4d4da4/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "db9deedb6ba7580397507c1dac4d4da4",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "db9deedb6ba7580397507c1dac4d4da4/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "ddab4e77c47d577192911fd8db925a27",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "ddab4e77c47d577192911fd8db925a27/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "ddab4e77c47d577192911fd8db925a27",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "ddab4e77c47d577192911fd8db925a27/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "df5d74733e435d53be69ee9edbbda675",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "df5d74733e435d53be69ee9edbbda675/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "df5d74733e435d53be69ee9edbbda675",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "df5d74733e435d53be69ee9edbbda675/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "e87d68b509855856a61570c7a7d95c07",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "e87d68b509855856a61570c7a7d95c07/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "e87d68b509855856a61570c7a7d95c07",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "e87d68b509855856a61570c7a7d95c07/info/spaces",
       "property": "spaces",
       "rule": "O6"
     },
@@ -532,19 +514,37 @@
     },
     {
       "bucket": "extension",
-      "device": "db9deedb6ba7580397507c1dac4d4da4",
+      "device": "f482dc963f2654de922bfd1a40d30ee0",
       "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "db9deedb6ba7580397507c1dac4d4da4/info/name",
+      "path": "f482dc963f2654de922bfd1a40d30ee0/info/name",
       "property": "name",
       "rule": "O6"
     },
     {
       "bucket": "extension",
-      "device": "db9deedb6ba7580397507c1dac4d4da4",
+      "device": "f482dc963f2654de922bfd1a40d30ee0",
       "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
       "node": "info",
-      "path": "db9deedb6ba7580397507c1dac4d4da4/info/spaces",
+      "path": "f482dc963f2654de922bfd1a40d30ee0/info/spaces",
+      "property": "spaces",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "f58f82be999a59d6b795c45cbde9ea63",
+      "message": "property 'name' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "f58f82be999a59d6b795c45cbde9ea63/info/name",
+      "property": "name",
+      "rule": "O6"
+    },
+    {
+      "bucket": "extension",
+      "device": "f58f82be999a59d6b795c45cbde9ea63",
+      "message": "property 'spaces' is not in catalog energy.ebus.capability.info; published as an extension, which the specification permits",
+      "node": "info",
+      "path": "f58f82be999a59d6b795c45cbde9ea63/info/spaces",
       "property": "spaces",
       "rule": "O6"
     },

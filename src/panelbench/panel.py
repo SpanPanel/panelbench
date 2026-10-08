@@ -13,8 +13,12 @@ from typing import TYPE_CHECKING
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.engine import DynamicSimulationEngine
+from panelbench.firmware import panel_firmware_version
+from panelbench.hardware import status_hardware_version
+from panelbench.panel_models import panel_model
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
     from typing import Any
 
@@ -25,6 +29,14 @@ if TYPE_CHECKING:
     from panelbench.recorder import RecorderDataSource
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class DuplicateSerialError(ValueError):
+    """A panel's serial is already running from another config.
+
+    The two would publish over each other's topics and take each other's broker
+    client id, each takeover publishing the other's will, for as long as both ran.
+    """
 
 
 class PanelInstance:
@@ -68,6 +80,29 @@ class PanelInstance:
             msg = "Panel not initialised — call start() first"
             raise RuntimeError(msg)
         return self._engine.total_tabs
+
+    @property
+    def firmware_version(self) -> str:
+        if self._engine is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        return panel_firmware_version(self._engine.config)
+
+    @property
+    def model(self) -> str:
+        """The model this panel reports, over MQTT and mDNS alike."""
+        if self._engine is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        return panel_model(self._engine.config)
+
+    @property
+    def status_hardware_version(self) -> str | None:
+        """``hardwareVersion`` for this panel's status endpoint; None before release 202639."""
+        if self._engine is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        return status_hardware_version(self._engine.config)
 
     @property
     def is_running(self) -> bool:
@@ -120,11 +155,12 @@ class PanelInstance:
     def get_power_summary(self) -> dict[str, Any] | None:
         """Power summary in the legacy shape dashboard / HA-API consumers expect.
 
-        Live values (grid, pv, battery, consumption, SOC) are sourced from the
-        emitter's last snapshot — the authoritative post-redesign location for
-        panel state. The engine still owns the static envelope (grid_online
-        flag, configured battery presence, shed/override sets, recorder bounds,
-        clock acceleration, timezone, soc threshold)."""
+        Live values (grid, pv, battery, consumption, SOC, battery link) are
+        sourced from the emitter's last snapshot — the authoritative
+        post-redesign location for panel state. The engine still owns the
+        static envelope (grid_online flag, configured battery presence,
+        shed/override sets, recorder bounds, clock acceleration, timezone, soc
+        threshold)."""
         if self._engine is None:
             return None
         summary = self._engine.get_power_summary()
@@ -149,6 +185,9 @@ class PanelInstance:
                 summary["soc_pct"] = (
                     round(batt.soe_percentage, 1) if batt.soe_percentage is not None else None
                 )
+                # What the wire published, which is what a consumer sees; the
+                # engine's own value is only what was asked for.
+                summary["bess_link"] = batt.communication or "OK"
             else:
                 summary["battery_w"] = 0.0
                 summary["soc_pct"] = None
@@ -165,20 +204,42 @@ class PanelInstance:
             raise RuntimeError(msg)
         emitter_runtime.update_bess_config_live(self._runtime, bess_yaml)
 
-    async def start(self) -> str:
+    async def start(self, *, running: Mapping[str, Path] | None = None) -> str:
+        """Load the config, connect, publish the first tick and start ticking.
+
+        *running* maps the serials already running to their configs; a config
+        naming one of them is refused before anything connects.
+
+        Raises:
+            DuplicateSerialError: the config's serial is already running.
+        """
         engine = DynamicSimulationEngine(
             config_path=self._config_path,
             recorder=self._recorder,
         )
         await engine.initialize_async()
+        other = (running or {}).get(engine.serial_number)
+        if other is not None:
+            msg = (
+                f"{self._config_path.name} was not started: serial {engine.serial_number} "
+                f"is already running from {other.name}; give it its own "
+                "panel_config.serial_number"
+            )
+            raise DuplicateSerialError(msg)
         self._engine = engine
 
         self._runtime = await emitter_runtime.start_clone(
             engine,
             broker=self._broker,
         )
-
-        await emitter_runtime.publish_tick(self._runtime)
+        try:
+            await emitter_runtime.publish_tick(self._runtime)
+        except BaseException:
+            # The runtime's broker link reconnects by itself, so one nobody stops
+            # would hold this panel's client id for the life of the process.
+            runtime, self._runtime = self._runtime, None
+            await emitter_runtime.stop_clone(runtime, graceful=True)
+            raise
 
         self._running = True
         self._tick_task = asyncio.create_task(

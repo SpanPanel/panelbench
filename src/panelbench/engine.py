@@ -17,6 +17,7 @@ import asyncio
 import copy
 import random
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,14 +26,15 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from panelbench.behavior_mutable_state import BehaviorEngineMutableState
+from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
-from panelbench.config_defaults import normalize_circuit_templates
+from panelbench.config_defaults import normalize_config
 from panelbench.exceptions import SimulationConfigurationError
-from panelbench.inverter import template_inverter_type
+from panelbench.inverter import template_is_hybrid
 
 if TYPE_CHECKING:
-    from ebus_panel_sim import BESSDevice
+    from ebus_panel_sim import BESSCommunication, BESSDevice
 
     from panelbench.config_types import (
         CircuitTemplateExtended,
@@ -42,7 +44,7 @@ if TYPE_CHECKING:
     from panelbench.recorder import RecorderDataSource
 
 from panelbench.hvac import hvac_seasonal_factor
-from panelbench.solar import daily_weather_factor, solar_production_factor
+from panelbench.solar import daily_weather_factor, solar_production_factor, weather_seed
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
 
@@ -52,6 +54,18 @@ DSM_OFF_GRID = "DSM_OFF_GRID"
 MAIN_RELAY_CLOSED = "CLOSED"
 PANEL_ON_GRID = "PANEL_ON_GRID"
 PANEL_OFF_GRID = "PANEL_OFF_GRID"
+
+
+@dataclass(frozen=True, slots=True)
+class EngineTick:
+    """One tick of the engine's driving signal, which ``publish_tick`` maps onto ``TickInputs``."""
+
+    current_time: float
+    grid_online: bool
+    circuits: dict[str, float]
+    """Signed instant power per circuit, keyed by emitter instance id."""
+    bess_link: BESSCommunication
+    """The requested health of the panel's link to its battery."""
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +333,7 @@ class RealisticBehaviorEngine:
 
         weather = daily_weather_factor(
             current_time,
-            seed=hash(self._config["panel_config"]["serial_number"]),
+            seed=weather_seed(self._config["panel_config"]["serial_number"]),
             monthly_factors=monthly_factors,
         )
         return abs(base_power) * factor * weather
@@ -448,7 +462,7 @@ class RealisticBehaviorEngine:
         """
         lat = self._config["panel_config"].get("latitude", 37.7)
         lon = self._config["panel_config"].get("longitude", -122.4)
-        seed = hash(self._config["panel_config"]["serial_number"])
+        seed = weather_seed(self._config["panel_config"]["serial_number"])
 
         monthly_factors: dict[int, float] | None = None
         cached = get_cached_weather(lat, lon)
@@ -613,6 +627,9 @@ class DynamicSimulationEngine:
         # Grid control state
         self._forced_grid_offline: bool = False
 
+        # Battery link control state: what the panel reports about its link to the battery.
+        self._bess_link: BESSCommunication = "OK"
+
         # Tab synchronization tracking
         self._tab_sync_groups: dict[int, str] = {}  # tab_number -> sync_group_id
         self._sync_group_power: dict[str, float] = {}  # sync_group_id -> total_power
@@ -707,7 +724,10 @@ class DynamicSimulationEngine:
         # Before validation, not after: normalisation is what makes an omitted
         # energy_profile legal, so validating first would reject configs this is
         # meant to accept.
-        normalize_circuit_templates(config_data)
+        normalize_config(
+            config_data,
+            source=str(self._config_path) if self._config_path else "the engine's config",
+        )
         validate_yaml_config(config_data)
 
     def _build_circuits(self) -> None:
@@ -736,6 +756,49 @@ class DynamicSimulationEngine:
         self._clock.set_time(start_time_str)
 
     # ------------------------------------------------------------------
+    # One circuit, read-only
+    # ------------------------------------------------------------------
+
+    def circuit_template(self, circuit_id: str) -> CircuitTemplateExtended:
+        """A copy of the template the engine runs *circuit_id* from, overrides applied.
+
+        A copy, so a caller reading it cannot change what the circuit does.
+
+        Raises:
+            KeyError: the panel has no circuit *circuit_id*.
+        """
+        return copy.deepcopy(self._circuits[circuit_id].template)
+
+    def modelled_circuit_power(self, circuit_id: str, ts: float) -> float:
+        """What *circuit_id* draws or produces at *ts*, in watts, as modelling sees it.
+
+        The deterministic path the what-if model takes for its After pass: the
+        circuit's template at *ts*, with no noise and no recorder baseline, so a
+        producer scales with its rating. Read-only: the behaviour engine's
+        tick-local state, such as a cycling circuit's phase, is restored after.
+
+        Call it on the engine's event loop. It is not thread-safe: from another
+        thread mid-tick, the restore would undo that tick's cycle updates.
+
+        Raises:
+            KeyError: the panel has no circuit *circuit_id*.
+            RuntimeError: the engine has not been initialised.
+        """
+        behavior = self._behavior_engine
+        if behavior is None:
+            raise RuntimeError("The engine is not initialised")
+        if circuit_id not in self._circuits:
+            raise KeyError(circuit_id)
+        checkpoint = behavior.capture_mutable_state()
+        try:
+            powers = self._collect_circuit_powers_at_ts(
+                ts, behavior, {circuit_id}, use_recorder_baseline=False
+            )
+        finally:
+            behavior.restore_mutable_state(checkpoint)
+        return powers[circuit_id]
+
+    # ------------------------------------------------------------------
     # Grid control
     # ------------------------------------------------------------------
 
@@ -749,6 +812,21 @@ class DynamicSimulationEngine:
         self._forced_grid_offline = not online
         if self._behavior_engine is not None:
             self._behavior_engine.set_grid_offline(not online)
+
+    @property
+    def bess_link(self) -> BESSCommunication:
+        """The requested health of the panel's link to its battery."""
+        return self._bess_link
+
+    def set_bess_link(self, link: str) -> None:
+        """Set the health of the panel's link to its battery, from the next tick.
+
+        Reaches the wire only while a battery is configured, since without one
+        there is no link to report.
+        """
+        if not is_bess_link(link):
+            raise ValueError(f"battery link must be one of {sorted(BESS_LINKS)}, got {link!r}")
+        self._bess_link = link
 
     @property
     def is_grid_islandable(self) -> bool:
@@ -848,7 +926,7 @@ class DynamicSimulationEngine:
 
         Returns a dict suitable for dashboard rendering with keys:
         ``grid_w``, ``pv_w``, ``battery_w``, ``consumption_w``,
-        ``simulation_time``, ``grid_online``, ``has_battery``,
+        ``simulation_time``, ``grid_online``, ``has_battery``, ``bess_link``,
         ``is_islandable``, ``soc_pct``, ``soc_threshold``, ``shed_ids``,
         ``user_open_ids``, ``all_off``, ``time_zone``.
         """
@@ -889,6 +967,7 @@ class DynamicSimulationEngine:
             "simulation_time": sim_time,
             "grid_online": self.grid_online,
             "has_battery": self.has_battery,
+            "bess_link": self._bess_link,
             "is_islandable": self.is_grid_islandable,
             "soc_pct": None,
             "soc_threshold": soc_threshold,
@@ -904,14 +983,15 @@ class DynamicSimulationEngine:
     # Snapshot generation
     # ------------------------------------------------------------------
 
-    async def get_tick_inputs(self) -> dict[str, Any]:
+    async def get_tick_inputs(self) -> EngineTick:
         """v0.3.0 contract: return per-tick driving signal for ``Emitter.publish_tick``.
 
-        Returns a dict containing:
+        Returns an ``EngineTick`` containing:
             current_time: float (epoch seconds)
             grid_online: bool
             circuits: dict[str, float]  — keyed by emitter instance_id (UUID),
                                           value is signed instant_power_w
+            bess_link: the requested battery link health
 
         The simulator no longer constructs panel-level fields, energy
         accumulators, or device snapshots — the emitter does that work."""
@@ -938,11 +1018,12 @@ class DynamicSimulationEngine:
             signed = -mag if circuit.energy_mode == "producer" else mag
             circuit_powers[stable_circuit_uuid(panel_id, cid)] = signed
 
-        return {
-            "current_time": current_time,
-            "grid_online": self.grid_online,
-            "circuits": circuit_powers,
-        }
+        return EngineTick(
+            current_time=current_time,
+            grid_online=self.grid_online,
+            circuits=circuit_powers,
+            bess_link=self._bess_link,
+        )
 
     # ------------------------------------------------------------------
     # Modeling computation
@@ -1316,25 +1397,24 @@ class DynamicSimulationEngine:
 
         grid_config = GridConfig(connected=not self._forced_grid_offline)
 
-        pv_config: PVConfig | None = None
         baseline_templates = (
             baseline_config.get("circuit_templates", {}) if baseline_config is not None else {}
         )
-        for circuit in included.values():
-            if circuit.energy_mode == "producer":
-                # Use snapshot template if available (Before pass), else live
-                tpl = (
-                    baseline_templates.get(
-                        circuit.template_name,
-                        circuit.template,
-                    )
-                    if baseline_config is not None
-                    else circuit.template
-                )
-                nameplate = float(tpl["energy_profile"]["typical_power"])
-                inverter_type = template_inverter_type(tpl)
-                pv_config = PVConfig(nameplate_w=abs(nameplate), inverter_type=inverter_type)
-                break
+        # Use snapshot templates if available (Before pass), else live
+        producer_templates = [
+            baseline_templates.get(circuit.template_name, circuit.template)
+            if baseline_config is not None
+            else circuit.template
+            for circuit in included.values()
+            if circuit.energy_mode == "producer"
+        ]
+        # Every producer feeds the one PV source, so a single grid-forming
+        # inverter keeps them all producing off-grid, whichever circuit it is on.
+        pv_config = (
+            PVConfig(grid_forming=any(template_is_hybrid(tpl) for tpl in producer_templates))
+            if producer_templates
+            else None
+        )
 
         loads = [LoadConfig() for c in included.values() if c.energy_mode == "consumer"]
 
@@ -1348,7 +1428,7 @@ class DynamicSimulationEngine:
         # hybrid PV inverter; the simulator's PV stays online off-grid only when
         # so configured. (Battery presence no longer affects this — the BESS
         # native device runs independently in the emitter.)
-        system.islandable = pv_config is not None and pv_config.inverter_type == "hybrid"
+        system.islandable = pv_config is not None and pv_config.grid_forming
         return system
 
 

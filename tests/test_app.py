@@ -7,9 +7,16 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.app import SimulatorApp, _discover_configs, _file_hash
+from panelbench.bootstrap import BootstrapHttpServer
+from panelbench.const import DEFAULT_FIRMWARE_VERSION
+from panelbench.emitter_adapter.runtime import start_clone as _real_start_clone
+from panelbench.emitter_adapter.spec_generator import build_manifest
+from panelbench.panel import PanelInstance
 from panelbench.schema import load_schema
+from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE
 
 _SIMPLE_CONFIG = """\
 panel_config:
@@ -219,3 +226,199 @@ class TestReloadContinuesOnPerPathFailure:
         for panel in list(app._panels.values()):
             with contextlib.suppress(Exception):
                 await panel.stop()
+
+
+async def _started(
+    tmp_path: Path, broker: tuple[str, int], extra_yaml: str, *, panel_yaml: str = ""
+) -> tuple[PanelInstance, MagicMock, MagicMock]:
+    """One panel started through `_start_panel`, its HTTP server class and mDNS
+    advertiser replaced by mocks that record what `_start_panel` hands them.
+
+    *extra_yaml* is appended at the top level, *panel_yaml* inside `panel_config`.
+    """
+    host, port = broker
+    config = _write_config(
+        tmp_path, "panel.yaml", "SIM-FW-0001", broker_host=host, broker_port=port
+    )
+    written = config.read_text().replace("  total_tabs: 8\n", f"  total_tabs: 8\n{panel_yaml}", 1)
+    config.write_text(written + extra_yaml)
+
+    app = SimulatorApp(config_dir=tmp_path)
+    app._schema = load_schema(_BUNDLED_SCHEMA)
+    app._certs = MagicMock(
+        ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+        ca_cert_path=None,
+    )
+    advertiser = MagicMock()
+    advertiser.register_panel = AsyncMock()
+    app._advertiser = advertiser
+    mock_server = MagicMock()
+    mock_server.start = AsyncMock()
+    mock_server.stop = AsyncMock()
+
+    with patch("panelbench.app.BootstrapHttpServer", return_value=mock_server) as server_cls:
+        panel = await app._start_panel(config)
+    return panel, server_cls, advertiser
+
+
+class TestOneFirmwareString:
+    """A panel's HTTP status and mDNS record report the firmware its MQTT tree publishes."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("extra_yaml", "firmware"),
+        [
+            (f'firmware_version: "{EARLIER_FIRMWARE}"\n', EARLIER_FIRMWARE),
+            # Before, HTTP and mDNS reported the package version while MQTT
+            # published its own default, so a panel naming none saw two strings.
+            ("", DEFAULT_FIRMWARE_VERSION),
+        ],
+        ids=["named", "unnamed"],
+    )
+    async def test_the_status_endpoint_reports_the_published_firmware(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+        extra_yaml: str,
+        firmware: str,
+    ) -> None:
+        panel, server_cls, advertiser = await _started(tmp_path, amqtt_broker, extra_yaml)
+        try:
+            engine = panel.engine
+            assert engine is not None
+            [published] = [
+                i for i in build_manifest(engine.config).instances if i.entity_class == "panel"
+            ]
+            served = server_cls.call_args.args[1]
+            advertised = advertiser.register_panel.call_args.args[1]
+
+            assert served == advertised == panel.firmware_version
+            assert served == published.metadata["firmware-version"] == firmware
+        finally:
+            await panel.stop()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "extra_yaml",
+        [f'firmware_version: "{EARLIER_FIRMWARE}"\n', ""],
+        ids=["named", "unnamed"],
+    )
+    async def test_the_schema_endpoint_reports_the_status_firmware(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+        extra_yaml: str,
+    ) -> None:
+        """A server built from what `_start_panel` hands it serves one firmware string
+        on both endpoints, rather than the bundled schema document's own."""
+        panel, server_cls, _advertiser = await _started(tmp_path, amqtt_broker, extra_yaml)
+        try:
+            server = BootstrapHttpServer(*server_cls.call_args.args, **server_cls.call_args.kwargs)
+            async with TestClient(TestServer(server._app)) as client:
+                status = await (await client.get("/api/v2/status")).json()
+                schema = await (await client.get("/api/v2/homie/schema")).json()
+
+            assert schema["firmwareVersion"] == status["firmwareVersion"] == panel.firmware_version
+        finally:
+            await panel.stop()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("firmware", "reported"),
+        [(EARLIER_FIRMWARE, None), (CURRENT_FIRMWARE, "1.2")],
+    )
+    async def test_the_status_endpoint_reports_hardware_from_202639(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+        firmware: str,
+        reported: str | None,
+    ) -> None:
+        extra = f'firmware_version: "{firmware}"\nhardware_version: "1.2"\n'
+        panel, server_cls, _advertiser = await _started(tmp_path, amqtt_broker, extra)
+        try:
+            assert server_cls.call_args.kwargs["hardware_version"] == reported
+            assert panel.status_hardware_version == reported
+        finally:
+            await panel.stop()
+
+
+class TestOneModel:
+    """A panel's mDNS record names the model its MQTT tree publishes."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("panel_yaml", "model"),
+        [
+            # A clone keeps its panel's model; a user may then edit its size. Before,
+            # mDNS re-derived the model from the size while MQTT published the config's.
+            ("  model: MAIN_16\n", "MAIN_16"),
+            ("", "MAIN_8"),
+        ],
+        ids=["named", "unnamed"],
+    )
+    async def test_the_advertised_model_is_the_published_one(
+        self, tmp_path: Path, amqtt_broker: tuple[str, int], panel_yaml: str, model: str
+    ) -> None:
+        panel, _server_cls, advertiser = await _started(
+            tmp_path, amqtt_broker, "", panel_yaml=panel_yaml
+        )
+        try:
+            engine = panel.engine
+            assert engine is not None
+            [published] = [
+                i for i in build_manifest(engine.config).instances if i.entity_class == "panel"
+            ]
+            advertised = advertiser.register_panel.call_args.kwargs["model"]
+
+            assert advertised == published.metadata["panel-model"] == panel.model == model
+        finally:
+            await panel.stop()
+
+
+class TestDuplicateSerial:
+    """Two configs naming one serial would publish over each other's topics and take
+    each other's broker client id, forever, so the second is refused."""
+
+    @pytest.mark.asyncio
+    async def test_a_second_panel_with_a_running_serial_is_refused(
+        self,
+        tmp_path: Path,
+        amqtt_broker: tuple[str, int],
+    ) -> None:
+        host, port = amqtt_broker
+        first_config = _SIMPLE_CONFIG.replace("total_tabs: 8", "total_tabs: 32")
+        first = tmp_path / "a-first.yaml"
+        first.write_text(first_config.format(serial="SIM-DUP", broker_host=host, broker_port=port))
+        second = tmp_path / "b-second.yaml"
+        second.write_text(first.read_text())
+
+        app = SimulatorApp(config_dir=tmp_path)
+        app._schema = load_schema(_BUNDLED_SCHEMA)
+        app._certs = MagicMock(
+            ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+            ca_cert_path=None,
+        )
+        mock_server = MagicMock()
+        mock_server.start = AsyncMock()
+        mock_server.stop = AsyncMock()
+
+        with (
+            patch("panelbench.app.BootstrapHttpServer", return_value=mock_server),
+            patch("panelbench.panel.emitter_runtime.start_clone") as start_clone,
+        ):
+            start_clone.side_effect = _real_start_clone
+            result = await app.reload()
+
+        try:
+            # Which one wins is the scan's order; that exactly one does is the point.
+            assert result["started"] == ["SIM-DUP"]
+            [(refused, error)] = app._get_panel_start_errors().items()
+            [running] = app._panels
+            assert {refused, running.name} == {first.name, second.name}
+            assert "SIM-DUP" in error and running.name in error
+            assert start_clone.call_count == 1, "the duplicate connected before it was refused"
+        finally:
+            for panel in list(app._panels.values()):
+                with contextlib.suppress(Exception):
+                    await panel.stop()

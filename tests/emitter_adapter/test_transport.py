@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import pathlib
 
 import pytest
 import yaml
 from ebus_panel_sim import Emitter, MqttDeviceTransport, SetterRegistry
+from ebus_sdk import MqttControllerTransport
 
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.transport import (
+    BrokerUnavailable,
     LoopBoundTransport,
+    MessageCallback,
     TransportBacklogFull,
 )
 
@@ -23,7 +27,8 @@ class Recorder:
 
     def __init__(self, delay_first: float = 0.0) -> None:
         self.published: list[tuple[str, bytes, int, bool]] = []
-        self.subscribed: list[str] = []
+        self.subscribed: list[tuple[str, MessageCallback, int]] = []
+        self.unsubscribed: list[str] = []
         self.failures = 0
         self._delay_first = delay_first
 
@@ -34,8 +39,11 @@ class Recorder:
             await asyncio.sleep(self._delay_first)
         self.published.append((topic, payload, qos, retain))
 
-    async def subscribe(self, topic: str) -> None:
-        self.subscribed.append(topic)
+    async def subscribe(self, topic: str, callback: MessageCallback, qos: int) -> None:
+        self.subscribed.append((topic, callback, qos))
+
+    async def unsubscribe(self, topic: str) -> None:
+        self.unsubscribed.append(topic)
 
     def is_connected(self) -> bool:
         return True
@@ -45,9 +53,14 @@ def _transport(recorder: Recorder, **kwargs: object) -> LoopBoundTransport:
     return LoopBoundTransport(
         publish=recorder.publish,
         subscribe=recorder.subscribe,
+        unsubscribe=recorder.unsubscribe,
         connected=recorder.is_connected,
         **kwargs,  # type: ignore[arg-type]
     )
+
+
+def _ignore(topic: str, payload: bytes) -> None:
+    del topic, payload
 
 
 @pytest.mark.asyncio
@@ -158,6 +171,7 @@ async def test_a_failing_publish_does_not_mute_the_ones_behind_it() -> None:
     transport = LoopBoundTransport(
         publish=explode_once,
         subscribe=recorder.subscribe,
+        unsubscribe=recorder.unsubscribe,
         connected=recorder.is_connected,
     )
     transport.start()
@@ -193,7 +207,73 @@ async def test_subscriptions_go_through_the_same_queue_as_publishes() -> None:
     transport.start()
 
     transport.publish("ebus/5/dev/node/p", "1")
-    transport.subscribe("ebus/5/dev/node/p/set")
+    transport.subscribe("ebus/5/dev/node/p/set", _ignore)
     await transport.drain()
 
-    assert recorder.published and recorder.subscribed == ["ebus/5/dev/node/p/set"]
+    assert recorder.published
+    assert [topic for topic, _, _ in recorder.subscribed] == ["ebus/5/dev/node/p/set"]
+
+
+@pytest.mark.asyncio
+async def test_a_subscription_carries_the_sdks_callback_to_the_client() -> None:
+    """The defect behind every ignored relay command: the callback the SDK hands
+    `subscribe` was discarded here, so the client had a filter and no idea what
+    to do with a message on it."""
+    recorder = Recorder()
+    transport = _transport(recorder)
+    transport.start()
+    received: list[tuple[str, bytes]] = []
+
+    def on_set(topic: str, payload: bytes) -> None:
+        received.append((topic, payload))
+
+    transport.subscribe("ebus/5/dev/switch/relay/set", on_set, qos=1)
+    await transport.drain()
+
+    [(topic, callback, qos)] = recorder.subscribed
+    callback("ebus/5/dev/switch/relay/set", b"OPEN")
+    assert (topic, qos) == ("ebus/5/dev/switch/relay/set", 1)
+    assert received == [("ebus/5/dev/switch/relay/set", b"OPEN")]
+
+
+@pytest.mark.asyncio
+async def test_an_operation_lost_to_an_outage_is_dropped_quietly(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The link reports an outage once; the drainer must not report each
+    casualty again, with a traceback, for every topic of every tick."""
+    caplog.set_level(logging.DEBUG)
+    recorder = Recorder()
+
+    async def unavailable(topic: str, payload: bytes, qos: int, retain: bool) -> None:
+        raise BrokerUnavailable("the broker link is down")
+
+    transport = LoopBoundTransport(
+        publish=unavailable,
+        subscribe=recorder.subscribe,
+        unsubscribe=recorder.unsubscribe,
+        connected=recorder.is_connected,
+    )
+    transport.start()
+
+    for i in range(5):
+        transport.publish(f"ebus/5/dev/node/p{i}", str(i))
+    await transport.drain()
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+@pytest.mark.asyncio
+async def test_an_unsubscribe_goes_through_the_queue_in_order() -> None:
+    """What makes this a ``MqttControllerTransport`` too: the scraper's controller
+    unsubscribes a child the panel stops declaring."""
+    recorder = Recorder()
+    transport = _transport(recorder)
+    transport.start()
+
+    transport.subscribe("ebus/5/dev/$state", _ignore)
+    transport.unsubscribe("ebus/5/dev/$state")
+    await transport.drain()
+
+    assert isinstance(transport, MqttControllerTransport)
+    assert recorder.unsubscribed == ["ebus/5/dev/$state"]

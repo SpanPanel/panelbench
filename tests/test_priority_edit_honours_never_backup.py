@@ -1,4 +1,10 @@
-"""A never-backup circuit's shed priority is not the dashboard's to change.
+"""A commissioning lock is not the dashboard's to change.
+
+There are two such locks on a circuit's priority. A never-backup circuit is
+permanently `OFF_GRID`; the circuit a SPAN panel adds for a commissioned PV or
+battery system is permanently `NEVER` and its relay is locked as well. Both publish
+`load-shed/priority` without `$settable`, and the commissioned circuit also publishes
+`switch/relay` without it, so the dashboard refuses a change to either.
 
 `never-backup` is an installer commissioning lock, and the eBus schema migration guide
 maps it onto exactly one thing: `load-shed/priority` publishes with
@@ -14,6 +20,10 @@ UI control into a way to break the simulator from the browser.
 
 `priority == "NEVER"` is deliberately not this. It is an ordinary settable value meaning
 "never shed", which a consumer chose and may unchoose.
+
+A commissioned-system circuit's relay is refused for the same second reason:
+validation refuses a commissioned template whose relay is controllable, so a saved
+`relay_behavior` change would leave a config that cannot start the panel.
 """
 
 from __future__ import annotations
@@ -50,6 +60,16 @@ circuit_templates:
       power_range:
         min: 50
         max: 150
+  backup_system:
+    relay_behavior: non_controllable
+    priority: NEVER
+    commissioned_system: backup
+    breaker_rating: 20
+    energy_profile:
+      mode: consumer
+      power_range:
+        min: 50
+        max: 150
 circuits:
 - id: pool_pump
   name: Pool Pump
@@ -59,6 +79,10 @@ circuits:
   name: Dishwasher
   template: dishwasher
   tabs: [3]
+- id: backup_system
+  name: Commissioned Backup System
+  template: backup_system
+  tabs: [5]
 """
 
 
@@ -89,6 +113,64 @@ async def test_a_never_backup_circuit_refuses_a_priority_change(client_and_calls
         assert resp.status == 409
         assert "never-backup" in await resp.text()
     assert calls == []
+
+
+async def test_a_commissioned_system_circuit_refuses_a_priority_change(client_and_calls) -> None:
+    app, calls = client_and_calls
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.put("/entities/backup_system", data={"priority": "OFF_GRID"})
+
+        assert resp.status == 409
+        assert "commissioned backup system" in await resp.text()
+    assert calls == []
+
+
+async def test_a_commissioned_system_circuit_refuses_a_relay_behavior_change(
+    client_and_calls,
+) -> None:
+    """Saved, the edit would leave a commissioned template with a controllable relay,
+    which validation refuses, so the panel would not restart."""
+    app, _ = client_and_calls
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.put("/entities/backup_system", data={"relay_behavior": "controllable"})
+        assert resp.status == 409
+        assert "relay is locked" in await resp.text()
+
+        form = await (await client.get("/entities/backup_system/edit")).text()
+    assert '<select name="relay_behavior" disabled>' in form
+
+
+async def test_resubmitting_a_commissioned_circuits_locks_is_not_a_change(
+    client_and_calls,
+) -> None:
+    """A client that posts every field unchanged may still rename the circuit."""
+    app, _ = client_and_calls
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.put(
+            "/entities/backup_system",
+            data={
+                "priority": "NEVER",
+                "relay_behavior": "non_controllable",
+                "name": "Commissioned Backup System",
+            },
+        )
+
+        assert resp.status == 200
+
+
+async def test_a_commissioned_system_circuit_refuses_a_relay_command(client_and_calls) -> None:
+    app, _ = client_and_calls
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post("/entities/backup_system/relay", json={"relay_state": "OPEN"})
+
+        assert resp.status == 409
+        text = await resp.text()
+    assert "commissioned backup system" in text
+    assert "Set relay_behavior" not in text
 
 
 async def test_resubmitting_the_same_priority_is_not_a_change(client_and_calls) -> None:
@@ -122,7 +204,11 @@ async def test_the_edit_form_disables_the_locked_select(client_and_calls) -> Non
 
     async with TestClient(TestServer(app)) as client:
         locked = await (await client.get("/entities/pool_pump/edit")).text()
+        commissioned = await (await client.get("/entities/backup_system/edit")).text()
         open_ = await (await client.get("/entities/dishwasher/edit")).text()
 
     assert '<select name="priority" disabled>' in locked
+    assert '<select name="priority" disabled>' in commissioned
+    assert "Commissioned backup system" in commissioned
     assert '<select name="priority" disabled>' not in open_
+    assert '<select name="relay_behavior" disabled>' not in locked

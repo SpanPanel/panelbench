@@ -30,7 +30,9 @@ real SPAN panel's configuration directly from the dashboard.
   individual panels
 - **File operations** — import/export YAML, clone configs, save & reload
 - **Panel cloning** — clone a real SPAN panel's configuration from
-  the dashboard (enter the panel IP and passphrase)
+  the dashboard (enter the panel IP and passphrase, or broker
+  credentials you already hold); the passphrase and credentials are
+  kept in the add-on's private storage, never in the config
 - **Config persistence** — the simulator remembers the last running
   config across restarts
 
@@ -133,6 +135,24 @@ System, light, or dark theme via the header selector.
 | `advertise_address` | (auto-detected) | IP to advertise via mDNS (leave blank for auto) |
 | `dashboard_enabled` | `true` | Enable the web dashboard |
 | `base_http_port` | `8081` | Base port for per-panel HTTP servers (first panel uses this port, second uses port+1, etc.). Each panel also serves the same API over TLS 1000 ports above its HTTP one |
+
+## Firmware version
+
+The included configs are SPAN panels on firmware release 202639 and
+report `spanos3/r202639/03`: the battery's power reading is positive
+while discharging, the solar circuit is the locked "Commissioned PV
+System" circuit, and the status endpoint reports hardware version
+`1.2`. Read them with the SpanPanel/span integration **v2.1.2 or
+later**.
+
+To emulate a panel before the upgrade to release 202639, clone a
+config from the dashboard, then in the clone's YAML name a 202633
+release and remove `commissioned_system: pv` from its solar template,
+which PanelBench refuses on an earlier release:
+
+```yaml
+firmware_version: spanos3/r202633/02
+```
 
 ## Custom configs
 

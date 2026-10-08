@@ -1,6 +1,6 @@
 """Do the two producers agree on *what each device says it is*?
 
-The structural comparator next door aligns devices by declared ``type::name``
+The structural comparator next door aligns devices by ``comparator.role_key``
 and diffs key sets. That leaves identity payloads entirely unmeasured: a device
 publishing the wrong serial, model, or firmware version is structurally perfect,
 because the property is present on both sides and only its value is wrong.
@@ -16,61 +16,58 @@ properties resolve from ``DeviceInstance.metadata``, so it is exactly the surfac
 a manifest builder decides. Every other node resolves from tick physics, where
 the two producers are *supposed* to differ.
 
-Two of the recorded entries are intentional and must never be "fixed":
+Only the example cell is measured. The PanelBench cell is deliberately absent:
+its reference is upstream's reading of PanelBench's own published tree, so its
+``info`` values are PanelBench's values read back, and comparing them would
+compare PanelBench with a copy of itself.
 
-``info/serial-number`` on the minimal cell
-    panelbench forces a simulated panel's serial to carry a ``sim-`` prefix
-    (``clone.py:51``), idempotently, so a simulator can never present a serial
-    that reads as real hardware. The reference has no such rule. Every proxied
-    device's serial derives from the panel's, so one deliberate rule shows up on
-    the panel and both EVSEs.
+The baseline's one entry, the panel's ``info/serial-number``, is intentional and
+must never be "fixed". The import runs the example as a clone, and a clone serves
+``sim-<serial>-clone`` (``clone.make_clone_serial``): a simulator never presents a
+serial that reads as real hardware, and a clone never collides with the panel it
+copies.
 
-``info/firmware-version`` everywhere
-    the two producers have different placeholder defaults, ``example/v0.1.0``
-    against ``sim/v0.1.0``. Same class as the PV model: a naming difference, not
-    a fidelity defect.
-
-The EVSE entry is the one worth acting on, and it is only visible because the
-placeholder difference dragged it into view. The reference reads an EVSE's
-firmware version from ``panel_config`` (``run_forty_tab_minimal.py:265``) while
-panelbench reads it from that EVSE's own config block
-(``spec_generator.py:284``). Set ``panel_config.firmware_version`` and the
-reference's EVSEs follow it; ours do not. Ours is the more defensible source, so
-this is recorded as a divergence rather than chased as a bug.
+Every other value both producers publish agrees: the panel's firmware and hardware
+version, both inverters' and the battery's model and vendor, and each SPAN Drive's
+serial and firmware. A drive's serial is copied verbatim onto the circuit that
+feeds it, because the drive's device id is already scoped by the clone's own panel
+id and cannot collide with the source's.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
 
 from .comparator import (
-    PANELBENCH_CONFIG,
-    REFERENCE_CONFIG,
+    Capture,
     ValueReport,
-    capture_panelbench,
-    capture_reference,
     compare_identity_values,
+    example_pair,
 )
 
 BASELINE = Path(__file__).parent / "fixtures" / "identity_value_baseline.json"
 
-CELLS = (("minimal", REFERENCE_CONFIG), ("rich", PANELBENCH_CONFIG))
+CELLS = (("example", example_pair),)
 
-_by_name = pytest.mark.parametrize(("name", "config"), CELLS, ids=[c[0] for c in CELLS])
+_by_name = pytest.mark.parametrize(("name", "pair"), CELLS, ids=[c[0] for c in CELLS])
 
 
 @_by_name
 @pytest.mark.asyncio
-async def test_identity_values_match_the_recorded_baseline(name: str, config: Path) -> None:
+async def test_identity_values_match_the_recorded_baseline(
+    name: str, pair: Callable[[Path], Awaitable[tuple[Capture, Capture]]], tmp_path: Path
+) -> None:
     """Fails on movement in either direction, like the other baselines."""
-    report = compare_identity_values(capture_reference(config), await capture_panelbench(config))
+    reference, subject = await pair(tmp_path)
+    report = compare_identity_values(reference, subject)
     expected = json.loads(BASELINE.read_text())[name]
 
     assert report.as_baseline() == expected, (
-        f"identity values moved for the {name} config.\n"
+        f"identity values moved for the {name} cell.\n"
         f"{report.describe()}\n\n"
         f"If a divergence was closed, remove its entry from {BASELINE.name} under "
         f'"{name}". If one appeared, it is a producer regression.'
@@ -90,7 +87,7 @@ def test_a_differing_identity_value_is_reported() -> None:
     )
 
     assert report.as_baseline() == {
-        "energy.ebus.device.mid::Microgrid Interconnect Device": {
+        "energy.ebus.device.mid of energy.ebus.device.bess @UPSTREAM lugs": {
             "info/serial-number": ["SIM-BESS-001-mid", "SIM-BESS-001-WRONG"]
         }
     }
@@ -111,12 +108,13 @@ def test_physics_payloads_are_not_compared() -> None:
     assert report == ValueReport()
 
 
-def test_a_value_only_one_producer_publishes_is_left_to_the_parity_baseline() -> None:
+def test_a_value_only_one_producer_publishes_is_left_to_structural_parity() -> None:
     """Held here so the two instruments cannot both claim the same finding.
 
     A key present on one side only is a structural gap. If it were reported as a
-    value difference too, closing it would mean editing two baselines, and one of
-    them would eventually be forgotten.
+    value difference too, one gap would fail two instruments, and recording it
+    while it is closed would mean editing two places, one of which would
+    eventually be forgotten.
     """
     report = compare_identity_values(
         _capture_of({"info/serial-number": "SIM-BESS-001-mid", "info/model": "SPAN MID"}),
@@ -127,15 +125,27 @@ def test_a_value_only_one_producer_publishes_is_left_to_the_parity_baseline() ->
 
 
 def _capture_of(properties: dict[str, str]) -> dict[str, dict[str, str]]:
-    """One synthetic MID, keyed the way ``_regroup`` keys a real capture."""
+    """One synthetic MID publishing *properties*, keyed the way ``as_capture`` keys a
+    real capture, with the battery and lugs ``role_key`` places it by."""
     return {
+        "lugs-up": {
+            "$description": json.dumps(
+                {"type": "energy.ebus.device.lugs", "name": "Upstream lugs"}
+            ),
+            "info/direction": "UPSTREAM",
+            "connection/fed-by-device-id": "bess",
+        },
+        "bess": {
+            "$description": json.dumps({"type": "energy.ebus.device.bess", "name": "Battery"}),
+        },
         "bess-mid": {
             "$description": json.dumps(
                 {
                     "type": "energy.ebus.device.mid",
                     "name": "Microgrid Interconnect Device",
+                    "parent": "bess",
                 }
             ),
             **properties,
-        }
+        },
     }

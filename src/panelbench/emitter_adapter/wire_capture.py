@@ -16,13 +16,18 @@ stranded in a script is one nobody notices going stale.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
+
+from ebus_sdk import DiscoveredDevice
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.engine import DynamicSimulationEngine
 
 if TYPE_CHECKING:
     import pathlib
+
+    from panelbench.emitter_adapter.runtime import CloneRuntime
 
 # Homie topics are `ebus/<version>/<device-id>/<rest...>`; the device id is the
 # third segment and everything after it is the key a consumer sees.
@@ -74,19 +79,66 @@ def as_capture(retained: dict[str, bytes]) -> dict[str, dict[str, str]]:
     return devices
 
 
-async def capture(config: pathlib.Path) -> dict[str, dict[str, str]]:
-    """Run one panel through the real assembly and return what it published.
+async def recorded_panel(
+    config: pathlib.Path, *, grid_online: bool = True
+) -> tuple[CloneRuntime, RecordingTransport]:
+    """The panel *config* describes, started and publishing into a recorder.
 
     Goes through `start_clone` with the MQTT client substituted, rather than
     reassembling the emitter here: a capture taken through different wiring than
-    a real panel uses proves less than it appears to.
+    a real panel uses proves less than it appears to. *grid_online* is set on the
+    engine before the emitter starts, as the dashboard's grid toggle sets it.
+
+    Nothing has ticked yet: the recorder holds the tree and its descriptions, and
+    the first `publish_tick` fills in the values.
     """
     engine = DynamicSimulationEngine(config_path=config)
     await engine.initialize_async()
+    engine.set_grid_online(grid_online)
 
     recorder = RecordingTransport()
     runtime = await emitter_runtime.start_clone(engine, transport=recorder)
-    # start() publishes the tree and its descriptions; one tick fills in values.
-    await emitter_runtime.publish_tick(runtime)
+    return runtime, recorder
 
-    return as_capture(recorder.retained)
+
+async def capture_retained(config: pathlib.Path, *, grid_online: bool = True) -> dict[str, bytes]:
+    """Run one panel through the real assembly and return its retained topics.
+
+    The panel is `recorded_panel`'s, after one tick: `start()` publishes the tree
+    and its descriptions, and the tick fills in the values.
+    """
+    runtime, recorder = await recorded_panel(config, grid_online=grid_online)
+    await emitter_runtime.publish_tick(runtime)
+    return recorder.retained
+
+
+async def capture(config: pathlib.Path, *, grid_online: bool = True) -> dict[str, dict[str, str]]:
+    """`capture_retained`, regrouped the way a consumer sees it."""
+    return as_capture(await capture_retained(config, grid_online=grid_online))
+
+
+def discovered_devices(retained: Mapping[str, bytes]) -> dict[str, DiscoveredDevice]:
+    """Retained topics as the devices a controller would have discovered.
+
+    The shape `clone.translate_panel_tree` reads, so a tree published here — by
+    PanelBench or by the upstream emitter — is read by the same rule as a live
+    panel. Only `$description` and `<node>/<property>` topics carry what the
+    translator reads; `$state`, `/set` and `$target` topics are skipped.
+    """
+    devices: dict[str, DiscoveredDevice] = {}
+    values: list[tuple[str, str, str, str]] = []
+    for topic, payload in sorted(retained.items()):
+        parts = topic.split("/")
+        if len(parts) < _MIN_SEGMENTS:
+            continue
+        device_id, rest = parts[_DEVICE_SEGMENT], parts[_DEVICE_SEGMENT + 1 :]
+        if rest == ["$description"]:
+            devices.setdefault(device_id, DiscoveredDevice(device_id)).update_description(
+                payload.decode()
+            )
+        elif len(rest) == 2 and not any(part.startswith("$") for part in rest):
+            values.append((device_id, rest[0], rest[1], payload.decode()))
+    for device_id, node, prop, value in values:
+        if device_id in devices:
+            devices[device_id].update_property(node, prop, value)
+    return devices

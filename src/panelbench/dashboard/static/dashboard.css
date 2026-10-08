@@ -1084,6 +1084,13 @@ legend {
   font-weight: 600;
 }
 
+.bess-link-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
 /* EVSE charging schedule */
 .evse-schedule {
   margin-top: 0.75rem;

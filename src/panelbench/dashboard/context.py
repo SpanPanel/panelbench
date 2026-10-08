@@ -9,8 +9,11 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
 
+    from ebus_panel_sim import BESSCommunication
+
     from panelbench.config_types import BESSConfigYAML
     from panelbench.history import HistoryProvider
+    from panelbench.panel_secrets import PanelSecretsStore
 
 
 async def _noop_modeling_data(
@@ -38,6 +41,7 @@ class DashboardContext:
     set_time_acceleration: Callable[[float], None] = lambda _: None
     set_grid_online: Callable[[bool], None] = lambda _: None
     set_grid_islandable: Callable[[bool], None] = lambda _: None
+    set_bess_link: Callable[[BESSCommunication], None] = lambda _: None
     set_circuit_priority: Callable[[str, str], None] = lambda _id, _pri: None
     set_circuit_relay: Callable[[str, str], None] = lambda _id, _state: None
     apply_bess_config_live: Callable[[str, BESSConfigYAML], bool] = lambda _f, _c: False
@@ -47,3 +51,25 @@ class DashboardContext:
     ha_client: Any = None  # HAClient | None — optional, set when HA API is available
     history_provider: HistoryProvider | None = None
     panel_browser: Any = None  # PanelBrowser | None — mDNS discovery for standalone mode
+    # Source panels' passphrases and broker credentials; beside config_dir when None.
+    panel_secrets: PanelSecretsStore | None = None
+    # Why the active config could not be opened when the dashboard started, shown
+    # until the editor moves to another config.
+    load_error: str | None = None
+
+    # Why the last edit was refused, shown once on the page that reloads after it.
+    notice: str | None = None
+
+    def take_notice(self) -> str | None:
+        """The notice to show, once."""
+        notice, self.notice = self.notice, None
+        return notice
+
+    def edit(self, filename: str | None) -> None:
+        """Move the editor to *filename*, or to none.
+
+        The one way the editor changes file, so a load error, which is always about
+        the file the editor last failed to open, goes when it does.
+        """
+        self.config_filter = filename
+        self.load_error = None

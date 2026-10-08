@@ -55,8 +55,8 @@ def _rest_data_model_version() -> str | None:
     """What ``GET /api/v2/homie/schema`` advertises.
 
     Read from the bundled document because ``bootstrap._handle_schema`` serves it
-    verbatim; the size-specific render only rewrites the circuit ``space`` format and
-    the ``types`` hash, so this is the value that reaches a consumer.
+    verbatim; the per-panel render only rewrites the circuit ``space`` format, the
+    ``types`` hash and ``firmwareVersion``, so this is the value that reaches a consumer.
     """
     version = json.loads(_SCHEMA.read_text()).get("dataModelVersion")
     return None if version is None else str(version)

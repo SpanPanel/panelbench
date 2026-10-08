@@ -16,7 +16,8 @@ distributed through HACS.
 This App emulates SPAN firmware `r202633+`, the first to publish the
 parent/child device tree (`data-model-version` `1.x`).
 
-Requires the SpanPanel/span integration **v2.1.0 or later**.
+Requires the SpanPanel/span integration **v2.1.2 or later**, which
+reads the SPAN firmware release 202639 the included configs publish.
 
 Visit [SPAN PanelBench](https://github.com/SpanPanel/panelbench)
 page for more details.

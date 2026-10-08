@@ -6,7 +6,7 @@ domain fact -- what a circuit, a PV inverter or an EVSE typically draws -- not a
 presentation one: config loading needs them, and core depending on the UI layer
 to learn them would be backwards.
 
-``normalize_circuit_templates`` applies them at load. A config that omits
+``normalize_config`` applies them at load. A config that omits
 ``energy_profile`` is structurally complete and behaviourally inert rather than
 invalid: the wire surface a template produces is fixed by ``device_type``,
 ``relay_behavior``, ``priority`` and ``breaker_rating``, while the energy profile
@@ -18,7 +18,12 @@ carry no behaviour -- the eBus emitter's own examples -- unloadable here.
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from panelbench.pv_rating import fold_legacy_ratings
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 ENTITY_TYPE_DEFAULTS: dict[str, dict[str, Any]] = {
     "circuit": {
@@ -47,7 +52,7 @@ ENTITY_TYPE_DEFAULTS: dict[str, dict[str, Any]] = {
                 "efficiency": 0.85,
                 "nameplate_capacity_w": 5000.0,
             },
-            "relay_behavior": "non_controllable",
+            "relay_behavior": "non-controllable",
             "priority": "NEVER",
             "device_type": "pv",
             "breaker_rating": 30,
@@ -109,12 +114,6 @@ ENTITY_TYPE_DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
-# Template top-level keys that belong inside ``energy_profile``. The eBus
-# emitter's example configs put ``nameplate_capacity_w`` at template top level
-# (its ``_pv_instance`` reads it there); this package reads it from the nested
-# profile. Promoting rather than duplicating lets one config drive both.
-_PROMOTABLE_TO_PROFILE = ("nameplate_capacity_w",)
-
 _DEFAULT_DEVICE_TYPE = "circuit"
 
 
@@ -125,39 +124,33 @@ def default_energy_profile(device_type: str) -> dict[str, Any]:
     return deepcopy(profile)
 
 
-def normalize_circuit_templates(config_data: Any) -> None:
-    """Fill in omitted ``energy_profile`` blocks, in place, before validation.
+def normalize_config(config: Mapping[str, object], *, source: str) -> None:
+    """Make *config* say what its templates mean, in place, before validation.
 
-    Typed ``Any`` for the same reason ``validate_yaml_config`` next door is:
-    callers hold either a raw ``dict`` from ``yaml.safe_load`` or a
-    ``SimulationConfig`` TypedDict, and a TypedDict is not assignable to
-    ``dict[str, Any]`` — mypy rejects it, since mutating one through a plain-dict
-    alias could violate its declared keys. Narrowing the parameter would push a
-    cast onto every caller and buy nothing real.
-
-
-    Two steps, both keyed off what the template already declares:
+    The one normaliser every loader runs -- the engine, the dashboard on load and on
+    save, and the history generator -- so each reads the same config. Takes the
+    config as YAML hands it over, before validation has typed it, and changes only
+    what it finds well formed; validation names the rest.
 
     1. A template with no ``energy_profile`` gets the default for its
        ``device_type`` -- producer shape for ``pv``, high-power consumer for
        ``evse``, ordinary consumer otherwise.
-    2. Energy-profile keys written at template top level are moved into the
-       profile. An explicit value always wins over the default, whichever level
-       it was written at, so this cannot silently override what a config says.
+    2. Every legacy rating folds into its template's
+       ``energy_profile.nameplate_capacity_w``, the one source of a circuit's
+       rating (``pv_rating``). A default from step 1 is not a rating the config
+       stated, so a legacy one replaces it. A stale copy dropped beside a stated
+       profile is logged against *source*, the file or config being read.
     """
-    templates = config_data.get("circuit_templates")
+    templates = config.get("circuit_templates")
     if not isinstance(templates, dict):
         return
 
-    for template in templates.values():
+    defaulted: set[str] = set()
+    for name, template in templates.items():
         if not isinstance(template, dict):
             continue
-        device_type = template.get("device_type", _DEFAULT_DEVICE_TYPE)
         if "energy_profile" not in template:
+            device_type = str(template.get("device_type", _DEFAULT_DEVICE_TYPE))
             template["energy_profile"] = default_energy_profile(device_type)
-        profile = template["energy_profile"]
-        if not isinstance(profile, dict):
-            continue
-        for key in _PROMOTABLE_TO_PROFILE:
-            if key in template:
-                profile[key] = template[key]
+            defaulted.add(str(name))
+    fold_legacy_ratings(config, unstated=frozenset(defaulted), source=source)

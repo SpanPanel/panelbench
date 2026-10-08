@@ -11,11 +11,14 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 
 class PanelSource(TypedDict, total=False):
-    """Source panel connection details for clone configs."""
+    """Source panel provenance for clone configs.
+
+    What it takes to reach the panel, its passphrase and broker credentials, is kept
+    in the ``PanelSecretsStore`` under ``origin_serial``, never here.
+    """
 
     origin_serial: str  # real panel's serial (immutable provenance)
     host: str  # IP or hostname of the source panel
-    passphrase: str | None  # proximity code (null for door-bypass)
     last_synced: str  # ISO 8601 timestamp of last sync
 
 
@@ -35,7 +38,14 @@ class PanelConfig(TypedDict):
     service_voltage_v: NotRequired[float]  # service voltage (default 240.0)
     line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
-    wifi_ssid: NotRequired[str]  # SSID published on status/wifi-ssid (default DEFAULT_WIFI_SSID)
+    vendor_name: NotRequired[str]  # info/vendor-name (default "Span"); a clone keeps its panel's
+    model: NotRequired[str]  # info/model (default: from total_tabs); a clone keeps its panel's
+    # The panel's network configuration, as a clone reads it from its panel. Defaults:
+    # both links up, and DEFAULT_WIFI_SSID while Wi-Fi is up. A null wifi_ssid is a
+    # panel that publishes none, as one on Ethernet does.
+    wifi_link: NotRequired[bool]
+    ethernet_link: NotRequired[bool]
+    wifi_ssid: NotRequired[str | None]
 
 
 class CyclingPattern(TypedDict, total=False):
@@ -99,7 +109,7 @@ class CircuitTemplate(TypedDict):
     """Circuit template configuration."""
 
     energy_profile: EnergyProfileExtended
-    relay_behavior: str  # "controllable", "non_controllable"
+    relay_behavior: str  # "controllable", "non-controllable", "always-on"
     priority: str  # "MUST_HAVE", "NON_ESSENTIAL"
 
 
@@ -122,6 +132,8 @@ class BESSConfigYAML(TypedDict, total=False):
     mid_product_name: str
     mid_firmware_version: str
     mid_hardware_version: str
+    mid_serial_number: str  # the MID's own serial, as a clone reads it; else `<serial>-mid`
+    mid_vendor: str  # the MID's own vendor, as a clone reads it; else the battery's
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
@@ -157,6 +169,8 @@ class PVConfigYAML(TypedDict, total=False):
     inverter_type: Literal["hybrid", "ac_coupled", "ac-coupled"]
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
+    # The `id` of the PV circuit feeding the inverter this section describes: see
+    # `spec_generator.pv_section_circuit`.
     feed: str
 
 
@@ -201,7 +215,9 @@ class CircuitTemplateExtended(CircuitTemplate, total=False):
     inverter_type: str
     hvac_type: str  # "central_ac", "heat_pump", "heat_pump_aux"
     monthly_factors: dict[int, float]  # month (1-12) -> multiplier (1.0 = peak month)
-    breaker_rating: int  # Breaker rating in Amps (derived from power_range if not set)
+    # Breaker rating in Amps. None records a panel that publishes none, as a clone
+    # writes it; absent, 20.
+    breaker_rating: int | None
     breaker_rating_a: float  # Legacy alias for breaker_rating, used by older clones.
     recorder_entity: str  # HA entity ID for recorder replay (e.g. "sensor.span_panel_..._power")
     user_modified: bool  # True when user has edited profile → use synthetic instead of replay
@@ -211,6 +227,11 @@ class CircuitTemplateExtended(CircuitTemplate, total=False):
     # ordinary settable value meaning "never shed", not this. The emitter rejects the
     # pair when `priority` is anything but `OFF_GRID`.
     never_backup: bool
+    # The circuit a SPAN panel adds for a commissioned PV or battery system:
+    # its relay is locked and `load-shed/priority` is permanently NEVER, neither
+    # settable. A different lock from `never_backup`, which is permanently OFF_GRID on
+    # an otherwise controllable relay; validation refuses a template claiming both.
+    commissioned_system: Literal["pv", "backup"]
 
 
 class CircuitDefinition(TypedDict):
@@ -228,6 +249,19 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     overrides: dict[str, Any]
     breaker_rating: int  # Per-circuit breaker rating in Amps (overrides template)
     recorder_entity: str  # HA entity for recorder replay (also merged onto resolved template)
+    # The identity of the device this circuit feeds: a DER's identity belongs to the
+    # circuit, not to its position in a list (see `instance_ids.evse_circuit_serial`).
+    # Read for a PV circuit's inverter, where the top-level `pv` section is the
+    # default; `serial_number` is also read for an EVSE circuit's drive.
+    serial_number: str
+    model: str
+    vendor: str
+    # Not identity, so the `pv` or `evse` section's is every inverter's or drive's
+    # default, not only the first's.
+    firmware_version: str
+    # pcs/priority. Absent, the circuit's position; None, a panel that publishes none
+    # for it, as a clone writes it.
+    pcs_priority: int | None
 
 
 class TabSynchronization(TypedDict):

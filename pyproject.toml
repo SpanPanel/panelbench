@@ -4,11 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "panelbench"
-version = "2.5.3"
+version = "2.6.0"
 description = "Standalone eBus simulator for SPAN panels"
 requires-python = ">=3.14"
 dependencies = [
-    "aiomqtt>=2.0.0",
+    # Bounded to the range CI proves: the broker link reaches into aiomqtt's private
+    # `_client` and paho's private `_sock_close`, and the add-on installs from this
+    # list, not the lock. tests/emitter_adapter/test_aiomqtt_contract.py fails on a
+    # bump that moves either, so raise a bound only with that test green.
+    "aiomqtt>=2.5.1,<2.6",
     "aiohttp>=3.9.0",
     "aiohttp-jinja2>=1.6",
     "jinja2>=3.1.0",
@@ -46,7 +50,7 @@ dependencies = [
     # `pformat` are both still absent from `homie.py` and the logger is still NOTSET at
     # import, so the filter remains a guard rather than a live need.
     #
-    # 0.22.0, which is the ceiling `ebus-panel-sim` 0.8.0 allows: it declares
+    # 0.22.0, which is the ceiling `ebus-panel-sim` 0.9.0 allows: it declares
     # `ebus-sdk<0.23,>=0.20.1`, so 0.23.x is out of range until the emitter widens it. That
     # costs nothing here. Everything 0.21.0 through 0.23.1 adds is the producer-side
     # declarative tree API — `DeviceSpec`, `DeviceTreeBuilder`, `build_from_declarations` and
@@ -63,8 +67,8 @@ dependencies = [
     # `RecordingTransport` (last-wins per topic, like a broker's retained store) and
     # therefore to the fidelity captures.
     "ebus-sdk==0.22.0",
-    "ebus-panel-sim==0.8.0",
-    "paho-mqtt>=2.0.0",
+    "ebus-panel-sim==0.9.0",
+    "paho-mqtt>=2.1,<2.2",
 ]
 
 [dependency-groups]
@@ -104,11 +108,6 @@ packages = ["src/panelbench"]
 # Bump back to py314 once the upstream bug is fixed.
 target-version = "py313"
 line-length = 99
-# Byte-vendored from the eBus emitter as the fidelity reference (see
-# tests/fidelity/fixtures/upstream/PROVENANCE.md). Reformatting it to our rules
-# would destroy the property that makes it useful -- that it is upstream's file,
-# unmodified -- and would make every re-sync a merge conflict.
-extend-exclude = ["tests/fidelity/fixtures/upstream"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
@@ -130,10 +129,6 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-# Same reason as ruff's exclusion: the vendored reference is upstream's code held
-# byte-identical, not ours to annotate. It is exercised by the parity test, which
-# is a stronger check than type-checking it would be.
-exclude = ["tests/fidelity/fixtures/upstream/"]
 
 [[tool.mypy.overrides]]
 module = "timezonefinder"

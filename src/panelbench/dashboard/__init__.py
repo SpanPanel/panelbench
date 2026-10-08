@@ -11,43 +11,63 @@ from pathlib import Path
 
 import aiohttp_jinja2
 import jinja2
+import yaml
 from aiohttp import web
 
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.dashboard.context import DashboardContext
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
+    APP_KEY_PANEL_SECRETS,
     APP_KEY_PENDING_CLONES,
     APP_KEY_PRESET_REGISTRY,
     APP_KEY_RATE_CACHE,
     APP_KEY_STORE,
 )
 from panelbench.dashboard.presets import init_presets
-from panelbench.dashboard.routes import setup_routes
+from panelbench.dashboard.routes import refuse_unloadable_edits, setup_routes
+from panelbench.panel_secrets import PanelSecretsStore
 from panelbench.rates.cache import RateCache
 
 __all__ = ["DashboardContext", "create_dashboard_app"]
 
 
+def _view_first_default(context: DashboardContext, store: ConfigStore) -> None:
+    """Show the first shipped template, read-only, or nothing when there is none."""
+    defaults = sorted(context.config_dir.glob("default_*.yaml"))
+    if defaults:
+        store.load_from_file(defaults[0])
+        context.edit(defaults[0].name)
+    else:
+        context.edit(None)
+
+
 def create_dashboard_app(context: DashboardContext) -> web.Application:
     """Create and return the dashboard aiohttp application."""
-    app = web.Application()
+    app = web.Application(middlewares=[refuse_unloadable_edits])
 
-    store = ConfigStore()
+    secrets = context.panel_secrets or PanelSecretsStore.in_config_dir(context.config_dir)
+    store = ConfigStore(secrets=secrets)
 
-    # Load the active config into the editor/viewer.
+    # Load the active config into the editor/viewer. One the panel would refuse is
+    # not opened, so nothing can be saved over it: the dashboard still starts on the
+    # first default template, read-only, says why, and lets the user pick or fix a
+    # config.
     if context.config_filter:
         config_path = context.config_dir / context.config_filter
         if config_path.exists():
-            store.load_from_file(config_path)
+            try:
+                store.load_from_file(config_path)
+            except (ValueError, TypeError, yaml.YAMLError) as exc:
+                load_error = f"{context.config_filter} was not opened: {exc}"
+                _view_first_default(context, store)
+                context.load_error = load_error
     else:
         # No active config — show first default template (read-only).
-        defaults = sorted(context.config_dir.glob("default_*.yaml"))
-        if defaults:
-            context.config_filter = defaults[0].name
-            store.load_from_file(defaults[0])
+        _view_first_default(context, store)
 
     app[APP_KEY_STORE] = store
+    app[APP_KEY_PANEL_SECRETS] = secrets
     app[APP_KEY_DASHBOARD_CONTEXT] = context
     app[APP_KEY_PRESET_REGISTRY] = init_presets(context.config_dir)
     app[APP_KEY_PENDING_CLONES] = {}

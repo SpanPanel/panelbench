@@ -26,10 +26,8 @@ import pytest
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.clone import make_clone_serial, translate_scraped_panel, write_clone_config
-from panelbench.emitter_adapter import runtime as emitter_runtime
+from panelbench.emitter_adapter import wire_capture
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
-from panelbench.emitter_adapter.wire_capture import RecordingTransport, as_capture
-from panelbench.engine import DynamicSimulationEngine
 from panelbench.scraper import ScrapedPanel
 
 if TYPE_CHECKING:
@@ -179,13 +177,7 @@ async def _clone_and_publish(tmp_path: Path) -> dict[str, dict[str, str]]:
     config_dir = tmp_path / "cfg"
     config_dir.mkdir()
     path = write_clone_config(config, config_dir, _SERIAL)
-
-    engine = DynamicSimulationEngine(config_path=path)
-    await engine.initialize_async()
-    recorder = RecordingTransport()
-    runtime = await emitter_runtime.start_clone(engine, transport=recorder)
-    await emitter_runtime.publish_tick(runtime)
-    return as_capture(recorder.retained)
+    return await wire_capture.capture(path)
 
 
 def _declared(capture: dict[str, dict[str, str]], space: str) -> dict[str, object]:

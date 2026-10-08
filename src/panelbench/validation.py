@@ -6,7 +6,18 @@ dashboard can validate configs without circular imports.
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import TYPE_CHECKING, Any
+
+from panelbench.emitter_adapter.spec_generator import relay_locked
+from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
+from panelbench.pv_rating import rating_conflicts
+from panelbench.pv_section import bound_pv_circuit_id
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def validate_yaml_config(config_data: Any) -> None:
@@ -21,7 +32,17 @@ def validate_yaml_config(config_data: Any) -> None:
 
     validate_panel_config(config_data["panel_config"])
     validate_circuit_templates(config_data["circuit_templates"])
+    _validate_commissioned_firmware(
+        panel_firmware_version(config_data), config_data["circuit_templates"]
+    )
     validate_circuits(config_data["circuits"], config_data["circuit_templates"])
+    _warn_uncommissioned_pv_circuits(
+        panel_firmware_version(config_data),
+        config_data["circuits"],
+        config_data["circuit_templates"],
+    )
+    validate_pv_section(config_data)
+    validate_ratings(config_data)
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -65,6 +86,104 @@ def validate_single_template(template_name: str, template: Any) -> None:
             raise ValueError(
                 f"Missing required field '{field}' in circuit template '{template_name}'"
             )
+    _validate_commissioned_system(template_name, template)
+
+
+_COMMISSIONED_SYSTEMS = ("pv", "backup")
+
+
+def _validate_commissioned_system(template_name: str, template: Mapping[str, object]) -> None:
+    """Every fact the emitter enforces for a commissioned-system circuit, stated in the config.
+
+    The emitter rejects the circuit at construction otherwise, which surfaces as a
+    panel that will not start. Refusing it here names the template instead.
+    """
+    system = template.get("commissioned_system")
+    if system is None:
+        return
+    prefix = f"Circuit template '{template_name}' is a commissioned-system circuit"
+    if system not in _COMMISSIONED_SYSTEMS:
+        raise ValueError(f"{prefix}: commissioned_system must be 'pv' or 'backup', got {system!r}")
+    if str(template["priority"]).upper() != "NEVER":
+        raise ValueError(f"{prefix}, which is permanently NEVER: set priority: NEVER")
+    if not relay_locked(str(template["relay_behavior"])):
+        raise ValueError(
+            f"{prefix}, which has a locked relay: set relay_behavior: non-controllable"
+        )
+    if template.get("never_backup"):
+        raise ValueError(
+            f"{prefix}, which is a different lock from never_backup (permanently OFF_GRID): "
+            "remove never_backup"
+        )
+
+
+def _validate_commissioned_firmware(
+    firmware: str, circuit_templates: Mapping[str, Mapping[str, object]]
+) -> None:
+    """Commissioned-system circuits are locked only from SPAN release 202639.
+
+    Before it, SPAN published the "Commissioned PV System" and "Commissioned Backup
+    System" circuits switchable and re-prioritisable (SPAN-API-Client-Docs, Release
+    202639). The emitter does not key the lock on the firmware, so a config naming an
+    earlier release must not ask for one: refused here, naming the template, rather
+    than published as a lock that release never had.
+
+    *circuit_templates* has already passed `validate_circuit_templates`, so every
+    template is a mapping.
+    """
+    if not predates(firmware, SPAN_RELEASE_202639):
+        return
+    for template_name, template in circuit_templates.items():
+        if template.get("commissioned_system") is not None:
+            raise ValueError(
+                f"Circuit template '{template_name}' is a commissioned-system circuit, which is "
+                f"locked only from SPAN release 202639, but firmware_version is {firmware!r}: "
+                "remove commissioned_system, or name release 202639 or later"
+            )
+
+
+def _warn_uncommissioned_pv_circuits(
+    firmware: str,
+    circuits: list[Mapping[str, object]],
+    circuit_templates: Mapping[str, Mapping[str, object]],
+) -> None:
+    """From SPAN release 202639 a circuit feeding an inverter is a locked one.
+
+    That release publishes every commissioned inverter as its own PV device, named by
+    the circuit feeding it, and locks the circuits the panel adds for a commissioned
+    PV system (SPAN-API-Client-Docs, Release 202639). A circuit names a device it
+    feeds only when that device is commissioned, so on that release a PV circuit
+    without ``commissioned_system: pv`` publishes a switchable, re-prioritisable
+    circuit the release never does.
+
+    Warned, not refused: a config that loaded before must keep loading, such as a
+    template shipped before the key existed, and a panel clone recognises a
+    commissioned circuit only by the name SPAN gives it, so it can produce one. A PV
+    circuit with no tabs, a what-if one, is fed by no breaker.
+
+    *circuits* and *circuit_templates* have already passed validation, so every
+    circuit names a template that exists.
+    """
+    if predates(firmware, SPAN_RELEASE_202639):
+        return
+    for circuit in circuits:
+        template_name = str(circuit["template"])
+        template = circuit_templates[template_name]
+        if (
+            template.get("device_type") == "pv"
+            and template.get("commissioned_system") != "pv"
+            and circuit.get("tabs")
+        ):
+            _LOGGER.warning(
+                "Circuit %r feeds a solar inverter, which SPAN release 202639 and later "
+                "lock as a commissioned PV system, but firmware_version is %r and its "
+                "template %r has no commissioned_system: pv, so its relay and priority "
+                "stay settable; give the template commissioned_system: pv, priority: NEVER "
+                "and relay_behavior: non-controllable",
+                circuit["id"],
+                firmware,
+                template_name,
+            )
 
 
 def validate_circuits(circuits: Any, circuit_templates: dict[str, Any]) -> None:
@@ -107,6 +226,39 @@ def validate_single_circuit(index: int, circuit: Any, circuit_templates: dict[st
 
     if len(tabs) == 2:
         validate_double_pole_tabs(index, circuit.get("name", f"circuit {index}"), tabs)
+    if len(tabs) == 1 and (
+        template.get("device_type") == "pv" or template.get("commissioned_system") == "pv"
+    ):
+        # Warned, not refused: a 120 V PV circuit is unusual rather than impossible,
+        # and a config that loaded before must keep loading.
+        _LOGGER.warning(
+            "Circuit %r feeds a solar inverter from one tab (%s); a grid-tied inverter in "
+            "a US panel is 240 V on a two-pole breaker, two tabs on opposite legs",
+            circuit["id"],
+            tabs[0],
+        )
+
+
+def validate_pv_section(config_data: Mapping[str, object]) -> None:
+    """Validate which inverter the ``pv`` section describes.
+
+    Refused here, naming the circuits, rather than when the panel builds its
+    manifest; ``pv_section.bound_pv_circuit_id`` states the rule. *config_data*'s
+    templates and circuits have already passed validation.
+    """
+    bound_pv_circuit_id(config_data)
+
+
+def validate_ratings(config_data: Mapping[str, object]) -> None:
+    """Refuse a circuit rated in two places with different values.
+
+    ``pv_rating`` states the rule. The loader folds every legacy rating it can into
+    the profile, so what is left here is a disagreement, and picking either value
+    would be a guess.
+    """
+    conflicts = rating_conflicts(config_data)
+    if conflicts:
+        raise ValueError("; ".join(conflicts))
 
 
 def validate_panel_source(panel_source: Any) -> None:

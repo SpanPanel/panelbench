@@ -9,53 +9,22 @@ the queue, the drain and the teardown ordering run for real.
 
 from __future__ import annotations
 
+import asyncio
 import pathlib
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING
 
 import pytest
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.transport import LoopBoundTransport
 from panelbench.engine import DynamicSimulationEngine
+from tests._helpers import relay_opened_by_command, settable_relays
+
+if TYPE_CHECKING:
+    from tests.emitter_adapter._fake_aiomqtt import FakeBroker, FakeClient
 
 _CONFIG = pathlib.Path(__file__).resolve().parents[2] / "configs" / "default_MAIN_40.yaml"
-
-
-class FakeBrokerClient:
-    """Enough of ``aiomqtt.Client`` for the path under test, recording order."""
-
-    instances: ClassVar[list[FakeBrokerClient]] = []
-
-    def __init__(self, **kwargs: Any) -> None:
-        self.kwargs = kwargs
-        self.published: list[tuple[str, bytes, int, bool]] = []
-        self.entered = False
-        self.exited = False
-        FakeBrokerClient.instances.append(self)
-
-    async def __aenter__(self) -> FakeBrokerClient:
-        self.entered = True
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        self.exited = True
-
-    async def publish(
-        self, topic: str, payload: bytes, qos: int = 0, retain: bool = False
-    ) -> None:
-        if self.exited:
-            raise AssertionError(f"published {topic!r} after the client was closed")
-        self.published.append((topic, payload, qos, retain))
-
-    async def subscribe(self, topic: str) -> None:
-        return None
-
-
-@pytest.fixture
-def fake_broker(monkeypatch: pytest.MonkeyPatch) -> type[FakeBrokerClient]:
-    FakeBrokerClient.instances = []
-    monkeypatch.setattr(emitter_runtime.aiomqtt, "Client", FakeBrokerClient)
-    return FakeBrokerClient
+_ROOT = "ebus/5/sim-40t-001"
 
 
 async def _started(config: pathlib.Path) -> emitter_runtime.CloneRuntime:
@@ -66,7 +35,7 @@ async def _started(config: pathlib.Path) -> emitter_runtime.CloneRuntime:
 
 @pytest.mark.asyncio
 async def test_the_tree_reaches_the_broker_through_the_queue(
-    fake_broker: type[FakeBrokerClient],
+    fake_broker: FakeBroker,
 ) -> None:
     """The whole point: a synchronous SDK publish path feeding an async client."""
     runtime = await _started(_CONFIG)
@@ -74,7 +43,7 @@ async def test_the_tree_reaches_the_broker_through_the_queue(
     await emitter_runtime.publish_tick(runtime)
     await runtime.transport.drain()
 
-    client = fake_broker.instances[0]
+    client = fake_broker.clients[0]
     topics = [t for t, _, _, _ in client.published]
 
     assert client.entered
@@ -87,7 +56,7 @@ async def test_the_tree_reaches_the_broker_through_the_queue(
 
 @pytest.mark.asyncio
 async def test_each_device_describes_itself_before_it_announces_ready(
-    fake_broker: type[FakeBrokerClient],
+    fake_broker: FakeBroker,
 ) -> None:
     """The ordering guarantee, asserted where it actually matters.
 
@@ -96,9 +65,10 @@ async def test_each_device_describes_itself_before_it_announces_ready(
     order; this proves the order submitted is the one Homie requires.
     """
     runtime = await _started(_CONFIG)
-    await runtime.transport.drain()  # type: ignore[union-attr]
+    assert isinstance(runtime.transport, LoopBoundTransport)
+    await runtime.transport.drain()
 
-    client = fake_broker.instances[0]
+    client = fake_broker.clients[0]
     seen_ready: set[str] = set()
     described: set[str] = set()
     for topic, payload, _qos, _retain in client.published:
@@ -116,7 +86,7 @@ async def test_each_device_describes_itself_before_it_announces_ready(
 
 @pytest.mark.asyncio
 async def test_teardown_drains_before_closing_the_client(
-    fake_broker: type[FakeBrokerClient],
+    fake_broker: FakeBroker,
 ) -> None:
     """`stop` queues the root's final state and cannot flush it — the SDK's
     publish path is synchronous and the client behind it is not. Closing first
@@ -128,14 +98,67 @@ async def test_teardown_drains_before_closing_the_client(
 
     await emitter_runtime.stop_clone(runtime, graceful=True)
 
-    client = fake_broker.instances[0]
+    client = fake_broker.clients[0]
     assert client.exited, "the client was never closed"
     root_states = [
-        payload
-        for topic, payload, _q, _r in client.published
-        if topic == "ebus/5/sim-40t-001/$state"
+        payload for topic, payload, _q, _r in client.published if topic == f"{_ROOT}/$state"
     ]
     assert root_states, "the root never published a state"
     assert root_states[-1] != b"ready", (
         f"the retained root state after teardown is {root_states[-1]!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_a_relay_command_from_home_assistant_reaches_the_emitter(
+    fake_broker: FakeBroker,
+) -> None:
+    """The defect, end to end: HA published `<circuit>/switch/relay/set OPEN` and
+    PanelBench subscribed to it, then never read the message."""
+    runtime = await _started(_CONFIG)
+    assert isinstance(runtime.transport, LoopBoundTransport)
+    await runtime.transport.drain()
+    circuit = settable_relays(runtime)[0]
+
+    fake_broker.send(f"ebus/5/{circuit}/switch/relay/set", b"OPEN")
+
+    await relay_opened_by_command(runtime, circuit)
+    await emitter_runtime.stop_clone(runtime)
+
+
+@pytest.mark.asyncio
+async def test_a_reconnect_restores_the_subscriptions_then_republishes_the_tree(
+    fake_broker: FakeBroker,
+) -> None:
+    """What the SDK does for a client it builds, and leaves to the caller for an
+    injected one: re-subscribe, then `republish_tree`. A broker that restarted
+    without persistence holds nothing until the tree is announced again."""
+    runtime = await _started(_CONFIG)
+    assert isinstance(runtime.transport, LoopBoundTransport)
+    await runtime.transport.drain()
+    first = fake_broker.clients[0]
+    filters = [f for f, _ in first.subscribed]
+
+    fake_broker.go_down()
+    fake_broker.come_up()
+    second = await fake_broker.wait_for_live(after=first)
+    await _republished(second)
+
+    assert [f for f, _ in second.subscribed] == filters
+    last_subscribe = max(i for i, (kind, _) in enumerate(second.log) if kind == "subscribe")
+    first_publish = min(i for i, (kind, _) in enumerate(second.log) if kind == "publish")
+    assert last_subscribe < first_publish, "the tree went out before its subscriptions"
+    published = {topic for topic, _, _, _ in second.published}
+    assert f"{_ROOT}/$description" in published
+    assert f"{_ROOT}/$state" in published
+
+    circuit = settable_relays(runtime)[0]
+    fake_broker.send(f"ebus/5/{circuit}/switch/relay/set", b"OPEN")
+    await relay_opened_by_command(runtime, circuit)
+    await emitter_runtime.stop_clone(runtime)
+
+
+async def _republished(client: FakeClient) -> None:
+    async with asyncio.timeout(2):
+        while not any(t.endswith("/$state") and p == b"ready" for t, p, _, _ in client.published):
+            await asyncio.sleep(0.005)
