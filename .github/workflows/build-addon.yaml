@@ -53,6 +53,24 @@ jobs:
           version=$(grep '^version:' panelbench/config.yaml | sed 's/version: *"\(.*\)"/\1/')
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # `:latest` is what an unversioned pull gets, so only main moves it. A build
+      # dispatched from any other ref, a pre-release branch above all, publishes its
+      # version tag alone.
+      - name: Choose image tags
+        id: tags
+        env:
+          IMAGE: ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE}:${VERSION}"
+            if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+              echo "${IMAGE}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -62,6 +80,4 @@ jobs:
           push: true
           build-args: |
             BUILD_FROM=${{ matrix.base }}
-          tags: |
-            ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}:latest
+          tags: ${{ steps.tags.outputs.tags }}
