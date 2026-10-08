@@ -135,21 +135,17 @@ def translate_scraped_panel(
     scraped: ScrapedPanel,
     *,
     host: str | None = None,
-    passphrase: str | None = None,
 ) -> dict[str, object]:
     """Translate a scraped panel into a simulator config dict.
 
     Args:
         scraped: The scraped panel data.
         host: Source panel IP/hostname (stored in panel_source for refresh).
-        passphrase: Source panel passphrase (stored in panel_source for refresh).
 
     Returns a dict matching the ``SimulationConfig`` TypedDict shape,
     ready for YAML serialisation and ``validate_yaml_config()``.
     """
-    return translate_panel_tree(
-        scraped.serial_number, scraped.devices, host=host, passphrase=passphrase
-    )
+    return translate_panel_tree(scraped.serial_number, scraped.devices, host=host)
 
 
 def translate_panel_tree(
@@ -157,7 +153,6 @@ def translate_panel_tree(
     devices: Mapping[str, DiscoveredDevice],
     *,
     host: str | None = None,
-    passphrase: str | None = None,
 ) -> dict[str, object]:
     """Translate a panel's device tree into a simulator config dict.
 
@@ -165,8 +160,9 @@ def translate_panel_tree(
         panel_device_id: The panel's Homie device id, which roots the tree. On a
             live SPAN panel it is the serial number.
         devices: Every discovered device; only *panel_device_id*'s tree is read.
-        host: Source panel IP/hostname (stored in panel_source for refresh).
-        passphrase: Source panel passphrase (stored in panel_source for refresh).
+        host: Source panel IP/hostname (stored in panel_source for refresh). What it
+            takes to reach the panel there is kept in the ``PanelSecretsStore``,
+            never in the config.
 
     Returns a dict matching the ``SimulationConfig`` TypedDict shape,
     ready for YAML serialisation and ``validate_yaml_config()``.
@@ -273,7 +269,6 @@ def translate_panel_tree(
         panel_source: dict[str, object] = {
             "origin_serial": panel_device_id,
             "host": host,
-            "passphrase": passphrase,
             "last_synced": datetime.now(UTC).isoformat(),
         }
         # Snapshot the original BESS config so the modeling Before pass

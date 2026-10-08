@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
     from panelbench.config_types import BESSConfigYAML
     from panelbench.history import HistoryProvider
+    from panelbench.panel_secrets import PanelSecretsStore
 
 
 async def _noop_modeling_data(
@@ -50,6 +51,8 @@ class DashboardContext:
     ha_client: Any = None  # HAClient | None — optional, set when HA API is available
     history_provider: HistoryProvider | None = None
     panel_browser: Any = None  # PanelBrowser | None — mDNS discovery for standalone mode
+    # Source panels' passphrases and broker credentials; beside config_dir when None.
+    panel_secrets: PanelSecretsStore | None = None
     # Why the active config could not be opened when the dashboard started, shown
     # until the editor moves to another config.
     load_error: str | None = None

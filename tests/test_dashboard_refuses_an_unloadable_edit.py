@@ -333,14 +333,10 @@ async def test_a_panel_source_sync_says_the_change_is_unsaved(
         )
     )
 
-    async def registered(_host: str, _passphrase: str | None) -> tuple[object, str]:
-        return object(), ""
-
-    async def scraped(_creds: object, _ca_pem: str) -> object:
+    async def scraped(_host: str, _secrets: object) -> object:
         return object()
 
-    monkeypatch.setattr(scraper, "register_with_panel", registered)
-    monkeypatch.setattr(scraper, "scrape_ebus", scraped)
+    monkeypatch.setattr(scraper, "scrape_panel", scraped)
     monkeypatch.setattr(app[APP_KEY_STORE], "update_from_scrape", lambda _scraped: True)
     async with TestClient(TestServer(app)) as client:
         synced = await client.post("/sync-panel-source", headers=_HTMX)

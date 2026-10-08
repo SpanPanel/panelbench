@@ -12,6 +12,7 @@ refused for an edit.
 from __future__ import annotations
 
 import functools
+import logging
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
     from pathlib import Path
 
+    from panelbench.panel_secrets import PanelSecretsStore
     from panelbench.scraper import ScrapedPanel
 
 from panelbench.clone import update_config_from_scrape
@@ -42,6 +44,8 @@ from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior, 
 from panelbench.solar import compute_solar_curve
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -129,9 +133,15 @@ def _one_edit[**P, R](
 
 
 class ConfigStore:
-    """In-memory config state: load, mutate, validate, export."""
+    """In-memory config state: load, mutate, validate, export.
 
-    def __init__(self) -> None:
+    A source panel's passphrase never enters the state: a config loaded with one,
+    written before the secrets store existed, gives it to *secrets*, so nothing
+    exported or saved from here can carry it.
+    """
+
+    def __init__(self, *, secrets: PanelSecretsStore | None = None) -> None:
+        self._secrets = secrets
         self._dirty: bool = False
         self._state: dict[str, Any] = {
             "panel_config": {
@@ -180,10 +190,22 @@ class ConfigStore:
         from a key the form never showed.
         """
         state = deepcopy(dict(data))
+        self._take_secrets(state, source=source)
         normalize_config(state, source=source)
         validate_yaml_config(state)
         self._state = state
         self._dirty = not saved
+
+    def _take_secrets(self, state: dict[str, Any], *, source: str) -> None:
+        """Move a passphrase out of *state*, into the secrets store where there is one."""
+        if self._secrets is not None:
+            self._secrets.take_from_config(state)
+            return
+        panel_source = state.get("panel_source")
+        if isinstance(panel_source, dict) and panel_source.pop("passphrase", None) is not None:
+            _LOGGER.warning(
+                "Dropped the source panel's passphrase from %s: no store to keep it in", source
+            )
 
     def load_from_file(self, path: Path) -> None:
         """Read a file and load its content."""

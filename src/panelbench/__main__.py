@@ -171,6 +171,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Directory for generated TLS certificates",
     )
     parser.add_argument(
+        "--secrets-dir",
+        type=Path,
+        default=Path(secrets_dir) if (secrets_dir := os.environ.get("SECRETS_DIR")) else None,
+        help="Directory for source panels' passphrases and broker credentials "
+        "(default: .secrets in the config directory)",
+    )
+    parser.add_argument(
         "--dashboard-port",
         type=int,
         default=int(os.environ.get("DASHBOARD_PORT", str(DASHBOARD_PORT))),
@@ -272,6 +279,7 @@ def main(argv: list[str] | None = None) -> None:
         dashboard_port=args.dashboard_port,
         advertise_address=args.advertise_address,
         ha_config=ha_config,
+        secrets_dir=args.secrets_dir,
     )
 
     try:

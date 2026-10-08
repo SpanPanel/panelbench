@@ -18,6 +18,7 @@ from panelbench.dashboard.config_store import ConfigStore
 from panelbench.dashboard.context import DashboardContext
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
+    APP_KEY_PANEL_SECRETS,
     APP_KEY_PENDING_CLONES,
     APP_KEY_PRESET_REGISTRY,
     APP_KEY_RATE_CACHE,
@@ -25,6 +26,7 @@ from panelbench.dashboard.keys import (
 )
 from panelbench.dashboard.presets import init_presets
 from panelbench.dashboard.routes import refuse_unloadable_edits, setup_routes
+from panelbench.panel_secrets import PanelSecretsStore
 from panelbench.rates.cache import RateCache
 
 __all__ = ["DashboardContext", "create_dashboard_app"]
@@ -44,7 +46,8 @@ def create_dashboard_app(context: DashboardContext) -> web.Application:
     """Create and return the dashboard aiohttp application."""
     app = web.Application(middlewares=[refuse_unloadable_edits])
 
-    store = ConfigStore()
+    secrets = context.panel_secrets or PanelSecretsStore.in_config_dir(context.config_dir)
+    store = ConfigStore(secrets=secrets)
 
     # Load the active config into the editor/viewer. One the panel would refuse is
     # not opened, so nothing can be saved over it: the dashboard still starts on the
@@ -64,6 +67,7 @@ def create_dashboard_app(context: DashboardContext) -> web.Application:
         _view_first_default(context, store)
 
     app[APP_KEY_STORE] = store
+    app[APP_KEY_PANEL_SECRETS] = secrets
     app[APP_KEY_DASHBOARD_CONTEXT] = context
     app[APP_KEY_PRESET_REGISTRY] = init_presets(context.config_dir)
     app[APP_KEY_PENDING_CLONES] = {}

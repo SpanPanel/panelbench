@@ -489,44 +489,36 @@ class TestEnergySeeding:
 
 
 class TestPanelSource:
-    """Tests for panel_source credential persistence."""
+    """Tests for the clone's record of where it came from."""
 
     def test_panel_source_written_when_host_provided(self) -> None:
         """panel_source block is written when host is passed to translate."""
-        config = translate_scraped_panel(
-            _make_scraped(), host="192.168.1.100", passphrase="secret"
-        )
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         ps = config.get("panel_source")
         assert isinstance(ps, dict)
         assert ps["origin_serial"] == _SERIAL
         assert ps["host"] == "192.168.1.100"
-        assert ps["passphrase"] == "secret"
         assert "last_synced" in ps
+
+    def test_the_clone_carries_no_passphrase(self) -> None:
+        """It is kept in the panel secrets store, never in a config users share."""
+        ps = translate_scraped_panel(_make_scraped(), host="192.168.1.100")["panel_source"]
+        assert isinstance(ps, dict)
+        assert "passphrase" not in ps
 
     def test_no_panel_source_without_host(self) -> None:
         """panel_source is omitted when host is not provided."""
         config = translate_scraped_panel(_make_scraped())
         assert "panel_source" not in config
 
-    def test_panel_source_null_passphrase(self) -> None:
-        """panel_source supports null passphrase (door-bypass)."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
-        ps = config.get("panel_source")
-        assert isinstance(ps, dict)
-        assert ps["passphrase"] is None
-
     def test_panel_source_validates(self) -> None:
         """Config with panel_source passes validation."""
-        config = translate_scraped_panel(
-            _make_scraped(), host="192.168.1.100", passphrase="secret"
-        )
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         validate_yaml_config(config)
 
     def test_panel_source_roundtrip(self, tmp_path: Path) -> None:
         """panel_source survives YAML write/load roundtrip."""
-        config = translate_scraped_panel(
-            _make_scraped(), host="192.168.1.100", passphrase="secret"
-        )
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         output = write_clone_config(config, tmp_path, _SERIAL)
         loaded = yaml.safe_load(output.read_text())
         validate_yaml_config(loaded)
@@ -540,7 +532,7 @@ class TestUpdateConfigFromScrape:
 
     def test_typical_power_not_overwritten(self) -> None:
         """Active power snapshot must not overwrite typical_power."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
 
         templates = config["circuit_templates"]
         assert isinstance(templates, dict)
@@ -563,7 +555,7 @@ class TestUpdateConfigFromScrape:
 
     def test_energy_seeds_updated(self) -> None:
         """Energy accumulators are updated from new scrape."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
 
         devices = _base_devices()
         # aaa111 is a load, so its consumption accumulator is exported-energy.
@@ -583,7 +575,7 @@ class TestUpdateConfigFromScrape:
 
     def test_last_synced_updated(self) -> None:
         """panel_source.last_synced is updated on refresh."""
-        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100", passphrase=None)
+        config = translate_scraped_panel(_make_scraped(), host="192.168.1.100")
         ps = config.get("panel_source")
         assert isinstance(ps, dict)
         old_synced = ps["last_synced"]
@@ -607,9 +599,7 @@ class TestUpdateConfigFromScrape:
         """A clone keeps the release it was taken at when its source later upgrades."""
         before = _base_devices()
         before[_SERIAL].update_property("info", "firmware-version", EARLIER_FIRMWARE)
-        config = translate_scraped_panel(
-            _make_scraped(before), host="192.168.1.100", passphrase=None
-        )
+        config = translate_scraped_panel(_make_scraped(before), host="192.168.1.100")
         assert config["firmware_version"] == EARLIER_FIRMWARE
 
         after = _base_devices()

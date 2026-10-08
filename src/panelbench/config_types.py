@@ -11,11 +11,14 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 
 class PanelSource(TypedDict, total=False):
-    """Source panel connection details for clone configs."""
+    """Source panel provenance for clone configs.
+
+    What it takes to reach the panel, its passphrase and broker credentials, is kept
+    in the ``PanelSecretsStore`` under ``origin_serial``, never here.
+    """
 
     origin_serial: str  # real panel's serial (immutable provenance)
     host: str  # IP or hostname of the source panel
-    passphrase: str | None  # proximity code (null for door-bypass)
     last_synced: str  # ISO 8601 timestamp of last sync
 
 

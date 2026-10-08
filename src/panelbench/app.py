@@ -36,6 +36,7 @@ from panelbench.discovery import PanelAdvertiser, PanelBrowser
 from panelbench.emitter_adapter.runtime import BrokerConnection
 from panelbench.panel import PanelInstance
 from panelbench.panel_models import PANEL_SIZE_TO_MODEL
+from panelbench.panel_secrets import SECRETS_FILENAME, PanelSecretsStore
 from panelbench.recorder import RecorderDataSource
 from panelbench.schema import HomieSchemaRegistry, load_schema, render_for_panel
 
@@ -118,8 +119,14 @@ class SimulatorApp:
         dashboard_port: int = DASHBOARD_PORT,
         advertise_address: str | None = None,
         ha_config: HAConnectionConfig | None = None,
+        secrets_dir: Path | None = None,
     ) -> None:
         self._config_dir = config_dir
+        self._panel_secrets = (
+            PanelSecretsStore(secrets_dir / SECRETS_FILENAME)
+            if secrets_dir is not None
+            else PanelSecretsStore.in_config_dir(config_dir)
+        )
         self._config_filter = config_filter
         self._tick_interval = tick_interval
         self._broker_username = broker_username
@@ -586,6 +593,10 @@ class SimulatorApp:
         stopped, or reloaded. Errors for affected filenames are stored
         on ``self._panel_start_errors`` so the dashboard can surface them.
         """
+        # A clone written before the secrets store existed carries its source panel's
+        # passphrase. It moves out on the first scan that finds it, every file in the
+        # directory alike, and before anything hashes or reads them.
+        self._panel_secrets.migrate_config_files(self._config_dir)
         current = _discover_configs(self._config_dir, self._config_filter)
 
         # Exclude configs the user explicitly stopped via the dashboard
@@ -850,6 +861,7 @@ class SimulatorApp:
             ha_client=ha_client,
             history_provider=ha_client,
             panel_browser=browser,
+            panel_secrets=self._panel_secrets,
         )
         dashboard_app = create_dashboard_app(dashboard_ctx)
         self._dashboard_runner = web.AppRunner(dashboard_app)

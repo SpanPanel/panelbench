@@ -34,6 +34,9 @@ configs/*_history.db
 configs/*.yaml
 !configs/default_*.yaml
 
+# Source panels' passphrases and broker credentials (panel_secrets.py)
+configs/.secrets/
+
 # Local-developer source overrides + env. See .env.example and uv.toml.example.
 .env
 uv.toml

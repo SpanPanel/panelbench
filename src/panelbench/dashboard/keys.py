@@ -11,6 +11,7 @@ from aiohttp import web
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.dashboard.context import DashboardContext
 from panelbench.dashboard.presets import PresetRegistry
+from panelbench.panel_secrets import PanelSecretsStore
 from panelbench.rates.cache import RateCache
 
 APP_KEY_STORE = web.AppKey("store", ConfigStore)
@@ -20,3 +21,4 @@ APP_KEY_PENDING_CLONES: web.AppKey[dict[str, dict[str, object]]] = web.AppKey(
     "pending_clones", dict
 )
 APP_KEY_RATE_CACHE = web.AppKey("rate_cache", RateCache)
+APP_KEY_PANEL_SECRETS = web.AppKey("panel_secrets", PanelSecretsStore)

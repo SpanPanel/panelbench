@@ -54,6 +54,9 @@ detect_advertise_address() {
 ADVERTISE_ADDRESS="${ADVERTISE_ADDRESS:-$(detect_advertise_address)}"
 export ADVERTISE_ADDRESS
 export CERT_DIR="/data/certs"
+# Source panels' passphrases and broker credentials. In /data, which only the add-on
+# reads, rather than beside the configs in the folder Home Assistant shares.
+export SECRETS_DIR="/data/secrets"
 export BROKER_USERNAME="span"
 export BROKER_PASSWORD="sim-password"
 

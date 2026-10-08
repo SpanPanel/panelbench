@@ -12,6 +12,13 @@ cannot express "this panel's devices" — see ``_discover_tree``.
 
 This module still imports no span-panel-api or HA integration code. It uses
 ``aiohttp`` for the REST handshake and ``ebus_sdk`` for discovery.
+
+**A panel is registered with once.** Each registration adds a client to the real
+panel that its owner has to remove by hand, so ``scrape_panel`` registers under a
+name derived from the panel's serial, keeps the credentials registering returns in
+the ``PanelSecretsStore``, and reuses them on every later clone, sync and restore.
+It registers again, under the same name, only when the broker refuses them; and a
+user who already holds broker credentials can supply them instead of registering.
 """
 
 from __future__ import annotations
@@ -19,14 +26,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
-import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import aiohttp
 import ebus_sdk
 from ebus_sdk import DiscoveredDevice
+
+from panelbench.const import PATH_CA_CERT, PATH_REGISTER, PATH_STATUS
+from panelbench.panel_secrets import BrokerCredentials, PanelSecretsStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +74,21 @@ class PanelCredentials:
 
 
 @dataclass(frozen=True, slots=True)
+class SuppliedBroker:
+    """Broker credentials a user already holds for a panel, so nothing is registered.
+
+    ``ca_pem`` may be left out, and is then fetched from the panel, which serves its
+    CA without authentication.
+    """
+
+    serial: str
+    username: str
+    password: str
+    port: int
+    ca_pem: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ScrapedPanel:
     """Result of a successful eBus scrape."""
 
@@ -78,15 +103,138 @@ class ScrapedPanel:
     ca_pem: bytes = field(repr=False)
 
 
+def registered_client_name(serial: str) -> str:
+    """The name PanelBench registers under with the panel whose serial is *serial*.
+
+    Stable, so the panel's owner sees one PanelBench client per panel, and can tell
+    which panel's clone it serves.
+    """
+    return f"panelbench-clone-{serial}"
+
+
+async def scrape_panel(
+    host: str,
+    secrets: PanelSecretsStore,
+    *,
+    passphrase: str | None = None,
+    supplied: SuppliedBroker | None = None,
+    status_callback: StatusCallback | None = None,
+) -> ScrapedPanel:
+    """Scrape the panel at *host*, registering with it only when nothing else will do.
+
+    With *supplied*, those credentials are kept and used, and nothing is registered.
+    Otherwise the panel's serial is read from its status endpoint, and the broker
+    credentials kept for it are used. Without any, or when its broker refuses
+    them, PanelBench registers under ``registered_client_name`` with *passphrase*, or
+    the one kept for the panel, and keeps what registering returns.
+
+    Raises:
+        ScrapeError: The panel could not be reached, registered with or scraped.
+    """
+    if supplied is not None:
+        broker = BrokerCredentials(
+            username=supplied.username,
+            password=supplied.password,
+            host=_hostname(host),
+            port=supplied.port,
+            ca_pem=supplied.ca_pem or (await _fetch_ca(host)).decode(),
+        )
+        secrets.remember(supplied.serial, passphrase=passphrase, broker=broker)
+        return await _scrape_through(supplied.serial, broker, status_callback)
+
+    serial = await _fetch_serial(host)
+    kept = secrets.get(serial)
+    passphrase = passphrase or kept.passphrase
+    if kept.broker is not None:
+        try:
+            return await _scrape_through(serial, kept.broker, status_callback)
+        except ScrapeError as exc:
+            if passphrase is None:
+                raise
+            _LOGGER.warning(
+                "The broker credentials kept for panel %s did not work (%s); registering again",
+                serial,
+                exc,
+            )
+
+    creds, ca_pem = await register_with_panel(host, passphrase, serial=serial)
+    broker = BrokerCredentials(
+        username=creds.username,
+        password=creds.password,
+        host=creds.broker_host,
+        port=creds.mqtts_port,
+        ca_pem=ca_pem.decode(),
+    )
+    secrets.remember(serial, passphrase=passphrase, broker=broker)
+    return await _scrape_through(serial, broker, status_callback)
+
+
+async def _scrape_through(
+    serial: str,
+    broker: BrokerCredentials,
+    status_callback: StatusCallback | None,
+) -> ScrapedPanel:
+    creds = PanelCredentials(
+        username=broker.username,
+        password=broker.password,
+        serial_number=serial,
+        mqtts_port=broker.port,
+        broker_host=broker.host,
+    )
+    return await scrape_ebus(creds, broker.ca_pem.encode(), status_callback=status_callback)
+
+
+def _hostname(host: str) -> str:
+    """*host* without a port, which is where the panel's broker listens too."""
+    return urlsplit(f"//{host}").hostname or host
+
+
+def _http_timeout() -> aiohttp.ClientTimeout:
+    return aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_S)
+
+
+async def _fetch_serial(host: str) -> str:
+    """The panel's serial, from the status endpoint it serves without authentication."""
+    try:
+        async with (
+            aiohttp.ClientSession(timeout=_http_timeout()) as session,
+            session.get(f"http://{host}{PATH_STATUS}") as resp,
+        ):
+            resp.raise_for_status()
+            data = await resp.json()
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        raise ScrapeError("registering", f"Panel unreachable: {exc}") from exc
+    serial = data.get("serialNumber") if isinstance(data, dict) else None
+    if not isinstance(serial, str) or not serial:
+        raise ScrapeError("registering", "The panel's status reports no serial number")
+    return serial
+
+
+async def _fetch_ca(host: str) -> bytes:
+    """The panel's CA certificate, which it serves without authentication."""
+    try:
+        async with (
+            aiohttp.ClientSession(timeout=_http_timeout()) as session,
+            session.get(f"http://{host}{PATH_CA_CERT}") as resp,
+        ):
+            resp.raise_for_status()
+            return await resp.read()
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        raise ScrapeError("registering", f"Panel unreachable: {exc}") from exc
+
+
 async def register_with_panel(
     host: str,
     passphrase: str | None,
+    *,
+    serial: str,
 ) -> tuple[PanelCredentials, bytes]:
-    """Authenticate with a real SPAN panel and retrieve MQTT credentials.
+    """Register with a real SPAN panel, under ``registered_client_name(serial)``.
 
     Args:
         host: IP or hostname of the panel.
         passphrase: Panel passphrase (None for door-bypass).
+        serial: The panel's serial, which names the registration.
 
     Returns:
         A tuple of (PanelCredentials, ca_pem_bytes).
@@ -94,18 +242,15 @@ async def register_with_panel(
     Raises:
         ScrapeError: On network or authentication failure.
     """
-    register_url = f"http://{host}/api/v2/auth/register"
-    ca_url = f"http://{host}/api/v2/certificate/ca"
-    client_name = f"sim-clone-{uuid.uuid4()}"
+    register_url = f"http://{host}{PATH_REGISTER}"
+    ca_url = f"http://{host}{PATH_CA_CERT}"
 
-    body: dict[str, str] = {"name": client_name}
+    body: dict[str, str] = {"name": registered_client_name(serial)}
     if passphrase is not None:
         body["hopPassphrase"] = passphrase
 
-    timeout = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_S)
-
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=_http_timeout()) as session:
             # Step 1: Register for MQTT credentials
             async with session.post(register_url, json=body) as resp:
                 if resp.status in (401, 403):
@@ -135,12 +280,13 @@ async def register_with_panel(
 
     except ScrapeError:
         raise
-    except aiohttp.ClientError as exc:
+    except (aiohttp.ClientError, TimeoutError) as exc:
         raise ScrapeError("registering", f"Panel unreachable: {exc}") from exc
 
     _LOGGER.info(
-        "Registered with panel %s (serial=%s, mqtts_port=%d)",
+        "Registered with panel %s as %s (serial=%s, mqtts_port=%d)",
         host,
+        body["name"],
         creds.serial_number,
         creds.mqtts_port,
     )

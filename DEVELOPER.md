@@ -480,7 +480,6 @@ hardware_version:
 panel_source:
   origin_serial: str # Real panel's serial (immutable)
   host: str # IP or hostname of source panel
-  passphrase: str | null # Proximity code (null for door-bypass)
   last_synced: str # ISO 8601 timestamp
 ```
 
@@ -593,17 +592,24 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 
 ### What gets cloned
 
-- Panel identity (`sim-{serial}-clone`), main breaker rating, panel size
+- Panel identity (`sim-{serial}-clone`), main breaker rating, and the panel size its model names
+- The panel's time zone and line voltages
 - The panel's firmware version, so the clone publishes as that SPAN release does
 - The panel's hardware version
 - All circuits: name, tab position, breaker rating, relay behavior, priority
-- Commissioned PV and battery system circuits, recognised by name and both locks, as `commissioned_system`
+- Commissioned PV and battery system circuits, recognised by both locks and the inverter or battery they feed, as `commissioned_system`
 - Energy profile mode inferred from device feeds (PV -> producer, BESS -> bidirectional, EVSE -> bidirectional)
 - Energy accumulators seeded from the panel's imported/exported energy values
 - Battery behavior with sensible schedule defaults, and the battery's vendor, model, part number, serial and firmware version
 - PV nameplate capacity and production profile, and each inverter's vendor, model, serial and firmware version on the circuit that feeds it
 - EVSE night-charging time-of-day profile, and each SPAN Drive's serial and firmware version on the circuit that feeds it
-- Source panel credentials stored in `panel_source` for on-demand refresh
+- The source panel's host in `panel_source`, for on-demand refresh
+
+PanelBench registers with a source panel once, as `panelbench-clone-<serial>`, and reuses the broker credentials that returns for every later clone, sync and
+restore, registering again only if the panel's broker refuses them. Broker credentials you already hold can be given in the clone form instead, and nothing is
+registered. The passphrase and broker credentials are kept outside every config, keyed by the panel's serial, in `<config dir>/.secrets/panel_sources.json` (or
+`SECRETS_DIR`; the add-on uses `/data/secrets`), readable only by its owner. A config written before this that carries a `panel_source.passphrase` gives it up
+to that store on the next scan of the config directory, and is never written with it again.
 
 ### Usage profile import
 

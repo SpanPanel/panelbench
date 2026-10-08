@@ -30,7 +30,9 @@ real SPAN panel's configuration directly from the dashboard.
   individual panels
 - **File operations** — import/export YAML, clone configs, save & reload
 - **Panel cloning** — clone a real SPAN panel's configuration from
-  the dashboard (enter the panel IP and passphrase)
+  the dashboard (enter the panel IP and passphrase, or broker
+  credentials you already hold); the passphrase and credentials are
+  kept in the add-on's private storage, never in the config
 - **Config persistence** — the simulator remembers the last running
   config across restarts
 

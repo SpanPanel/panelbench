@@ -188,7 +188,8 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 
 - **Multi-panel** — load multiple YAML configs; click a row to select, start/stop/restart individual panels. Running panels appear as discovered devices in the
   SpanPanel integration (default configs excluded).
-- **Clone** — create an editable copy from a template, or from a panel running `r202633+` firmware (IP + passphrase).
+- **Clone** — create an editable copy from a template, or from a panel running `r202633+` firmware (IP and passphrase, or broker credentials you already hold).
+  PanelBench registers with a panel once, keeps the passphrase and credentials outside the config, and reuses them for every sync.
 - **Model** — open the energy what-if view for a running panel.
 - **Purge** — remove recorder history written by the simulated panel's sensors when the simulated panel was added to HA's integration.
 - **File operations** — import/export YAML, save & reload

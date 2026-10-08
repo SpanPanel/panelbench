@@ -16,12 +16,14 @@ from aiohttp import web
 from ebus_panel_sim import EmitterError
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Mapping
     from pathlib import Path
 
     import multidict
 
     from panelbench.dashboard.context import DashboardContext
+    from panelbench.panel_secrets import PanelSecretsStore
+    from panelbench.scraper import SuppliedBroker
 
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -31,6 +33,7 @@ from panelbench.const import https_port_for
 from panelbench.dashboard.config_store import ConfigStore, EditRefused
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
+    APP_KEY_PANEL_SECRETS,
     APP_KEY_PENDING_CLONES,
     APP_KEY_PRESET_REGISTRY,
     APP_KEY_RATE_CACHE,
@@ -99,6 +102,10 @@ def _available_entity_types(store: ConfigStore) -> list[str]:
 
 def _store(request: web.Request) -> ConfigStore:
     return request.app[APP_KEY_STORE]
+
+
+def _panel_secrets(request: web.Request) -> PanelSecretsStore:
+    return request.app[APP_KEY_PANEL_SECRETS]
 
 
 def _rate_cache(request: web.Request) -> RateCache:
@@ -266,11 +273,17 @@ def _presets_for_type(request: web.Request, entity_type: str) -> dict[str, str]:
     return _presets(request).presets_for_type(entity_type)
 
 
-def _entity_list_context(request: web.Request, editing_id: str | None = None) -> dict[str, Any]:
+def _entity_list_context(
+    request: web.Request,
+    editing_id: str | None = None,
+    *,
+    restore_error: str | None = None,
+) -> dict[str, Any]:
     """Build the entity-list template context.
 
     When *editing_id* is set, the template renders that entity in edit
-    mode and all others as collapsed rows.
+    mode and all others as collapsed rows. *restore_error* says why a restore
+    from the source panel failed.
     """
     store = _store(request)
     dash_ctx = _ctx(request)
@@ -282,6 +295,7 @@ def _entity_list_context(request: web.Request, editing_id: str | None = None) ->
         "unmapped_tabs": store.get_unmapped_tabs(),
         "readonly": _is_readonly(dash_ctx),
         "restorable_templates": set(recorder_map.keys()),
+        "restore_error": restore_error,
     }
     if editing_id is not None:
         entity = store.get_entity(editing_id)
@@ -1472,9 +1486,13 @@ async def handle_toggle_replay(request: web.Request) -> web.Response:
 
     if entity.user_modified:
         # SYN → REC: full restore
-        if not store.restore_recorder(entity_id):
-            await _rescrape_snapshots(request)
-            store.restore_recorder(entity_id)
+        failure = await _restore_recorder(request, entity_id)
+        if failure is not None:
+            return _render(
+                "partials/entity_list.html",
+                request,
+                _entity_list_context(request, restore_error=failure),
+            )
         _persist_config(request)
     else:
         # REC → SYN: flip the flag and persist so the engine matches the UI
@@ -1491,40 +1509,59 @@ async def handle_restore_recorder(request: web.Request) -> web.Response:
     needed — no other templates are touched.
     """
     entity_id = request.match_info["id"]
-    store = _store(request)
 
-    if not store.restore_recorder(entity_id):
-        # No snapshot — try a targeted re-scrape
-        await _rescrape_snapshots(request)
-        store.restore_recorder(entity_id)
+    failure = await _restore_recorder(request, entity_id)
+    if failure is not None:
+        return _render(
+            "partials/entity_list.html",
+            request,
+            _entity_list_context(request, restore_error=failure),
+        )
 
     _persist_config(request)
     return _render("partials/entity_list.html", request, _entity_list_context(request))
 
 
+async def _restore_recorder(request: web.Request, entity_id: str) -> str | None:
+    """Restore *entity_id* from its snapshot, re-scraping the source panel for one.
+
+    Answers why the restore failed, or None. A re-scrape that fails is reported, as
+    a sync's is, rather than leaving the circuit as it was without a word.
+    """
+    from panelbench.scraper import ScrapeError
+
+    store = _store(request)
+    if store.restore_recorder(entity_id):
+        return None
+    try:
+        await _rescrape_snapshots(request)
+    except ScrapeError as exc:
+        return f"Restore failed: [{exc.phase}] {exc}"
+    store.restore_recorder(entity_id)
+    return None
+
+
 async def _rescrape_snapshots(request: web.Request) -> None:
-    """Re-scrape source panel and store snapshots without modifying templates."""
+    """Re-scrape source panel and store snapshots without modifying templates.
+
+    Raises:
+        ScrapeError: The config has no source panel, or it could not be scraped.
+    """
     import copy
 
     from panelbench.clone import translate_scraped_panel
-    from panelbench.scraper import register_with_panel, scrape_ebus
+    from panelbench.scraper import ScrapeError, scrape_panel
 
     store = _store(request)
     panel_source = store.get_panel_source()
     if not panel_source:
-        return
+        raise ScrapeError("source", "This config was not cloned from a panel")
 
     host = panel_source.get("host", "")
-    passphrase = panel_source.get("passphrase")
-
-    try:
-        creds, ca_pem = await register_with_panel(host, passphrase)
-        scraped = await scrape_ebus(creds, ca_pem)
-    except Exception:
-        return
+    scraped = await scrape_panel(host, _panel_secrets(request))
 
     # Build a fresh config to get original template values
-    fresh = translate_scraped_panel(scraped, host=host, passphrase=passphrase)
+    fresh = translate_scraped_panel(scraped, host=host)
     fresh_templates = fresh.get("circuit_templates")
     if not isinstance(fresh_templates, dict):
         return
@@ -1831,7 +1868,7 @@ async def handle_clone(request: web.Request) -> web.Response:
     # is written as the loader reads it, a stale rating copy already gone, rather
     # than warning every reader after; content the loader changes nothing in keeps
     # its text, comments and all.
-    clone = ConfigStore()
+    clone = ConfigStore(secrets=_panel_secrets(request))
     try:
         clone.load_from_yaml(yaml_content, source=str(output_path))
     except (ValueError, TypeError, yaml.YAMLError) as exc:
@@ -1904,7 +1941,7 @@ async def handle_get_panel_source(request: web.Request) -> web.Response:
 
 async def handle_sync_panel_source(request: web.Request) -> web.Response:
     """Re-scrape the source panel and overwrite typical_power + energy seeds."""
-    from panelbench.scraper import ScrapeError, register_with_panel, scrape_ebus
+    from panelbench.scraper import ScrapeError, scrape_panel
 
     store = _store(request)
     panel_source = store.get_panel_source()
@@ -1915,11 +1952,9 @@ async def handle_sync_panel_source(request: web.Request) -> web.Response:
         )
 
     host = panel_source.get("host", "")
-    passphrase = panel_source.get("passphrase")
 
     try:
-        creds, ca_pem = await register_with_panel(host, passphrase)
-        scraped = await scrape_ebus(creds, ca_pem)
+        scraped = await scrape_panel(host, _panel_secrets(request))
     except ScrapeError as exc:
         return web.Response(
             text=f'<div class="flash error">Sync failed: [{exc.phase}] {exc}</div>',
@@ -2181,6 +2216,47 @@ async def handle_delete_config(request: web.Request) -> web.Response:
     )
 
 
+_SPAN_MQTTS_PORT = 8883
+
+
+def _supplied_broker(form: Mapping[str, object]) -> SuppliedBroker | None:
+    """Broker credentials the clone form was given in place of registering, if any.
+
+    All of serial, username and password, or none of them; the port defaults to
+    the one SPAN's broker listens on, and a blank CA is fetched from the panel.
+
+    Raises:
+        ValueError: Some of the three were given, but not all.
+    """
+    from panelbench.scraper import SuppliedBroker
+
+    fields = {
+        key: str(form.get(key, "")).strip()
+        for key in ("broker_serial", "broker_username", "broker_password")
+    }
+    if not any(fields.values()):
+        return None
+    missing = [key.removeprefix("broker_") for key, value in fields.items() if not value]
+    if missing:
+        raise ValueError(
+            "Existing broker credentials need the panel's serial, a username and a "
+            f"password; missing: {', '.join(missing)}."
+        )
+    port_text = str(form.get("broker_port", "")).strip()
+    try:
+        port = int(port_text) if port_text else _SPAN_MQTTS_PORT
+    except ValueError:
+        raise ValueError(f"The broker port must be a number, not {port_text!r}.") from None
+    ca_pem = str(form.get("broker_ca", "")).strip()
+    return SuppliedBroker(
+        serial=fields["broker_serial"],
+        username=fields["broker_username"],
+        password=fields["broker_password"],
+        port=port,
+        ca_pem=f"{ca_pem}\n" if ca_pem else None,
+    )
+
+
 def _clone_panel_context(request: web.Request, **extra: object) -> dict[str, Any]:
     """Build the clone panel section template context."""
     ctx = _ctx(request)
@@ -2386,7 +2462,7 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
         clone_config_path,
         translate_scraped_panel,
     )
-    from panelbench.scraper import ScrapeError, register_with_panel, scrape_ebus
+    from panelbench.scraper import ScrapeError, scrape_panel
 
     data = await request.post()
     host = str(data.get("host", "")).strip()
@@ -2399,20 +2475,19 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
             _clone_panel_context(request, clone_error="Panel IP or hostname is required."),
         )
 
-    if not passphrase:
+    try:
+        supplied = _supplied_broker(data)
+    except ValueError as exc:
         return _render(
             "partials/clone_panel.html",
             request,
-            _clone_panel_context(
-                request,
-                clone_error="Passphrase is required.",
-                clone_host=host,
-            ),
+            _clone_panel_context(request, clone_error=str(exc), clone_host=host),
         )
 
     try:
-        creds, ca_pem = await register_with_panel(host, passphrase)
-        scraped = await scrape_ebus(creds, ca_pem)
+        scraped = await scrape_panel(
+            host, _panel_secrets(request), passphrase=passphrase, supplied=supplied
+        )
     except ScrapeError as exc:
         return _render(
             "partials/clone_panel.html",
@@ -2424,7 +2499,7 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
             ),
         )
 
-    config = translate_scraped_panel(scraped, host=host, passphrase=passphrase)
+    config = translate_scraped_panel(scraped, host=host)
 
     ctx = _ctx(request)
 
@@ -2440,13 +2515,20 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
                     panel_cfg["longitude"] = lon
 
                     # Derive IANA timezone from coordinates so profile
-                    # builder can bucket hour_factors in local time.
-                    from timezonefinder import TimezoneFinder
+                    # builder can bucket hour_factors in local time, unless the
+                    # panel published its own, which the clone already holds.
+                    if "time_zone" not in panel_cfg:
+                        from timezonefinder import TimezoneFinder
 
-                    tz_result = TimezoneFinder().timezone_at(lat=lat, lng=lon)
-                    tz_name = str(tz_result) if tz_result else "America/Los_Angeles"
-                    panel_cfg["time_zone"] = tz_name
-                    _LOGGER.info("Applied HA home location: %.4f, %.4f → %s", lat, lon, tz_name)
+                        tz_result = TimezoneFinder().timezone_at(lat=lat, lng=lon)
+                        tz_name = str(tz_result) if tz_result else "America/Los_Angeles"
+                        panel_cfg["time_zone"] = tz_name
+                    _LOGGER.info(
+                        "Applied HA home location: %.4f, %.4f → %s",
+                        lat,
+                        lon,
+                        panel_cfg["time_zone"],
+                    )
         except Exception:
             _LOGGER.debug("Could not fetch HA location", exc_info=True)
 
