@@ -308,18 +308,20 @@ def validate_ratings(config_data: Mapping[str, object]) -> None:
 
 
 def validate_outside_meters(config_data: Mapping[str, object]) -> None:
-    """Meters outside the panel: each a mapping with an id no circuit or meter shares,
-    on a panel whose variant publishes them.
+    """Meters outside the panel: at most one, a mapping with an id no circuit shares, on
+    a panel whose variant publishes them.
 
     A meter's device id is scoped from its ``id`` as a circuit's is, so a shared id
-    would publish two devices on one topic. *config_data*'s circuits have already
-    passed validation.
+    would publish two devices on one topic, and the emitter models one such meter, on
+    the service conductor. *config_data*'s circuits have already passed validation.
     """
     meters = config_data.get("outside_meters")
     if meters is None:
         return
     if not isinstance(meters, list):
         raise ValueError("outside_meters must be a list")
+    if len(meters) > 1:
+        raise ValueError(f"outside_meters names {len(meters)} meters; a panel has at most one")
     circuits = config_data.get("circuits")
     taken = (
         {str(c["id"]) for c in circuits if isinstance(c, dict)}

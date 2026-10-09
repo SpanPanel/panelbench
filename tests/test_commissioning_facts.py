@@ -154,6 +154,14 @@ def test_an_outside_meter_sharing_a_circuits_id_is_refused() -> None:
         validate_yaml_config(config)
 
 
+def test_a_second_outside_meter_is_refused() -> None:
+    config = _commissioned()
+    config["outside_meters"] = [{"id": "service"}, {"id": "second"}]
+
+    with pytest.raises(ValueError, match="at most one"):
+        validate_yaml_config(config)
+
+
 def test_an_outside_meter_on_hardware_whose_variant_has_none_is_refused() -> None:
     config = _commissioned()
     config["hardware_version"] = "1.2"
