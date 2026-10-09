@@ -70,8 +70,6 @@ PanelBench could write, so it is allowed here with the emitter's reason.
 _STANDING: Final[dict[tuple[str, str], str]] = {
     ("main32_r202633", "clone"): "7 differences",
     ("main32_r202633", "import"): "6 differences",
-    ("r202639-b", "clone"): "publishing fails: an UNKNOWN shed priority is copied verbatim",
-    ("r202639-b", "import"): "publishing fails: an UNKNOWN shed priority is copied verbatim",
     ("r202639-c", "clone"): "publishing fails: a commissioned-system circuit under the variant",
     ("r202639-c", "import"): "publishing fails: a commissioned-system circuit under the variant",
     ("r202639-d", "clone"): "publishing fails: a commissioned-system circuit under the variant",

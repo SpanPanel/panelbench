@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 from panelbench.hardware import panel_hardware_version, panel_variant, publishes_outside_meters
@@ -88,6 +89,12 @@ def validate_single_template(template_name: str, template: Any) -> None:
             raise ValueError(
                 f"Missing required field '{field}' in circuit template '{template_name}'"
             )
+    priority = str(template["priority"]).upper()
+    if priority not in SHED_PRIORITIES:
+        raise ValueError(
+            f"Circuit template '{template_name}' has priority {template['priority']!r}; "
+            f"it must be one of {', '.join(SHED_PRIORITIES)}"
+        )
     _validate_commissioned_system(template_name, template)
 
 

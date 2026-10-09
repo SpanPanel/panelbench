@@ -29,7 +29,7 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from panelbench.bess_link import BESS_LINKS, is_bess_link
-from panelbench.const import https_port_for
+from panelbench.const import SHED_PRIORITIES, https_port_for
 from panelbench.dashboard.config_store import ConfigStore, EditRefused
 from panelbench.dashboard.keys import (
     APP_KEY_DASHBOARD_CONTEXT,
@@ -77,14 +77,7 @@ class RecorderPurgeResult:
     entity_count: int = 0
 
 
-PRIORITIES = [
-    "MUST_HAVE",
-    "NICE_TO_HAVE",
-    "NON_ESSENTIAL",
-    "NEVER",
-    "SOC_THRESHOLD",
-    "OFF_GRID",
-]
+PRIORITIES = list(SHED_PRIORITIES)
 RELAY_BEHAVIORS = ["controllable", "non-controllable"]
 ENTITY_TYPES = ["circuit", "pv", "evse"]
 # Infrastructure types that should only appear once in a panel config.

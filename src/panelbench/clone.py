@@ -851,6 +851,11 @@ def _translate_circuit(
     modelling_rating = breaker_rating or _MODELLING_BREAKER_A
     active_power = _float_prop(devices, node_uuid, "meter", "active-power")
     priority = _get_prop(devices, node_uuid, "load-shed", "priority") or "NEVER"
+    if priority == "UNKNOWN":
+        # Each priority carried over from the REST era publishes as UNKNOWN, so it
+        # reads back as one of them, as the emitter's own capture reads it; no config
+        # can name UNKNOWN itself.
+        priority = "NICE_TO_HAVE"
     # v1.0 publishes controllability directly as `switch/relay-controllable`, where
     # flat inferred it from `always-on`. Not a rename: `pcs/managed` is the opposite
     # sense (PCS manages this circuit), so mapping always-on onto it inverts the

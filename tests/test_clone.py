@@ -376,6 +376,29 @@ class TestTranslateScrapedPanel:
         assert isinstance(t15, dict)
         assert t15["priority"] == "OFF_GRID"
 
+    def test_an_unknown_priority_reads_as_one_the_emitter_publishes_so(self) -> None:
+        """The emitter publishes every priority carried over from the REST era as
+        UNKNOWN, so a circuit publishing UNKNOWN is cloned with one of those, which it
+        publishes as UNKNOWN again; no config can name UNKNOWN itself."""
+        devices = _base_devices()
+        devices["aaa111"].update_property("load-shed", "priority", "UNKNOWN")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        templates = config["circuit_templates"]
+        assert isinstance(templates, dict)
+        assert templates["clone_1"]["priority"] == "NICE_TO_HAVE"
+        validate_yaml_config(config)
+
+    def test_a_priority_the_emitter_does_not_take_is_refused(self) -> None:
+        config = translate_scraped_panel(_make_scraped())
+        templates = config["circuit_templates"]
+        assert isinstance(templates, dict)
+        templates["clone_1"]["priority"] = "UNKNOWN"
+
+        with pytest.raises(ValueError, match=r"clone_1.*priority 'UNKNOWN'"):
+            validate_yaml_config(config)
+
     def test_panel_size_derivation(self) -> None:
         """Panel size rounds up to standard size from max space+companion."""
         config = translate_scraped_panel(_make_scraped())
