@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from ebus_panel_sim import DeviceInstance, DeviceManifest
 
+from panelbench.emitter_adapter import commissioning
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
     evse_circuit_serial,
@@ -57,10 +58,8 @@ _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-
 # What the emitter is given for a circuit whose template records that its panel
 # publishes no breaker rating (`breaker_rating: null`, which a clone writes). The
 # emitter requires one (ebus-panel-sim 0.10.0b1, `manifest_physics` reads
-# `breaker-rating-a` with `_req_float`) and publishes it unless the device lists
-# `breaker/rating` as unvalued, which PanelBench does not yet do, so this is what the
-# wire shows; the round-trip fidelity test pins it as a known difference rather than
-# letting it pass as the panel's own value.
+# `breaker-rating-a` with `_req_float`), and the circuit lists `breaker/rating` as
+# unvalued, so it is never published.
 _UNPUBLISHED_BREAKER_RATING_A = 20.0
 
 
@@ -98,6 +97,7 @@ def build_manifest(profile: SimulationConfig) -> DeviceManifest:
         _panel_instance(profile),
         *_lugs_instances(profile),
         *_circuit_instances(profile),
+        *_outside_meter_instances(profile),
     ]
     bess = _bess_instance(profile)
     if bess is not None:
@@ -131,12 +131,17 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
             "service-voltage-v": str(panel_cfg.get("service_voltage_v", 240.0)),
             "line-voltage-v": str(panel_cfg.get("line_voltage_v", 120.0)),
             "islandable": "true" if _islandable(profile) else "false",
+            **commissioning.metadata(commissioning.SITE, panel_cfg.get("site") or {}),
+            **commissioning.metadata(commissioning.SITE_LOCATION, panel_cfg),
+            **commissioning.metadata(commissioning.IMPORT_LIMITS, panel_cfg),
+            **commissioning.unvalued_metadata(panel_cfg.get("unvalued")),
         },
     )
 
 
 def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     upstream_id, downstream_id = lugs_device_ids(profile["panel_config"]["serial_number"])
+    lugs = profile.get("lugs") or {}
     # Named after their ids, as SPAN release 202639 names every device it proxies or
     # synthesizes: the captured MAIN 32 publishes its lugs, battery and MID that way.
     # A name on the wire is a $description name only for these, so nothing a person
@@ -144,17 +149,40 @@ def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     return [
         DeviceInstance(
             entity_class="lugs",
-            instance_id=upstream_id,
-            display_name=upstream_id,
-            metadata={"direction": "upstream"},
-        ),
-        DeviceInstance(
-            entity_class="lugs",
-            instance_id=downstream_id,
-            display_name=downstream_id,
-            metadata={"direction": "downstream"},
-        ),
+            instance_id=device_id,
+            display_name=device_id,
+            metadata={
+                "direction": direction,
+                **commissioning.metadata(commissioning.LUGS, section),
+                **commissioning.unvalued_metadata(section.get("unvalued")),
+            },
+        )
+        for device_id, direction, section in (
+            (upstream_id, "upstream", lugs.get("upstream") or {}),
+            (downstream_id, "downstream", lugs.get("downstream") or {}),
+        )
     ]
+
+
+def _outside_meter_instances(profile: SimulationConfig) -> list[DeviceInstance]:
+    """Each meter outside the panel, a circuit device with a meter alone.
+
+    Named after its device id, which scopes its config ``id`` to the panel as a
+    circuit's is scoped, because the panel publishes no other name for it.
+    """
+    panel_id = profile["panel_config"]["serial_number"]
+    instances: list[DeviceInstance] = []
+    for meter in profile.get("outside_meters") or []:
+        instance_id = stable_circuit_uuid(panel_id, meter["id"])
+        instances.append(
+            DeviceInstance(
+                entity_class="remote-ct",
+                instance_id=instance_id,
+                display_name=instance_id,
+                metadata=commissioning.unvalued_metadata(meter.get("unvalued")),
+            )
+        )
+    return instances
 
 
 def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
@@ -167,6 +195,10 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
         template_name = c.get("template", "")
         template: CircuitTemplateExtended | None = templates.get(template_name)
         commissioned_system: str | None
+        # What the circuit records as unpublished by a null rather than in `unvalued`.
+        unpublished: list[str] = []
+        if c.get("pcs_priority", 0) is None:
+            unpublished.append("pcs/priority")
         if template is None:
             relay_behavior_raw = "controllable"
             priority = "NICE_TO_HAVE"
@@ -184,6 +216,8 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             # recorded as absent is not 20 A: see `_UNPUBLISHED_BREAKER_RATING_A`.
             rating = template.get("breaker_rating_a") or template.get("breaker_rating", 20)
             breaker_rating = float(rating) if rating is not None else _UNPUBLISHED_BREAKER_RATING_A
+            if rating is None:
+                unpublished.append("breaker/rating")
         relay_behavior = normalise_relay_behavior(relay_behavior_raw)
         instance_id = stable_circuit_uuid(panel_id, c["id"])
         instances.append(
@@ -238,6 +272,8 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     **(
                         {"commissioned-system": commissioned_system} if commissioned_system else {}
                     ),
+                    **commissioning.metadata(commissioning.CIRCUIT, c),
+                    **commissioning.unvalued_metadata(c.get("unvalued"), unpublished),
                 },
             ),
         )

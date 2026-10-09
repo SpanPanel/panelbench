@@ -9,6 +9,13 @@ from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, TypedDict
 
+Enablement = Literal["UNSPECIFIED", "UNCONFIGURED", "DISABLED", "ENABLED"]
+"""Whether a commissioned import limit is in force, as the ``pcs`` catalog spells it."""
+
+BackedUp = Literal["BACKED_UP", "NOT_BACKED_UP", "UNKNOWN"]
+"""Whether a path is on the backup side of a microgrid interconnect, as the
+``connection`` catalog spells it."""
+
 
 class PanelSource(TypedDict, total=False):
     """Source panel provenance for clone configs.
@@ -20,6 +27,21 @@ class PanelSource(TypedDict, total=False):
     origin_serial: str  # real panel's serial (immutable provenance)
     host: str  # IP or hostname of the source panel
     last_synced: str  # ISO 8601 timestamp of last sync
+
+
+class SiteConfigYAML(TypedDict, total=False):
+    """The site as recorded when the panel was commissioned.
+
+    Published in the panel's ``info`` where its variant declares the property, beside
+    ``panel_config``'s ``latitude`` and ``longitude``. A clone keeps its panel's.
+    """
+
+    name: str
+    address_lines: str
+    locality: str
+    region: str
+    country_code: str
+    utility_meter_serial_number: str
 
 
 class PanelConfig(TypedDict):
@@ -46,6 +68,15 @@ class PanelConfig(TypedDict):
     wifi_link: NotRequired[bool]
     ethernet_link: NotRequired[bool]
     wifi_ssid: NotRequired[str | None]
+    site: NotRequired[SiteConfigYAML]
+    # Commissioned import limits, published as the panel's `pcs` state. Absent, an
+    # enablement is unpublished; the off-grid limit's value is required while ENABLED.
+    off_grid_import_limit_enablement: NotRequired[Enablement]
+    off_grid_import_limit_a: NotRequired[float]
+    operator_import_limit_enablement: NotRequired[Enablement]
+    # `node/property` paths the panel declares and leaves unvalued, as a clone reads
+    # them from its panel. Every device section takes the same list.
+    unvalued: NotRequired[list[str]]
 
 
 class CyclingPattern(TypedDict, total=False):
@@ -188,6 +219,35 @@ class EVSEConfigYAML(TypedDict, total=False):
     feed: str
 
 
+class LugsConfigYAML(TypedDict, total=False):
+    """One set of lugs as commissioned, published in its ``connection`` node."""
+
+    feeds_role: str  # what the lugs feed where it is not a device of its own
+    backed_up: BackedUp
+    service_rating_a: int  # the utility service rating at a service entrance
+    overcurrent_protection_a: int
+    unvalued: list[str]
+
+
+class LugsSectionYAML(TypedDict, total=False):
+    """The panel's two sets of lugs, by direction."""
+
+    upstream: LugsConfigYAML
+    downstream: LugsConfigYAML
+
+
+class OutsideMeterYAML(TypedDict):
+    """A meter the panel reads that sits outside it, on no breaker space.
+
+    It meters the service conductor, as the emitter models such a meter, and
+    publishes as a circuit device with a meter alone, named after its device id as
+    the panel names it. ``id`` scopes that device id as a circuit's ``id`` does.
+    """
+
+    id: str
+    unvalued: NotRequired[list[str]]
+
+
 class BrokerConfigYAML(TypedDict, total=False):
     """Optional ``broker:`` section in the simulator YAML.
 
@@ -262,6 +322,15 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     # pcs/priority. Absent, the circuit's position; None, a panel that publishes none
     # for it, as a clone writes it.
     pcs_priority: int | None
+    # The circuit as commissioned, published where the variant declares the property.
+    tags: list[str]  # info/tags: the loads it serves
+    locations: list[str]  # info/locations: where in the home
+    dedicated: bool  # info/dedicated: commissioned as serving a single load
+    nominal_voltage: float  # info/nominal-voltage
+    protection_functions: str  # breaker/protection-functions
+    feeds_role: str  # connection/feeds-role: what it feeds where that is no device
+    backed_up: BackedUp  # connection/backed-up
+    unvalued: list[str]
 
 
 class TabSynchronization(TypedDict):
@@ -300,6 +369,8 @@ class SimulationConfig(TypedDict):
     pv: NotRequired[PVConfigYAML | None]
     evse: NotRequired[EVSEConfigYAML | None]
     broker: NotRequired[BrokerConfigYAML | None]
+    lugs: NotRequired[LugsSectionYAML]
+    outside_meters: NotRequired[list[OutsideMeterYAML]]
     # Identity metadata that surfaces in the panel DeviceInstance.
     firmware_version: NotRequired[str]
     hardware_version: NotRequired[str]

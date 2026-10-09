@@ -24,8 +24,10 @@ import pytest
 from ebus_panel_sim.reference_captures import load_reference_capture, reference_capture_names
 
 from panelbench.clone import translate_panel_tree
+from panelbench.config_types import SimulationConfig
 from panelbench.definition_import import config_from_definition
 from panelbench.emitter_adapter.wire_capture import capture_retained, discovered_devices
+from panelbench.hardware import panel_variant
 from tests._helpers import write_config
 
 from .tree_diff import differences, published_tree, retained_topics
@@ -66,17 +68,13 @@ PanelBench could write, so it is allowed here with the emitter's reason.
 """
 
 _STANDING: Final[dict[tuple[str, str], str]] = {
-    ("main32_r202633", "clone"): "29 differences",
-    ("main32_r202633", "import"): "28 differences",
-    ("main32_r202639", "clone"): "2 differences",
-    ("main32_r202639", "import"): "2 differences",
-    ("r202639-a", "clone"): "58 differences",
-    ("r202639-a", "import"): "58 differences",
+    ("main32_r202633", "clone"): "7 differences",
+    ("main32_r202633", "import"): "6 differences",
     ("r202639-b", "clone"): "publishing fails: an UNKNOWN shed priority is copied verbatim",
     ("r202639-b", "import"): "publishing fails: an UNKNOWN shed priority is copied verbatim",
-    ("r202639-c", "clone"): "107 differences",
-    ("r202639-c", "import"): "107 differences",
-    ("r202639-d", "clone"): "134 differences",
+    ("r202639-c", "clone"): "publishing fails: a commissioned-system circuit under the variant",
+    ("r202639-c", "import"): "publishing fails: a commissioned-system circuit under the variant",
+    ("r202639-d", "clone"): "publishing fails: a commissioned-system circuit under the variant",
     ("r202639-d", "import"): "importing fails: a battery without a nameplate is dropped",
     ("r202639-e", "clone"): "publishing fails: circuits sharing a space get one id",
     ("r202639-e", "import"): "publishing fails: circuits sharing a space get one id",
@@ -107,6 +105,16 @@ def test_every_reference_capture_is_a_cell() -> None:
     assert names
     assert {name for name, _route in _STANDING} <= set(names)
     assert set(EMITTER_EXCEPTIONS) <= set(names)
+
+
+@pytest.mark.parametrize("name", reference_capture_names())
+def test_panelbench_selects_the_variant_each_capture_publishes(name: str) -> None:
+    """PanelBench selects a panel's variant by its hardware version string, as the
+    emitter's capture reads it; the capture's definition names the variant it chose.
+    Read through a clone, which keeps the string."""
+    config: SimulationConfig = _config(name, "clone")
+
+    assert panel_variant(config) == load_reference_capture(name).definition.variant
 
 
 @pytest.mark.asyncio

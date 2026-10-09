@@ -19,14 +19,17 @@ import json
 import logging
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
 import yaml
+from ebus_panel_sim import EmitterError, PanelDefinition
+from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_tree
 from ebus_sdk import DiscoveredDevice
 
+from panelbench.emitter_adapter import commissioning
 from panelbench.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
@@ -38,6 +41,7 @@ TYPE_BESS = "energy.ebus.device.bess"
 TYPE_PV = "energy.ebus.device.pv"
 TYPE_EVSE = "energy.ebus.device.evse"
 TYPE_MID = "energy.ebus.device.mid"
+TYPE_LUGS = "energy.ebus.device.lugs"
 
 COMMISSIONED_SYSTEM_FEEDS: Final[Mapping[str, str]] = MappingProxyType(
     {TYPE_PV: "pv", TYPE_BESS: "backup"}
@@ -191,6 +195,7 @@ def translate_panel_tree(
     bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
     pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
     evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
+    unvalued = _unvalued_by_device(_emitter_reading(devices, panel_device_id))
 
     # Build feed cross-reference: circuit_uuid → device_type
     feed_map = _build_feed_map(devices, circuit_nodes)
@@ -215,6 +220,9 @@ def translate_panel_tree(
         "main_size": main_breaker,
         "latitude": 37.7,
         "longitude": -122.4,
+        **commissioning.config_values(
+            commissioning.SITE_LOCATION, _published_by(devices, panel_device_id)
+        ),
     }
     panel_device = devices.get(panel_device_id)
     panel_description = panel_device.description if panel_device is not None else None
@@ -228,6 +236,7 @@ def translate_panel_tree(
         panel_config["model"] = model
     _copy_envelope(devices, panel_device_id, panel_config)
     _copy_site_values(devices, panel_device_id, panel_config)
+    _copy_commissioning(devices, panel_device_id, panel_config, unvalued)
     shed_threshold = _soc_shed_threshold(devices, panel_device_id)
     if shed_threshold is not None:
         panel_config["soc_shed_threshold"] = shed_threshold
@@ -235,13 +244,20 @@ def translate_panel_tree(
     # Build per-circuit templates and definitions
     templates: dict[str, dict[str, object]] = {}
     circuits: list[dict[str, object]] = []
+    outside_meters: list[dict[str, object]] = []
     used_tabs: set[int] = set()
 
     for node_uuid in sorted(circuit_nodes):
+        if _meters_outside_the_panel(devices, node_uuid):
+            outside_meters.append(
+                _outside_meter(len(outside_meters) + 1, unvalued.get(node_uuid, []))
+            )
+            continue
         result = _translate_circuit(
             devices,
             node_uuid,
             feed_map,
+            unvalued.get(node_uuid, []),
         )
         if result is None:
             continue
@@ -275,6 +291,11 @@ def translate_panel_tree(
             "enable_realistic_behaviors": True,
         },
     }
+    if outside_meters:
+        config["outside_meters"] = outside_meters
+    lugs = _lugs_config(devices, panel_device_id, unvalued)
+    if lugs:
+        config["lugs"] = lugs
 
     # The panel's firmware decides which side of SPAN release 202639 the clone
     # publishes (the BESS meter's sign, the EVSE limit), so a clone of a panel on an
@@ -808,11 +829,13 @@ def _translate_circuit(
     devices: Mapping[str, DiscoveredDevice],
     node_uuid: str,
     feed_map: dict[str, str],
+    unvalued: list[str],
 ) -> tuple[str, dict[str, object], dict[str, object], list[int]] | None:
     """Translate a single circuit node into a template and definition.
 
-    Returns (template_name, template_dict, circuit_def, tabs) or None
-    if the circuit cannot be translated (missing space).
+    *unvalued* is what the circuit declares and leaves unvalued. Returns
+    (template_name, template_dict, circuit_def, tabs) or None if the circuit cannot
+    be translated (missing space).
     """
     tabs = _spaces_prop(devices, node_uuid)
     if not tabs:
@@ -957,9 +980,150 @@ def _translate_circuit(
         # The panel's own value, or none where it publishes none, as a commissioned
         # PV circuit does: never the position-derived one PanelBench's configs get.
         "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
+        **commissioning.config_values(commissioning.CIRCUIT, _published_by(devices, node_uuid)),
     }
+    # A rating or priority the panel publishes none of is recorded as null above.
+    recorded = {
+        path
+        for path, value in (
+            ("breaker/rating", breaker_rating),
+            ("pcs/priority", circuit_def["pcs_priority"]),
+        )
+        if value is None
+    }
+    if listed := [path for path in unvalued if path not in recorded]:
+        circuit_def["unvalued"] = listed
 
     return template_name, template, circuit_def, tabs
+
+
+def _meters_outside_the_panel(devices: Mapping[str, DiscoveredDevice], node_uuid: str) -> bool:
+    """Whether a circuit device is a meter outside the panel: it declares no space.
+
+    Read from the declaration, not the value, so a branch circuit whose spaces are
+    not yet published is not taken for one.
+    """
+    device = devices.get(node_uuid)
+    if device is None or not isinstance(device.description, dict):
+        return False
+    return "spaces" not in device.get_node_properties("info")
+
+
+def _outside_meter(ordinal: int, unvalued: list[str]) -> dict[str, object]:
+    """A meter outside the panel, as ``outside_meters`` holds it.
+
+    Its id is its place among the panel's such meters, as a circuit's is its first
+    space: the panel publishes nothing else to tell them apart.
+    """
+    meter: dict[str, object] = {"id": f"outside_meter_{ordinal}"}
+    if unvalued:
+        meter["unvalued"] = unvalued
+    return meter
+
+
+def _lugs_config(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    unvalued: Mapping[str, list[str]],
+) -> dict[str, object]:
+    """Each set of lugs' commissioning, by direction, where the panel records any."""
+    section: dict[str, object] = {}
+    for lugs_id in _devices_of_type(devices, panel_device_id, TYPE_LUGS):
+        direction = (_get_prop(devices, lugs_id, "info", "direction") or "").lower()
+        if direction not in ("upstream", "downstream"):
+            continue
+        lugs = commissioning.config_values(commissioning.LUGS, _published_by(devices, lugs_id))
+        if unvalued.get(lugs_id):
+            lugs["unvalued"] = unvalued[lugs_id]
+        if lugs:
+            section[direction] = lugs
+    return section
+
+
+def _copy_commissioning(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    panel_config: dict[str, object],
+    unvalued: Mapping[str, list[str]],
+) -> None:
+    """The panel's site and commissioned import limits, and what it leaves unvalued."""
+    published = _published_by(devices, panel_device_id)
+    site = commissioning.config_values(commissioning.SITE, published)
+    if site:
+        panel_config["site"] = site
+    panel_config.update(commissioning.config_values(commissioning.IMPORT_LIMITS, published))
+    if unvalued.get(panel_device_id):
+        panel_config["unvalued"] = unvalued[panel_device_id]
+
+
+def _published_by(
+    devices: Mapping[str, DiscoveredDevice], device_id: str
+) -> Callable[[str], str | None]:
+    """A device's published value for a ``node/property`` path, or None."""
+
+    def published(path: str) -> str | None:
+        node, _, prop = path.partition("/")
+        return _get_prop(devices, device_id, node, prop)
+
+    return published
+
+
+def _emitter_reading(
+    devices: Mapping[str, DiscoveredDevice], panel_device_id: str
+) -> PanelDefinition | None:
+    """The panel as the emitter's own capture reads it, unmasked, or None.
+
+    Read for what only the emitter can say: which declared properties the panel
+    leaves unvalued that a republish would otherwise value. A tree the emitter cannot
+    read is cloned without them, and said so.
+    """
+    try:
+        definition, _notes = definition_from_tree(
+            _as_tree(devices), mask=False, root=panel_device_id
+        )
+    except (CaptureError, EmitterError, ValueError, ArithmeticError) as exc:
+        # A value the emitter cannot parse, such as an infinite priority, is as
+        # unreadable to it as a malformed tree.
+        _LOGGER.warning(
+            "The emitter cannot read panel %s as a definition (%s); cloning it without "
+            "the properties it leaves unvalued",
+            panel_device_id,
+            exc,
+        )
+        return None
+    return definition
+
+
+def _as_tree(devices: Mapping[str, DiscoveredDevice]) -> Tree:
+    """Discovered devices as the emitter's capture reads a tree."""
+    tree: Tree = {}
+    for device_id, device in devices.items():
+        description = device.description
+        if not isinstance(description, dict):
+            continue
+        tree[device_id] = Device(
+            description=description,
+            properties={
+                f"{node}/{prop}": str(value)
+                for node, values in device.properties.items()
+                for prop, value in values.items()
+                if value is not None
+            },
+        )
+    return tree
+
+
+def _unvalued_by_device(reading: PanelDefinition | None) -> dict[str, list[str]]:
+    """Each device's declared and unvalued properties, by its device id on the panel."""
+    if reading is None:
+        return {}
+    found: dict[str, list[str]] = {}
+    for instance in reading.manifest.instances:
+        listed = instance.metadata.get("unvalued", "")
+        paths = sorted(path for path in listed.split(",") if path)
+        if paths:
+            found[instance.instance_id] = paths
+    return found
 
 
 def _commissioned_system(

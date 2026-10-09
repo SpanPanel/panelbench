@@ -304,22 +304,6 @@ def _pcs_fixed(d: Difference) -> bool:
 
 
 UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
-    "an unpublished breaker rating is published": (
-        "ebus-panel-sim 0.10.0b1 requires breaker-rating-a (manifest_physics._req_float) and "
-        "publishes it unless the device lists breaker/rating as unvalued, which PanelBench "
-        "does not yet do, so a clone that records none publishes its placeholder",
-        lambda d: (
-            _on_a_circuit(d)
-            and (d.where, d.source, d.clone) == ("value breaker/rating", None, "20")
-        ),
-    ),
-    "an unpublished pcs priority is published": (
-        "ebus-panel-sim 0.10.0b1 publishes pcs/priority 0 for a circuit whose manifest names "
-        "none, unless the device lists it as unvalued, which PanelBench does not yet do",
-        lambda d: (
-            _on_a_circuit(d) and (d.where, d.source, d.clone) == ("value pcs/priority", None, "0")
-        ),
-    ),
     "one voltage for both legs": (
         "ebus-panel-sim 0.10.0b1 publishes one per-leg voltage on both legs, so a clone "
         "carries the legs' mean, published to the panel's one decimal",

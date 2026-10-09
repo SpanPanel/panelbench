@@ -18,20 +18,47 @@ from typing import TYPE_CHECKING, Final
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from ebus_panel_sim import Variant
+
     from panelbench.config_types import SimulationConfig
 
 DEFAULT_HARDWARE_VERSION: Final = "1.2"
+
+_OUTSIDE_METER_VARIANT: Final = "span-alpha-test-b2"
+"""The emitter variant that publishes a meter outside the panel, the only one that does."""
+
+_VARIANT_BY_HARDWARE_VERSION: Final[Mapping[str, Variant]] = {"3.0": _OUTSIDE_METER_VARIANT}
+"""The emitter variant a hardware version string selects, as the emitter's capture
+reads a SPAN panel; every other string publishes ``span``."""
 
 _STATUS_HARDWARE_VERSIONS: Final = frozenset({"1.2", "2.0"})
 _STATUS_HARDWARE_UNKNOWN: Final = "UNKNOWN"
 
 
-def panel_hardware_version(config: SimulationConfig) -> str:
+def panel_hardware_version(config: Mapping[str, object]) -> str:
     """The hardware version the panel *config* describes, as MQTT publishes it.
 
-    ``str()`` because YAML reads an unquoted ``1.2`` or ``2.0`` as a float.
+    ``str()`` because YAML reads an unquoted ``1.2`` or ``2.0`` as a float. Takes any
+    mapping, not only a ``SimulationConfig``, because validation asks it of a config
+    that is still unvalidated YAML.
     """
     return str(config.get("hardware_version") or DEFAULT_HARDWARE_VERSION)
+
+
+def panel_variant(config: Mapping[str, object]) -> Variant:
+    """The set of device profiles the panel *config* describes publishes.
+
+    Selected by its hardware version string, as a panel's own hardware decides what it
+    declares, so a clone that keeps the string publishes what its panel does.
+    """
+    return _VARIANT_BY_HARDWARE_VERSION.get(panel_hardware_version(config), "span")
+
+
+def publishes_outside_meters(config: Mapping[str, object]) -> bool:
+    """Whether the panel *config* describes can publish a meter outside the panel."""
+    return panel_variant(config) == _OUTSIDE_METER_VARIANT
 
 
 def status_hardware_version(config: SimulationConfig) -> str | None:

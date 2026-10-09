@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
+from panelbench.hardware import panel_hardware_version, panel_variant, publishes_outside_meters
 from panelbench.pv_rating import rating_conflicts
 from panelbench.pv_section import bound_pv_circuit_id
 
@@ -43,6 +44,7 @@ def validate_yaml_config(config_data: Any) -> None:
     )
     validate_pv_section(config_data)
     validate_ratings(config_data)
+    validate_outside_meters(config_data)
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -259,6 +261,41 @@ def validate_ratings(config_data: Mapping[str, object]) -> None:
     conflicts = rating_conflicts(config_data)
     if conflicts:
         raise ValueError("; ".join(conflicts))
+
+
+def validate_outside_meters(config_data: Mapping[str, object]) -> None:
+    """Meters outside the panel: each a mapping with an id no circuit or meter shares,
+    on a panel whose variant publishes them.
+
+    A meter's device id is scoped from its ``id`` as a circuit's is, so a shared id
+    would publish two devices on one topic. *config_data*'s circuits have already
+    passed validation.
+    """
+    meters = config_data.get("outside_meters")
+    if meters is None:
+        return
+    if not isinstance(meters, list):
+        raise ValueError("outside_meters must be a list")
+    circuits = config_data.get("circuits")
+    taken = (
+        {str(c["id"]) for c in circuits if isinstance(c, dict)}
+        if isinstance(circuits, list)
+        else set()
+    )
+    for index, meter in enumerate(meters):
+        if not isinstance(meter, dict) or "id" not in meter:
+            raise ValueError(f"outside_meters[{index}] must be a mapping with an id")
+        meter_id = str(meter["id"])
+        if meter_id in taken:
+            raise ValueError(
+                f"outside_meters[{index}] has id {meter_id!r}, which is already taken"
+            )
+        taken.add(meter_id)
+    if meters and not publishes_outside_meters(config_data):
+        raise ValueError(
+            f"outside_meters are not published by the {panel_variant(config_data)!r} variant, "
+            f"which hardware_version {panel_hardware_version(config_data)!r} selects"
+        )
 
 
 def validate_panel_source(panel_source: Any) -> None:
