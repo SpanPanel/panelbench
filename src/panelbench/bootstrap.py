@@ -66,6 +66,7 @@ class BootstrapHttpServer:
         port: int = 443,
         https_port: int = DEFAULT_HTTPS_PORT,
         hardware_version: str | None = None,
+        proximity_proven: bool = True,
     ) -> None:
         self._serial = serial
         self._firmware = firmware
@@ -77,6 +78,7 @@ class BootstrapHttpServer:
         self._port = port
         self._https_port = https_port
         self._hardware_version = hardware_version
+        self._proximity_proven = proximity_proven
 
         self._homie_schema = schema.raw_json
         self._app = web.Application()
@@ -101,12 +103,13 @@ class BootstrapHttpServer:
         Matches the panel's ``StatusV2Out``: ``serialNumber``, ``firmwareVersion``
         and ``proximityProven``, plus ``hardwareVersion``, which SPAN release
         202639 made required and earlier releases do not send. The caller passes
-        ``None`` for a panel on an earlier release.
+        ``None`` for a panel on an earlier release, and ``proximity_proven`` false
+        for hardware that offers no proof of proximity.
         """
         payload: dict[str, object] = {
             "serialNumber": self._serial,
             "firmwareVersion": self._firmware,
-            "proximityProven": True,
+            "proximityProven": self._proximity_proven,
         }
         if self._hardware_version is not None:
             payload["hardwareVersion"] = self._hardware_version

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.engine import DynamicSimulationEngine
 from panelbench.firmware import panel_firmware_version
-from panelbench.hardware import status_hardware_version
+from panelbench.hardware import proves_proximity, status_hardware_version
 from panelbench.panel_models import panel_model
 
 if TYPE_CHECKING:
@@ -95,6 +95,14 @@ class PanelInstance:
             msg = "Panel not initialised — call start() first"
             raise RuntimeError(msg)
         return panel_model(self._engine.config)
+
+    @property
+    def proves_proximity(self) -> bool:
+        """Whether this panel's status endpoint reports proximity proven."""
+        if self._engine is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        return proves_proximity(self._engine.config)
 
     @property
     def status_hardware_version(self) -> str | None:

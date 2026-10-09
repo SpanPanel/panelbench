@@ -7,8 +7,9 @@ release 202639, ``GET /api/v2/status`` also reports the panel's hardware version
 the required ``hardwareVersion``, which SPAN documents as ``1.2`` or ``2.0``, and
 ``UNKNOWN`` when the panel cannot determine it (SPAN-API-Client-Docs, Release 202639).
 The status therefore reads the same value through that enumeration: a documented
-value is reported as is, and anything else, such as ``rev2``, as ``UNKNOWN``. One key,
-read two ways, rather than a second key that could disagree with the first.
+value, or the one the reference captures' panels publish, is reported as is, and
+anything else, such as ``rev2``, as ``UNKNOWN``. One key, read two ways, rather than a
+second key that could disagree with the first.
 """
 
 from __future__ import annotations
@@ -34,8 +35,13 @@ _VARIANT_BY_HARDWARE_VERSION: Final[Mapping[str, Variant]] = {"3.0": _EXTENDED_V
 """The emitter variant a hardware version string selects, as the emitter's capture
 reads a SPAN panel; every other string publishes ``span``."""
 
-_STATUS_HARDWARE_VERSIONS: Final = frozenset({"1.2", "2.0"})
+_STATUS_HARDWARE_VERSIONS: Final = frozenset({"1.2", "2.0", "3.0"})
+"""Reported by the status endpoint as they are: SPAN's documented values, and the
+string the reference captures' panels publish that selects their variant."""
 _STATUS_HARDWARE_UNKNOWN: Final = "UNKNOWN"
+
+_PASSPHRASE_ONLY_HARDWARE_VERSIONS: Final = frozenset({"3.0"})
+"""Hardware that offers no proof of proximity, so registration takes the passphrase."""
 
 
 def panel_hardware_version(config: Mapping[str, object]) -> str:
@@ -83,6 +89,15 @@ def relay_locks_priority(variant: Variant) -> bool:
     breaker there is an ordinary circuit with a locked relay at priority NEVER.
     """
     return variant == _EXTENDED_VARIANT
+
+
+def proves_proximity(config: Mapping[str, object]) -> bool:
+    """Whether the panel *config* describes reports proximity proven.
+
+    A simulated panel's door is always open for registration, except on hardware that
+    offers no proof of proximity at all, whose status never reports it proven.
+    """
+    return panel_hardware_version(config) not in _PASSPHRASE_ONLY_HARDWARE_VERSIONS
 
 
 def status_hardware_version(config: SimulationConfig) -> str | None:

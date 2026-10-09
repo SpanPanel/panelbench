@@ -334,6 +334,7 @@ class SimulatorApp:
             panel_model = panel.model
             firmware = panel.firmware_version
             status_hardware = panel.status_hardware_version
+            proximity_proven = panel.proves_proximity
             panel_schema = render_for_panel(self._schema, total_tabs, firmware=firmware)
         except Exception:
             await panel.stop()
@@ -359,6 +360,7 @@ class SimulatorApp:
                 port=http_port,
                 https_port=https_port_for(http_port),
                 hardware_version=status_hardware,
+                proximity_proven=proximity_proven,
             )
 
         port = self._allocate_port()

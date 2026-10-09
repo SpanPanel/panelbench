@@ -24,7 +24,9 @@ _BUNDLED_SCHEMA = (
 )
 
 
-def _make_server(*, hardware_version: str | None = None) -> BootstrapHttpServer:
+def _make_server(
+    *, hardware_version: str | None = None, proximity_proven: bool = True
+) -> BootstrapHttpServer:
     """Create a BootstrapHttpServer with mocked certs and schema."""
     certs = MagicMock()
     certs.ca_cert_pem = b"-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"
@@ -41,6 +43,7 @@ def _make_server(*, hardware_version: str | None = None) -> BootstrapHttpServer:
         broker_password="sim-password",
         broker_host="localhost",
         hardware_version=hardware_version,
+        proximity_proven=proximity_proven,
     )
 
 
@@ -54,6 +57,14 @@ async def test_status_returns_single_panel() -> None:
         assert data["serialNumber"] == "sim-test-001"
         assert data["firmwareVersion"] == DEFAULT_FIRMWARE_VERSION
         assert data["proximityProven"] is True
+
+
+@pytest.mark.spec_only
+async def test_status_reports_no_proximity_for_hardware_that_offers_none() -> None:
+    server = _make_server(hardware_version="3.0", proximity_proven=False)
+    async with TestClient(TestServer(server._app)) as client:
+        data = await (await client.get("/api/v2/status")).json()
+        assert (data["hardwareVersion"], data["proximityProven"]) == ("3.0", False)
 
 
 async def test_status_reports_the_hardware_version_from_202639() -> None:
