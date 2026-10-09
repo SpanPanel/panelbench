@@ -280,7 +280,9 @@ class ConfigStore:
         for key in ("serial_number", "total_tabs", "main_size"):
             if key in data:
                 value = data[key]
-                if key in ("total_tabs", "main_size"):
+                if key == "main_size" and value in ("", None):
+                    value = None  # a panel with no main breaker
+                elif key in ("total_tabs", "main_size"):
                     value = int(value)
                 if key == "total_tabs" and value % 2 != 0:
                     raise ValueError("Total tabs must be an even number")

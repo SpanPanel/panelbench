@@ -22,6 +22,8 @@ from tests._helpers import default_config, write_config
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from ebus_sdk import DiscoveredDevice
+
     from panelbench.config_types import LugsSectionYAML, SimulationConfig, SiteConfigYAML
 
 _HARDWARE = "3.0"
@@ -158,3 +160,63 @@ def test_an_outside_meter_on_hardware_whose_variant_has_none_is_refused() -> Non
 
     with pytest.raises(ValueError, match="outside_meters are not published"):
         validate_yaml_config(config)
+
+
+async def _published_and_cloned(
+    tmp_path: Path, config: SimulationConfig
+) -> tuple[dict[str, DiscoveredDevice], dict[str, object]]:
+    """What *config* publishes, and a clone of it."""
+    retained = await capture_retained(write_config(tmp_path / "panel.yaml", config))
+    devices = discovered_devices(retained)
+    return devices, translate_panel_tree(config["panel_config"]["serial_number"], devices)
+
+
+@pytest.mark.asyncio
+async def test_a_panel_without_a_main_breaker_publishes_none_and_its_clone_has_none(
+    tmp_path: Path,
+) -> None:
+    config = _commissioned()
+    config["panel_config"]["main_size"] = None
+    serial = config["panel_config"]["serial_number"]
+
+    devices, clone = await _published_and_cloned(tmp_path, config)
+
+    assert "breaker" not in ((devices[serial].description or {}).get("nodes") or {})
+    panel = clone["panel_config"]
+    assert isinstance(panel, dict)
+    assert panel["main_size"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_battery_that_publishes_no_capacity_is_cloned_with_it_unvalued(
+    tmp_path: Path,
+) -> None:
+    """Declared is present: the battery stays, and its capacity stays unpublished."""
+    config = _commissioned()
+    bess = config.get("bess")
+    assert bess is not None
+    bess["unvalued"] = ["info/nameplate-capacity"]
+
+    _devices, clone = await _published_and_cloned(tmp_path, config)
+
+    cloned = clone["bess"]
+    assert isinstance(cloned, dict)
+    assert "info/nameplate-capacity" in cloned["unvalued"]
+
+
+@pytest.mark.asyncio
+async def test_a_drives_commissioned_charge_limits_are_cloned(tmp_path: Path) -> None:
+    config = _commissioned()
+    [drive] = [c for c in config["circuits"] if c["id"] == "span_drive_garage"]
+    drive["max_current_a"] = 48.0
+    drive["user_max_charge_current_a"] = 40
+    drive["device_unvalued"] = ["info/model"]
+
+    _devices, clone = await _published_and_cloned(tmp_path, config)
+
+    circuits = clone["circuits"]
+    assert isinstance(circuits, list)
+    [cloned] = [c for c in circuits if c["tabs"] == drive["tabs"]]
+    assert cloned["max_current_a"] == 48.0
+    assert cloned["user_max_charge_current_a"] == 40
+    assert cloned["device_unvalued"] == ["info/model"]

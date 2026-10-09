@@ -65,6 +65,10 @@ _DEFAULT_MAIN_BREAKER_A: Final = 200
 # that: the clone records the rating as absent, and publishes none of its own.
 _MODELLING_BREAKER_A: Final = 20
 
+# What sizes the simulated battery of a panel that declares its capacity and publishes
+# none. Only that: the capacity stays unvalued on the wire.
+_MODELLING_BESS_KWH: Final = 13.5
+
 # A battery that publishes no `info/nominal-power` is given 5 kW per 13.5 kWh, a
 # Powerwall 2's continuous rating: the most common battery behind these panels, and
 # one that scales exactly for a stack of them (six, 81 kWh, are 30 kW).
@@ -202,9 +206,10 @@ def translate_panel_tree(
     # Build feed cross-reference: circuit_uuid → device_type
     feed_map = _build_feed_map(devices, circuit_nodes)
 
-    # Extract panel-level values
-    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating")
-    if not main_breaker:
+    # Extract panel-level values. A panel declaring no main breaker has none; one
+    # declaring it unvalued still has one, which the modelling needs a size for.
+    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating") or None
+    if main_breaker is None and _declares(devices, panel_device_id, "breaker", "rating"):
         _LOGGER.warning(
             "Panel %s publishes no breaker/rating; cloning it with a %d A main breaker",
             panel_device_id,
@@ -276,7 +281,9 @@ def translate_panel_tree(
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(devices, circuit_nodes, evse_id, feed_map, templates, circuits)
+        _enrich_evse_template(
+            devices, circuit_nodes, evse_id, feed_map, templates, circuits, unvalued
+        )
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -316,7 +323,9 @@ def translate_panel_tree(
     # Build top-level BESS config (only when a battery is actually connected)
     mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
     for bess_id in bess_nodes:
-        bess_cfg = _build_bess_config(devices, panel_device_id, bess_id, mid_nodes, circuit_nodes)
+        bess_cfg = _build_bess_config(
+            devices, panel_device_id, bess_id, mid_nodes, circuit_nodes, unvalued
+        )
         if bess_cfg is not None:
             config["bess"] = bess_cfg
 
@@ -574,6 +583,19 @@ def _bool_prop(
     if raw is None:
         return None
     return raw.lower() == "true"
+
+
+def _declares(
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    capability: str,
+    prop: str,
+) -> bool:
+    """Whether the device's ``$description`` declares the property, valued or not."""
+    device = devices.get(device_id)
+    if device is None or not isinstance(device.description, dict):
+        return False
+    return prop in device.get_node_properties(capability)
 
 
 def _is_settable(
@@ -1174,15 +1196,22 @@ def _build_bess_config(
     bess_node_id: str,
     mid_nodes: list[str],
     circuit_nodes: list[str],
+    unvalued: Mapping[str, list[str]],
 ) -> dict[str, object] | None:
     """Build top-level bess config from scraped BESS node properties.
 
     Returns ``None`` when the BESS node is an empty slot (no battery
-    connected) — indicated by a missing or zero nameplate capacity.
+    connected) — indicated by a zero nameplate capacity. A battery that publishes no
+    capacity is still a battery: what it leaves unvalued is listed in ``unvalued``,
+    and its MID's in ``mid_unvalued``.
     """
     nameplate = _float_prop(devices, bess_node_id, "info", "nameplate-capacity")
-    if not nameplate:
+    if nameplate == 0:
         return None
+    if nameplate is None:
+        # Declared and unpublished: the battery is there, and its unvalued capacity
+        # is listed with the rest; the modelling still needs a size.
+        nameplate = _MODELLING_BESS_KWH
     # `info/nominal-power` is the battery's "nameplate maximum rated power output"
     # (eBus devices/bess.md, `info`); a battery that publishes none is scaled from its
     # capacity by `_BESS_W_PER_KWH_UNPUBLISHED`. Either way, charge as discharge.
@@ -1216,6 +1245,10 @@ def _build_bess_config(
     )
     if mid is not None:
         _copy_info(devices, mid, bess, _MID_IDENTITY)
+        if unvalued.get(mid):
+            bess["mid_unvalued"] = unvalued[mid]
+    if unvalued.get(bess_node_id):
+        bess["unvalued"] = unvalued[bess_node_id]
     bess.update(_bess_place(devices, panel_device_id, bess_node_id, circuit_nodes))
     return bess
 
@@ -1286,9 +1319,11 @@ def _enrich_evse_template(
     feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
     circuits: list[dict[str, object]],
+    unvalued: Mapping[str, list[str]],
 ) -> None:
     """Enrich the EVSE circuit template with time-of-day charging profile, and write
-    the drive's serial and firmware onto the circuit that feeds it."""
+    the drive's identity, its commissioned charge limits and what it leaves unvalued
+    onto the circuit that feeds it."""
     circuit_uuid = _circuit_feeding(devices, circuit_nodes, evse_node_id)
     template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
     if template is None:
@@ -1306,6 +1341,11 @@ def _enrich_evse_template(
     circuit = _circuit_using(template, templates, circuits)
     if circuit is not None:
         _copy_info(devices, evse_node_id, circuit, _EVSE_IDENTITY)
+        circuit.update(
+            commissioning.config_values(commissioning.EVSE, _published_by(devices, evse_node_id))
+        )
+        if unvalued.get(evse_node_id):
+            circuit["device_unvalued"] = unvalued[evse_node_id]
 
 
 def _circuit_using(

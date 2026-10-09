@@ -70,8 +70,6 @@ PanelBench could write, so it is allowed here with the emitter's reason.
 _STANDING: Final[dict[tuple[str, str], str]] = {
     ("main32_r202633", "clone"): "6 differences",
     ("main32_r202633", "import"): "5 differences",
-    ("r202639-d", "clone"): "12 differences",
-    ("r202639-d", "import"): "importing fails: a battery without a nameplate is dropped",
     ("r202639-e", "clone"): "publishing fails: circuits sharing a space get one id",
     ("r202639-e", "import"): "publishing fails: circuits sharing a space get one id",
 }

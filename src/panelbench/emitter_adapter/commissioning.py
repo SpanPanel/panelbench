@@ -124,6 +124,17 @@ CIRCUIT: Final = (
 )
 """A circuit, kept on its circuit definition."""
 
+EVSE: Final = (
+    Fact("config/max-charge-current", "max_current_a", "max-current-a", _number),
+    Fact(
+        "config/user-max-charge-current",
+        "user_max_charge_current_a",
+        "user-max-charge-current-a",
+        _whole,
+    ),
+)
+"""A SPAN Drive's commissioned charge limits, kept on the circuit that feeds it."""
+
 
 def metadata(facts: tuple[Fact, ...], section: Mapping[str, object]) -> dict[str, str]:
     """The manifest metadata for each of *facts* that *section* states."""

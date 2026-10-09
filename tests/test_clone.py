@@ -886,9 +886,10 @@ class TestDefaultedBreakerRatings:
     """A rating the panel does not publish is carried through as absent where the
     config can say so, and reported where it cannot yet."""
 
-    def test_a_missing_main_breaker_rating_is_reported(
+    def test_a_panel_declaring_no_main_breaker_is_cloned_with_none(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
+        """No breaker is invented for a panel that has none."""
         devices = _base_devices()
         devices[_SERIAL] = _device(
             _SERIAL,
@@ -896,6 +897,20 @@ class TestDefaultedBreakerRatings:
             {"info": {"serial-number": _SERIAL, "data-model-version": "1.0"}},
             children=[device_id for device_id in devices if device_id != _SERIAL],
         )
+
+        with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
+            config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["main_size"] is None
+        assert not [r for r in caplog.records if "breaker/rating" in r.getMessage()]
+        validate_yaml_config(config)
+
+    def test_an_unpublished_main_breaker_rating_is_reported(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Declared and unpublished: the panel has a main breaker the modelling must size."""
+        devices = _base_devices()
+        devices[_SERIAL].properties["breaker"].pop("rating")
 
         with caplog.at_level(logging.WARNING, logger="panelbench.clone"):
             config = translate_scraped_panel(_make_scraped(devices))

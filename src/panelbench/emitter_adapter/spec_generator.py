@@ -124,7 +124,7 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
             "firmware-version": panel_firmware_version(profile),
             "hardware-version": panel_hardware_version(profile),
             "panel-size": str(panel_size),
-            "main-breaker-rating-a": str(int(panel_cfg.get("main_size", 200))),
+            **_main_breaker(panel_cfg.get("main_size", 200)),
             "panel-model": panel_model(profile),
             "postal-code": str(panel_cfg.get("postal_code", "94103")),
             "time-zone": str(panel_cfg.get("time_zone", "America/Los_Angeles")),
@@ -137,6 +137,12 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
             **commissioning.unvalued_metadata(panel_cfg.get("unvalued")),
         },
     )
+
+
+def _main_breaker(main_size: int | None) -> dict[str, str]:
+    """The main breaker's metadata, or none for a panel without one, which then
+    publishes no ``breaker`` node."""
+    return {} if main_size is None else {"main-breaker-rating-a": str(int(main_size))}
 
 
 def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
@@ -322,6 +328,7 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
         )
     if "initial_soe_kwh" in bess_cfg:
         bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
+    bess_meta.update(commissioning.unvalued_metadata(bess_cfg.get("unvalued")))
     instance_id = bess_device_id(profile["panel_config"]["serial_number"], bess_cfg)
     return DeviceInstance(
         entity_class="bess",
@@ -382,6 +389,7 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
     mid_hardware = bess_cfg.get("mid_hardware_version")
     if mid_hardware is not None:
         metadata["hardware-version"] = str(mid_hardware)
+    metadata.update(commissioning.unvalued_metadata(bess_cfg.get("mid_unvalued")))
     instance_id = mid_device_id(profile["panel_config"]["serial_number"], bess_cfg)
     return DeviceInstance(
         entity_class="mid",
@@ -633,6 +641,9 @@ def _evse_metadata(
         "serial-number": evse_circuit_serial(circuit)
         or evse_serial_number(evse_cfg, panel_id, idx),
     }
+    if circuit is not None:
+        metadata.update(commissioning.metadata(commissioning.EVSE, circuit))
+        metadata.update(commissioning.unvalued_metadata(circuit.get("device_unvalued")))
     if feed:
         metadata["feed"] = feed
     return metadata

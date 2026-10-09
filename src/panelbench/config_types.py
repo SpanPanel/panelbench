@@ -49,7 +49,9 @@ class PanelConfig(TypedDict):
 
     serial_number: str
     total_tabs: int
-    main_size: int  # Main breaker size in Amps
+    # Main breaker size in Amps; null for a panel with no main breaker, which then
+    # publishes no `breaker` node.
+    main_size: int | None
     latitude: NotRequired[float]  # degrees north, default 37.7
     longitude: NotRequired[float]  # degrees east, default -122.4
     soc_shed_threshold: NotRequired[float]  # SOC % below which SOC_THRESHOLD circuits are shed
@@ -181,6 +183,8 @@ class BESSConfigYAML(TypedDict, total=False):
     initial_soe_kwh: float
     rate_label: str  # When charge_mode=="custom": pinned utility-rate label.
     active_days: list[int]  # Days of week active (0=Mon..6=Sun); empty = all.
+    unvalued: list[str]  # what the battery declares and leaves unvalued
+    mid_unvalued: list[str]  # what its MID declares and leaves unvalued
 
 
 class PVConfigYAML(TypedDict, total=False):
@@ -331,6 +335,11 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     feeds_role: str  # connection/feeds-role: what it feeds where that is no device
     backed_up: BackedUp  # connection/backed-up
     unvalued: list[str]
+    # The SPAN Drive it feeds, as commissioned: its maximum charge current, the
+    # user's limit where one is set, and what the drive leaves unvalued.
+    max_current_a: float
+    user_max_charge_current_a: int
+    device_unvalued: list[str]
 
 
 class TabSynchronization(TypedDict):
