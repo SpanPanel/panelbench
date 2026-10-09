@@ -8,6 +8,7 @@ reproduces its capture.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, ClassVar
 
 import pytest
@@ -93,3 +94,26 @@ def test_the_templates_are_there_before_the_app_starts(
     panelbench_main.main(["--config-dir", str(tmp_path)])
 
     assert _ConfigsAtStart.seen == sorted(template_filename(n) for n in reference_capture_names())
+
+
+def test_a_config_dir_it_cannot_write_is_logged_and_startup_goes_on(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The templates are optional: a read-only directory skips them, it never stops a start."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    try:
+        with caplog.at_level(logging.WARNING, logger="panelbench.reference_templates"):
+            written = write_reference_templates(locked)
+    finally:
+        locked.chmod(0o700)
+
+    assert written == []
+    warned = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.WARNING and r.name == "panelbench.reference_templates"
+    ]
+    assert len(warned) == len(reference_capture_names())
+    assert all(str(locked) in message for message in warned)

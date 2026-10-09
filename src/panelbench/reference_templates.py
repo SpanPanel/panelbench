@@ -49,9 +49,10 @@ def reference_template(name: str) -> dict[str, object]:
 def write_reference_templates(config_dir: Path) -> list[Path]:
     """Lay each reference capture's template into *config_dir*; return those written.
 
-    A template already there and current is left alone. One the emitter cannot import
-    is logged and skipped, so one capture never keeps the others or the app from
-    starting.
+    A template already there and current is left alone. The templates are optional,
+    so one the emitter cannot import, or one the directory will not take (read-only,
+    no permission, a full disk), is logged and skipped: neither keeps the others or
+    the app from starting.
     """
     written: list[Path] = []
     for name in reference_capture_names():
@@ -61,12 +62,21 @@ def write_reference_templates(config_dir: Path) -> list[Path]:
         except (EmitterError, ValueError) as exc:
             _LOGGER.error("Reference capture %s could not be made a template: %s", name, exc)
             continue
-        if path.exists() and path.read_text(encoding="utf-8") == text:
+        try:
+            if path.exists() and path.read_text(encoding="utf-8") == text:
+                continue
+            _replace(path, text)
+        except OSError as exc:
+            _LOGGER.warning("Reference capture template %s was not written: %s", path, exc)
             continue
-        # Replaced whole, so a simulator starting beside another never reads half a file.
-        staged = path.with_name(f".{path.name}.tmp")
-        staged.write_text(text, encoding="utf-8")
-        staged.replace(path)
         _LOGGER.info("Wrote reference capture template: %s", path.name)
         written.append(path)
     return written
+
+
+def _replace(path: Path, text: str) -> None:
+    """Write *text* to *path* whole, so a simulator starting beside another never reads
+    half a file."""
+    staged = path.with_name(f".{path.name}.tmp")
+    staged.write_text(text, encoding="utf-8")
+    staged.replace(path)
