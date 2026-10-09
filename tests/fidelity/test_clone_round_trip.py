@@ -292,7 +292,7 @@ def _pcs_fixed(d: Difference) -> bool:
 
 UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
     "one voltage for both legs": (
-        "ebus-panel-sim 0.10.0b1 publishes one per-leg voltage on both legs, so a clone "
+        "ebus-panel-sim 0.10.0b2 publishes one per-leg voltage on both legs, so a clone "
         "carries the legs' mean, published to the panel's one decimal",
         lambda d: (
             _is(d, _PANEL, "value meter/voltage-a", "121.8", "122.0")
@@ -300,7 +300,7 @@ UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
         ),
     ),
     "the shed policy is fixed": (
-        "ebus-panel-sim 0.10.0b1 publishes a fixed soc-priority policy unless one is set over "
+        "ebus-panel-sim 0.10.0b2 publishes a fixed soc-priority policy unless one is set over "
         "MQTT; the manifest's shed threshold does not reach it, and LoadSheddingConfig has no "
         "field for the release threshold (51 here)",
         lambda d: (
@@ -308,19 +308,19 @@ UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
         ),
     ),
     "the PCS settings are fixed": (
-        "ebus-panel-sim 0.10.0b1 publishes its own value for these six PCS properties, whatever "
+        "ebus-panel-sim 0.10.0b2 publishes its own value for these six PCS properties, whatever "
         "the panel's",
         _pcs_fixed,
     ),
     "a commissioned circuit's relay requester": (
-        "ebus-panel-sim 0.10.0b1 reports CONFIGURATION for a locked relay; SPAN reports PCS for "
+        "ebus-panel-sim 0.10.0b2 reports CONFIGURATION for a locked relay; SPAN reports PCS for "
         "the commissioned PV circuit (filed upstream as #66)",
         lambda d: _is(
             d, _COMMISSIONED_PV_CIRCUIT, "value switch/relay-requester", "PCS", "CONFIGURATION"
         ),
     ),
     "the MID's grid state is derived": (
-        "ebus-panel-sim 0.10.0b1 derives the MID's grid-state from the tick (UP); the captured "
+        "ebus-panel-sim 0.10.0b2 derives the MID's grid-state from the tick (UP); the captured "
         "panel's MID publishes UNKNOWN",
         lambda d: (
             d.role.startswith("mid of ")
@@ -328,7 +328,7 @@ UPSTREAM: dict[str, tuple[str, Callable[[Difference], bool]]] = {
         ),
     ),
     "connection/count is not published": (
-        "ebus-panel-sim 0.10.0b1's profiles do not declare connection/count",
+        "ebus-panel-sim 0.10.0b2's profiles do not declare connection/count",
         lambda d: (
             (_on_a_circuit(d) or d.role.startswith("lugs "))
             and d.where == "declaration connection/count"

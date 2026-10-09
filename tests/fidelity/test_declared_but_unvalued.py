@@ -80,7 +80,7 @@ what remains is there for six different reasons:
   Ethernet does. This line leaves when the example names an SSID.
 
   `panel pcs/off-grid-import-limit*` is commissioning the example does not record.
-  From ebus-panel-sim 0.10.0b1 the off-grid import limit and its enablement are
+  From ebus-panel-sim 0.10.0b2 the off-grid import limit and its enablement are
   published only where a definition commissions them, as a SPAN panel leaves them
   unvalued until they are configured (the captured MAIN 32 on release 202639
   does). These lines leave when the example commissions the limit.

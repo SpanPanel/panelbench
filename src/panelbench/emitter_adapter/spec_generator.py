@@ -57,7 +57,7 @@ _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-
 
 # What the emitter is given for a circuit whose template records that its panel
 # publishes no breaker rating (`breaker_rating: null`, which a clone writes). The
-# emitter requires one (ebus-panel-sim 0.10.0b1, `manifest_physics` reads
+# emitter requires one (ebus-panel-sim 0.10.0b2, `manifest_physics` reads
 # `breaker-rating-a` with `_req_float`), and the circuit lists `breaker/rating` as
 # unvalued, so it is never published.
 _UNPUBLISHED_BREAKER_RATING_A = 20.0

@@ -9,7 +9,7 @@ cell: a panel definition and the ticks that drive it.
 | `forty_tab_minimal.ticks.yaml` | `examples/forty_tab_minimal.ticks.yaml` |
 
 - **Repository:** `electrification-bus/distribution-enclosure-simulator`
-- **Release:** `v0.10.0b1`, the version `pyproject.toml` pins (commit `844033902c580527af412a919ae0ac5c8ed3c633`)
+- **Release:** `v0.10.0b2`, the version `pyproject.toml` pins (commit `296ac54c8704d1e6c0b49ee89ce2c5eea416fa63`)
 
 ## Why only these
 
