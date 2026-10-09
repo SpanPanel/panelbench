@@ -8,10 +8,13 @@ is a cell, taken by both of PanelBench's routes to a config:
 - **import**: the capture's definition read by PanelBench's definition import, as the
   dashboard's Import reads one.
 
-PanelBench publishes the config and the published tree is held to the fidelity bar
-(``tree_diff``) against the capture. A cell passes when nothing differs but what the
-emitter itself cannot reproduce from the same definition (``EMITTER_EXCEPTIONS``),
-each listed with its reason.
+PanelBench publishes the config at the captured instant, its first tick driven by
+the readings the capture was recorded with (``replay``), and the published tree is
+held to the fidelity bar (``tree_diff``) against the capture. A cell passes when
+nothing differs but what the emitter itself cannot reproduce from the same definition
+(``EMITTER_EXCEPTIONS``), each listed with its reason; on the import route, which
+publishes the emitter's own definition, a listed difference that no longer occurs
+fails too, so the list never outlives its reason.
 """
 
 from __future__ import annotations
@@ -21,15 +24,18 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from ebus_panel_sim.reference_captures import load_reference_capture, reference_capture_names
+from ebus_panel_sim import ReferenceCapture, Tree, load_reference_capture, reference_capture_names
 
 from panelbench.clone import translate_panel_tree
 from panelbench.config_types import SimulationConfig
 from panelbench.definition_import import config_from_definition
-from panelbench.emitter_adapter.wire_capture import capture_retained, discovered_devices
+from panelbench.emitter_adapter.runtime import _panel_envelope
+from panelbench.emitter_adapter.spec_generator import build_manifest
+from panelbench.emitter_adapter.wire_capture import discovered_devices, recorded_panel
 from panelbench.hardware import panel_variant
 from tests._helpers import write_config
 
+from .replay import replayed
 from .tree_diff import differences, published_tree, retained_topics
 
 ROUTES: Final = ("clone", "import")
@@ -68,8 +74,8 @@ PanelBench could write, so it is allowed here with the emitter's reason.
 """
 
 _STANDING: Final[dict[tuple[str, str], str]] = {
-    ("main32_r202633", "clone"): "6 differences",
-    ("main32_r202633", "import"): "5 differences",
+    ("main32_r202633", "clone"): "2 differences: an inverter no circuit feeds is dropped",
+    ("main32_r202633", "import"): "2 differences: an inverter no circuit feeds is dropped",
 }
 """Each cell PanelBench does not yet reproduce, with what it shows, until it does."""
 
@@ -109,14 +115,36 @@ def test_panelbench_selects_the_variant_each_capture_publishes(name: str) -> Non
     assert panel_variant(config) == load_reference_capture(name).definition.variant
 
 
+async def _published_at_the_captured_instant(path: Path, capture: ReferenceCapture) -> Tree:
+    """The panel *path* describes, its first tick the capture's first recorded one."""
+    runtime, recorder = await recorded_panel(path)
+    config = runtime.engine.config
+    runtime.emitter.publish_tick(
+        replayed(
+            capture.ticks[0],
+            capture.definition.manifest,
+            build_manifest(config),
+            _panel_envelope(config),
+        )
+    )
+    return published_tree(recorder.retained)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("name", "route"), _cells())
 async def test_panelbench_reproduces_the_capture(name: str, route: str, tmp_path: Path) -> None:
     capture = load_reference_capture(name)
     path = write_config(tmp_path / f"{name}.yaml", _config(name, route))
 
-    found = differences(capture.tree, published_tree(await capture_retained(path)))
+    found = differences(capture.tree, await _published_at_the_captured_instant(path, capture))
 
     allowed = EMITTER_EXCEPTIONS.get(name, {})
     unexplained = [d for d in found if not any(d.startswith(prefix) for prefix in allowed)]
     assert not unexplained, f"{len(unexplained)} differences:\n" + "\n".join(unexplained)
+    if route == "import":
+        # The import publishes the emitter's own definition, dispatch included, so it
+        # shows exactly what the emitter shows. A clone dispatches its battery by
+        # PanelBench's defaults, which no panel publishes, so a sign may come out
+        # either way there.
+        stale = [prefix for prefix in allowed if not any(d.startswith(prefix) for d in found)]
+        assert not stale, "listed differences that no longer occur:\n" + "\n".join(stale)
