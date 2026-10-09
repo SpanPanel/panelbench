@@ -196,15 +196,9 @@ class BESSConfigYAML(TypedDict, total=False):
     mid_unvalued: list[str]  # what its MID declares and leaves unvalued
 
 
-class PVConfigYAML(TypedDict, total=False):
-    """Top-level PV configuration in the simulator YAML.
+class PVInverterYAML(TypedDict, total=False):
+    """One inverter's identity and rating, as the ``pv`` section and its ``inverters`` give it."""
 
-    The simulator's PV physics live in the per-circuit producer templates;
-    this section carries device-identity metadata used to publish the PV
-    DeviceInstance and to decide whether the panel can island.
-    """
-
-    enabled: bool
     vendor: str
     instance_id: str
     product_name: str
@@ -213,9 +207,27 @@ class PVConfigYAML(TypedDict, total=False):
     inverter_type: Literal["hybrid", "ac_coupled", "ac-coupled"]
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
+
+
+class PVConfigYAML(PVInverterYAML, total=False):
+    """Top-level PV configuration in the simulator YAML.
+
+    The simulator's PV physics live in the per-circuit producer templates;
+    this section carries device-identity metadata used to publish the PV
+    DeviceInstance and to decide whether the panel can island.
+
+    The section's own keys describe one inverter: the one a PV circuit feeds
+    (``pv_section.bound_pv_circuit_id``), or, on a panel with no PV circuit, the
+    one inverter no circuit feeds. ``inverters`` lists the inverters no circuit
+    feeds instead, each its own device; given, it lists every one of them
+    (``pv_section.unfed_inverters``).
+    """
+
+    enabled: bool
     # The `id` of the PV circuit feeding the inverter this section describes: see
     # `spec_generator.pv_section_circuit`.
     feed: str
+    inverters: list[PVInverterYAML]
 
 
 class EVSEConfigYAML(TypedDict, total=False):

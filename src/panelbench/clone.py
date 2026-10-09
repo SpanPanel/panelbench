@@ -285,6 +285,7 @@ def translate_panel_tree(
             unfed_pv.append(pv_id)
         else:
             _enrich_pv_template(devices, circuit_nodes, pv_id, templates, circuits, keys)
+    fed_pv = len(pv_nodes) - len(unfed_pv)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
@@ -309,7 +310,7 @@ def translate_panel_tree(
     if outside_meters:
         config["outside_meters"] = outside_meters
     if unfed_pv:
-        config["pv"] = _pv_section(devices, unfed_pv)
+        config["pv"] = _pv_section(devices, unfed_pv, fed=fed_pv)
     lugs = _lugs_config(devices, panel_device_id, unvalued)
     if lugs:
         config["lugs"] = lugs
@@ -1303,26 +1304,30 @@ _PV_SECTION_IDENTITY: Final = (
 )
 
 
-def _pv_section(devices: Mapping[str, DiscoveredDevice], unfed: list[str]) -> dict[str, object]:
-    """The top-level ``pv`` section for an inverter no circuit feeds, in the panel.
+def _pv_section(
+    devices: Mapping[str, DiscoveredDevice], unfed: list[str], *, fed: int
+) -> dict[str, object]:
+    """The top-level ``pv`` section for the inverters no circuit feeds, in the panel.
 
-    As a panel before release 202639 publishes its one aggregate inverter. The section
-    describes one inverter, so a second unfed one is reported and left out.
+    The section itself describes the one such inverter of a panel with no PV circuit,
+    as a panel before release 202639 publishes its one aggregate inverter. Otherwise,
+    several of them, or one beside *fed* inverters PV circuits feed, each is an entry
+    of its ``inverters``, as release 202639 publishes each its own device
+    (``pv_section.unfed_inverters``).
     """
-    first, *rest = unfed
-    if rest:
-        _LOGGER.warning(
-            "Inverters %s are fed by no circuit, and a config describes one such inverter; "
-            "cloning %s alone",
-            ", ".join(unfed),
-            first,
-        )
-    section: dict[str, object] = {"enabled": True, "relative_position": "IN_PANEL"}
-    _copy_info(devices, first, section, _PV_SECTION_IDENTITY)
-    rating = _float_prop(devices, first, "info", "nominal-power")
+    if len(unfed) == 1 and not fed:
+        return {"enabled": True, **_unfed_inverter(devices, unfed[0])}
+    return {"enabled": True, "inverters": [_unfed_inverter(devices, pv_id) for pv_id in unfed]}
+
+
+def _unfed_inverter(devices: Mapping[str, DiscoveredDevice], pv_id: str) -> dict[str, object]:
+    """An inverter no circuit feeds, in the panel: its published identity and rating."""
+    inverter: dict[str, object] = {"relative_position": "IN_PANEL"}
+    _copy_info(devices, pv_id, inverter, _PV_SECTION_IDENTITY)
+    rating = _float_prop(devices, pv_id, "info", "nominal-power")
     if rating is not None and rating > 0:
-        section["nameplate_capacity_w"] = rating
-    return section
+        inverter["nameplate_capacity_w"] = rating
+    return inverter
 
 
 def _circuit_keys(

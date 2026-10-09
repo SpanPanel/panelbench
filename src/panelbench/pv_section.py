@@ -1,21 +1,26 @@
-"""Which PV circuit the top-level ``pv`` section describes.
+"""Which inverters the top-level ``pv`` section describes.
 
 A real panel publishes the inverter its feeding circuit names in
 ``connection/feeds-device-id``, so the section's identity, and its rating, follow a
-circuit, never a position in the list. Read here from the config as YAML hands it
-over, because the loader needs the answer before validation has typed the config,
-and ``spec_generator.pv_section_circuit`` builds on it afterwards, so the two cannot
-disagree.
+circuit, never a position in the list. An inverter no circuit feeds is published
+fed by nothing, and a panel may have several, each its own device. Read here from
+the config as YAML hands it over, because the loader needs the answer before
+validation has typed the config, and ``spec_generator`` builds on it afterwards, so
+the two cannot disagree.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final, Literal
 
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+
+UNFED_INVERTER_POSITION: Final = "UPSTREAM"
+"""Where an inverter no circuit feeds sits unless its config says otherwise."""
 
 
 def pv_circuit_ids(config: Mapping[str, object]) -> list[str]:
@@ -91,3 +96,40 @@ def _pv_circuit_named(config: Mapping[str, object], pv_ids: list[str], feed: str
             "has no device_type: pv"
         )
     return feed
+
+
+def unfed_inverters(config: Mapping[str, object]) -> Literal["inverters", "section"] | None:
+    """Where *config* describes the inverters no circuit feeds, if it has any.
+
+    ``"inverters"``: the ``pv`` section's ``inverters``, which lists every one of
+    them, each its own device, beside any inverter a PV circuit feeds. ``"section"``:
+    the section's own keys, describing the one such inverter of a panel with no PV
+    circuit, as a panel before release 202639 publishes its aggregate inverter.
+    ``None`` where there is none: no section, a disabled one, or one with no
+    ``inverters`` on a panel whose PV circuits it describes instead.
+    """
+    pv_cfg = config.get("pv")
+    if not isinstance(pv_cfg, dict) or not pv_cfg.get("enabled"):
+        return None
+    if "inverters" in pv_cfg:
+        return "inverters"
+    return None if pv_circuit_ids(config) else "section"
+
+
+def unfed_inverter_entries(config: Mapping[str, object]) -> list[Mapping[str, object]]:
+    """The mapping describing each inverter no circuit feeds, as ``unfed_inverters`` says.
+
+    Anything malformed is skipped rather than refused: validation names it.
+    """
+    where = unfed_inverters(config)
+    pv_cfg = config.get("pv")
+    if where is None or not isinstance(pv_cfg, dict):
+        return []
+    if where == "section":
+        return [pv_cfg]
+    entries = pv_cfg.get("inverters")
+    return (
+        [entry for entry in entries if isinstance(entry, dict)]
+        if isinstance(entries, list)
+        else []
+    )

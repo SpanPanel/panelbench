@@ -7,8 +7,9 @@ dashboard can validate configs without circular imports.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
+from panelbench.config_types import PVInverterYAML
 from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
@@ -16,10 +17,11 @@ from panelbench.hardware import (
     panel_hardware_version,
     panel_variant,
     publishes_outside_meters,
+    publishes_pv_devices,
     relay_locks_priority,
 )
 from panelbench.pv_rating import rating_conflicts
-from panelbench.pv_section import bound_pv_circuit_id
+from panelbench.pv_section import bound_pv_circuit_id, pv_circuit_ids
 from panelbench.registration_limit import registration_limit
 
 if TYPE_CHECKING:
@@ -54,6 +56,7 @@ def validate_yaml_config(config_data: Any) -> None:
         config_data["circuit_templates"],
     )
     validate_pv_section(config_data)
+    validate_unfed_inverters(config_data)
     validate_ratings(config_data)
     validate_outside_meters(config_data)
     validate_shared_circuits(config_data["circuits"])
@@ -294,6 +297,106 @@ def validate_pv_section(config_data: Mapping[str, object]) -> None:
     templates and circuits have already passed validation.
     """
     bound_pv_circuit_id(config_data)
+
+
+_INVERTER_KEYS: Final = PVInverterYAML.__optional_keys__
+_RELATIVE_POSITIONS: Final = ("UPSTREAM", "DOWNSTREAM", "IN_PANEL")
+_INVERTER_TYPES: Final = ("hybrid", "ac_coupled", "ac-coupled")
+# What describes one inverter in the section's own keys. A firmware version is every
+# inverter's default, so it is not among them.
+_SECTION_INVERTER_KEYS: Final = _INVERTER_KEYS - {"firmware_version"}
+
+
+def validate_unfed_inverters(config_data: Mapping[str, object]) -> None:
+    """Validate the ``pv`` section's ``inverters``, the inverters no circuit feeds.
+
+    Each a mapping of an inverter's own keys, placed and typed as the section's own
+    inverter is, rated above zero, with an identifier no other inverter publishes.
+    The section's own keys then describe only an inverter a PV circuit feeds, so on a
+    panel with none they describe nothing and are refused rather than dropped. A
+    release before 202639 publishes one solar device, and a variant that publishes no
+    inverter device cannot publish one no circuit feeds. *config_data*'s templates
+    and circuits have already passed validation.
+    """
+    pv_cfg = config_data.get("pv")
+    if not isinstance(pv_cfg, dict) or "inverters" not in pv_cfg:
+        return
+    inverters = pv_cfg["inverters"]
+    if not isinstance(inverters, list) or not inverters:
+        raise ValueError("pv.inverters must be a list of the inverters no circuit feeds")
+    identifiers: dict[str, int] = {}
+    for index, inverter in enumerate(inverters):
+        _validate_unfed_inverter(index, inverter, identifiers)
+    pv_circuits = pv_circuit_ids(config_data)
+    if not pv_circuits:
+        described = sorted(_SECTION_INVERTER_KEYS & pv_cfg.keys())
+        if described:
+            raise ValueError(
+                f"pv has {', '.join(described)} beside pv.inverters, on a panel with no PV "
+                "circuit for them to describe: move them into the pv.inverters entry they "
+                "belong to"
+            )
+    else:
+        for key in ("serial_number", "instance_id"):
+            own = pv_cfg.get(key)
+            if own is not None and str(own) in identifiers:
+                raise ValueError(
+                    f"pv.inverters[{identifiers[str(own)]}] has the identifier {str(own)!r}, "
+                    "which the inverter a PV circuit feeds already has"
+                )
+    firmware = panel_firmware_version(config_data)
+    if predates(firmware, SPAN_RELEASE_202639) and len(inverters) + bool(pv_circuits) > 1:
+        raise ValueError(
+            f"firmware_version {firmware!r} names a release before 202639, which publishes "
+            "one solar device, but pv.inverters makes this panel publish several"
+        )
+    variant = panel_variant(config_data)
+    if not publishes_pv_devices(variant):
+        raise ValueError(
+            f"pv.inverters are not published by the {variant!r} variant, which hardware_version "
+            f"{panel_hardware_version(config_data)!r} selects: it publishes no inverter "
+            "device, only the circuit feeding one"
+        )
+
+
+def _validate_unfed_inverter(index: int, inverter: object, identifiers: dict[str, int]) -> None:
+    """One ``pv.inverters`` entry; *identifiers* collects each entry's by its index."""
+    prefix = f"pv.inverters[{index}]"
+    if not isinstance(inverter, dict):
+        raise ValueError(f"{prefix} must be a mapping")
+    unknown = sorted(str(key) for key in inverter.keys() - _INVERTER_KEYS)
+    if unknown:
+        raise ValueError(
+            f"{prefix} has {', '.join(unknown)}; an inverter takes "
+            f"{', '.join(sorted(_INVERTER_KEYS))}"
+        )
+    position = inverter.get("relative_position")
+    if position is not None and position not in _RELATIVE_POSITIONS:
+        raise ValueError(
+            f"{prefix}.relative_position is {position!r}; it must be one of "
+            f"{', '.join(_RELATIVE_POSITIONS)}"
+        )
+    inverter_type = inverter.get("inverter_type")
+    if inverter_type is not None and inverter_type not in _INVERTER_TYPES:
+        raise ValueError(
+            f"{prefix}.inverter_type is {inverter_type!r}; it must be one of "
+            f"{', '.join(_INVERTER_TYPES)}"
+        )
+    rating = inverter.get("nameplate_capacity_w")
+    if rating is not None and (
+        isinstance(rating, bool) or not isinstance(rating, int | float) or rating <= 0
+    ):
+        raise ValueError(f"{prefix}.nameplate_capacity_w is {rating!r}; it must be above zero")
+    for key in ("serial_number", "instance_id"):
+        identifier = inverter.get(key)
+        if identifier is None:
+            continue
+        if str(identifier) in identifiers:
+            raise ValueError(
+                f"{prefix} has the identifier {str(identifier)!r}, which "
+                f"pv.inverters[{identifiers[str(identifier)]}] already has"
+            )
+        identifiers[str(identifier)] = index
 
 
 def validate_ratings(config_data: Mapping[str, object]) -> None:

@@ -172,6 +172,29 @@ out of `unmapped_tabs`. PanelBench warns when a solar circuit sits on one tab. T
   describes one inverter, the one whose circuit `pv.feed` names; with two PV circuits and no `pv.feed` it describes neither, and the original inverter would
   lose the identity the first config gave it. A clone of your panel names each inverter on its own circuit instead, and needs no `pv.feed`.
 
+### Inverters no circuit feeds
+
+An inverter can sit where no circuit of the panel feeds it, ahead of the panel beside a battery. From release 202639 the panel publishes each such inverter as
+its own device, fed by no circuit. List them under the `pv` section's `inverters`, each with its own `vendor`, `product_name` and `nameplate_capacity_w`, and
+optionally `serial_number`, `firmware_version`, `inverter_type` and `relative_position` (`UPSTREAM` unless it says otherwise):
+
+```yaml
+pv:
+  enabled: true
+  inverters:
+    - vendor: SolarEdge
+      product_name: SE7600H-US
+      nameplate_capacity_w: 7600.0
+    - vendor: SolarEdge
+      product_name: SE7600H-US
+      nameplate_capacity_w: 7600.0
+```
+
+With `inverters` given, the section's own keys describe only an inverter a PV circuit feeds, so on a panel with none they are refused; `firmware_version` stays
+every inverter's default. A panel with one such inverter and no PV circuit may still describe it in the section's own keys, as a clone of a panel before release
+202639 does, and a config naming such a release takes one solar device at most. A clone writes whichever of the two describes the panel. The dashboard shows
+them in a card of their own. Their production is not yet published: the emitter takes solar power from circuits alone.
+
 ## Running with Docker (Linux only)
 
 ```bash

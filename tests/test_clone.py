@@ -834,6 +834,62 @@ class TestAnInverterNoCircuitFeeds:
         }
         validate_yaml_config(config)
 
+    def test_several_are_each_an_entry_of_its_inverters(self) -> None:
+        """Release 202639 publishes each inverter of a panel no circuit feeds."""
+        devices = _base_devices()
+        devices["ccc333"].properties.pop("connection")
+        devices["pv-0"].update_property("info", "vendor-name", "SolarEdge")
+        devices["pv-1"] = _device(
+            "pv-1",
+            TYPE_PV,
+            {"info": {"vendor-name": "Fronius", "model": "Primo 7.6", "nominal-power": "7600"}},
+            parent=_SERIAL,
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert config["pv"] == {
+            "enabled": True,
+            "inverters": [
+                {
+                    "relative_position": "IN_PANEL",
+                    "vendor": "SolarEdge",
+                    "nameplate_capacity_w": 5000.0,
+                },
+                {
+                    "relative_position": "IN_PANEL",
+                    "vendor": "Fronius",
+                    "product_name": "Primo 7.6",
+                    "nameplate_capacity_w": 7600.0,
+                },
+            ],
+        }
+        validate_yaml_config(config)
+
+    def test_one_beside_a_fed_one_is_an_entry_of_its_inverters(self) -> None:
+        """The section's own keys describe the inverter a PV circuit feeds, so not this one."""
+        devices = _base_devices()
+        devices["pv-1"] = _device(
+            "pv-1",
+            TYPE_PV,
+            {"info": {"vendor-name": "Fronius", "nominal-power": "7600"}},
+            parent=_SERIAL,
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert config["pv"] == {
+            "enabled": True,
+            "inverters": [
+                {
+                    "relative_position": "IN_PANEL",
+                    "vendor": "Fronius",
+                    "nameplate_capacity_w": 7600.0,
+                }
+            ],
+        }
+        validate_yaml_config(config)
+
 
 class TestWhereTheBatteryHangs:
     """The battery's place, as the panel publishes it, is where its clone puts it."""

@@ -35,7 +35,7 @@ from panelbench.inverter import (
     template_inverter_type,
 )
 from panelbench.panel_models import DEFAULT_PANEL_SIZE, panel_model
-from panelbench.pv_section import bound_pv_circuit_id
+from panelbench.pv_section import UNFED_INVERTER_POSITION, bound_pv_circuit_id, unfed_inverters
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
         CircuitTemplateExtended,
         EVSEConfigYAML,
         PVConfigYAML,
+        PVInverterYAML,
         SimulationConfig,
     )
 
@@ -444,14 +445,18 @@ def pv_section_circuit(profile: SimulationConfig) -> CircuitDefinitionExtended |
 
 
 def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
-    """The single PV device this panel has always published, fed by ``pv_section_circuit``."""
+    """The single PV device this panel has always published, fed by ``pv_section_circuit``.
+
+    With no PV circuit, the inverter no circuit feeds that the section's own keys
+    describe, where they describe one (``pv_section.unfed_inverters``).
+    """
     pv_cfg = profile.get("pv") or {}
     circuit = pv_section_circuit(profile)
-    if not pv_cfg.get("enabled") and circuit is None:
+    if circuit is None and unfed_inverters(profile) != "section":
         return None
     relative_position = pv_cfg.get("relative_position")
     if relative_position is None:
-        relative_position = "IN_PANEL" if circuit is not None else "UPSTREAM"
+        relative_position = "IN_PANEL" if circuit is not None else UNFED_INVERTER_POSITION
     templates = profile.get("circuit_templates") or {}
     # With no PV circuit -- an inverter upstream of the panel, or a config written
     # before templates carried `device_type` -- the first producer's template is the
@@ -473,12 +478,13 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
             feed=_circuit_device_id(profile, circuit),
             inverter_template=inverter_template or {},
             relative_position=str(relative_position),
+            firmware=_circuit_firmware(circuit, pv_cfg),
         ),
     )
 
 
 def _inverter_identity(
-    circuit: CircuitDefinitionExtended | None, defaults: PVConfigYAML
+    circuit: CircuitDefinitionExtended | None, defaults: PVInverterYAML
 ) -> dict[str, str]:
     """The ``info`` metadata naming the inverter *circuit* feeds.
 
@@ -505,20 +511,21 @@ def _inverter_identity(
 def _pv_metadata(
     profile: SimulationConfig,
     circuit: CircuitDefinitionExtended | None,
-    defaults: PVConfigYAML,
+    defaults: PVInverterYAML,
     *,
     feed: str | None,
     inverter_template: Mapping[str, object],
     relative_position: str,
+    firmware: str | None,
 ) -> dict[str, str]:
     """One inverter's manifest metadata, for the single device and for each of several.
 
     *defaults* is the top-level ``pv`` section for the inverter ``pv_section_circuit``
-    binds it to and empty for the others. Its declared inverter type wins over
-    *inverter_template*'s. Its nameplate is read only where there is no circuit:
-    the circuit template's is the one source, and the loader has folded the
-    section's into it. The firmware version is not read from *defaults*: see
-    ``_circuit_firmware``.
+    binds it to, the inverter itself for one no circuit feeds listed in the
+    section's ``inverters``, and empty for the others. Its declared inverter type
+    wins over *inverter_template*'s. Its nameplate is read only where there is no
+    circuit: the circuit template's is the one source, and the loader has folded the
+    section's into it. *firmware* is the caller's: see ``_circuit_firmware``.
     """
     declared_inverter = defaults.get("inverter_type")
     inverter_type = (
@@ -540,7 +547,6 @@ def _pv_metadata(
         "inverter-type": inverter_type,
         "relative-position": relative_position,
     }
-    firmware = _circuit_firmware(circuit, profile.get("pv") or {})
     if firmware is not None:
         metadata["firmware-version"] = firmware
     if feed is not None:
@@ -576,11 +582,23 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     Every PV device is named after its own device id, as SPAN firmware names an
     inverter (both public MAIN 32 captures, r202633 and r202639), so no name
     follows a circuit's place in the list.
+
+    The inverters no circuit feeds that the section's ``inverters`` lists follow,
+    each its own device (``_unfed_pv_instances``).
     """
     circuits = _circuits_for_device_type(profile, "pv")
     if len(circuits) < 2 or predates(panel_firmware_version(profile), SPAN_RELEASE_202639):
         single = _pv_instance(profile)
-        return [] if single is None else [single]
+        fed = [] if single is None else [single]
+    else:
+        fed = _fed_pv_instances(profile, circuits)
+    return [*fed, *_unfed_pv_instances(profile, numbered_after=len(fed))]
+
+
+def _fed_pv_instances(
+    profile: SimulationConfig, circuits: list[CircuitDefinitionExtended]
+) -> list[DeviceInstance]:
+    """One PV device per PV circuit, each fed by its own circuit."""
     panel_id = profile["panel_config"]["serial_number"]
     pv_cfg = profile.get("pv") or {}
     section_circuit = pv_section_circuit(profile)
@@ -597,6 +615,7 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             feed=circuit_id,
             inverter_template=templates.get(circuit["template"]) or {},
             relative_position=str(defaults.get("relative_position", "IN_PANEL")),
+            firmware=_circuit_firmware(circuit, pv_cfg),
         )
         identifier = metadata.get("serial-number") or metadata.get("model")
         instance_id = pv_inverter_device_id(panel_id, identifier, circuit_id)
@@ -606,6 +625,48 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                 instance_id=instance_id,
                 display_name=instance_id,
                 metadata=metadata,
+            )
+        )
+    return instances
+
+
+def _unfed_pv_instances(profile: SimulationConfig, *, numbered_after: int) -> list[DeviceInstance]:
+    """One PV device per inverter the ``pv`` section's ``inverters`` lists, fed by no circuit.
+
+    As release 202639 publishes each inverter of a panel whose inverters no circuit
+    feeds. Each is identified and rated by its own entry, its firmware version
+    defaulting to the section's as every inverter's does (``_circuit_firmware``), and
+    placed upstream of the panel unless it says otherwise, as the section's own
+    inverter is with no circuit. Numbered after the inverters PV circuits feed, so an
+    id defaulted by number never repeats one of theirs.
+    """
+    if unfed_inverters(profile) != "inverters":
+        return []
+    pv_cfg = profile.get("pv") or {}
+    panel_id = profile["panel_config"]["serial_number"]
+    inverter_template: Mapping[str, object] = _first_producer_template(profile) or {}
+    instances: list[DeviceInstance] = []
+    for number, inverter in enumerate(pv_cfg.get("inverters") or [], start=numbered_after + 1):
+        own_firmware = inverter.get("firmware_version")
+        instance_id = pv_device_id(panel_id, inverter, number)
+        instances.append(
+            DeviceInstance(
+                entity_class="pv",
+                instance_id=instance_id,
+                display_name=instance_id,
+                metadata=_pv_metadata(
+                    profile,
+                    None,
+                    inverter,
+                    feed=None,
+                    inverter_template=inverter_template,
+                    relative_position=str(
+                        inverter.get("relative_position", UNFED_INVERTER_POSITION)
+                    ),
+                    firmware=(
+                        str(own_firmware) if own_firmware else _circuit_firmware(None, pv_cfg)
+                    ),
+                ),
             )
         )
     return instances
