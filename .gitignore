@@ -33,9 +33,9 @@ configs/*_history.db
 # Only default_* templates are tracked in configs/; user clones are local-only
 configs/*.yaml
 !configs/default_*.yaml
-# except the reference captures' templates, built there at every start
-# (src/panelbench/reference_templates.py)
-configs/default_*r2026*.yaml
+# except the reference captures' templates, built there at every start and named by
+# their marker (src/panelbench/reference_templates.py)
+configs/default_reference_*.yaml
 
 # Source panels' passphrases and broker credentials (panel_secrets.py)
 configs/.secrets/

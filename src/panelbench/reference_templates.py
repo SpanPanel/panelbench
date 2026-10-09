@@ -29,9 +29,15 @@ from panelbench.validation import validate_yaml_config
 _LOGGER = logging.getLogger(__name__)
 
 
+TEMPLATE_PREFIX = "default_reference_"
+"""What names a reference capture's template: ``default_``, which the dashboard lists
+as a read-only template, then a marker one ignore rule covers by convention, so no
+generated template is tracked however a capture is named."""
+
+
 def template_filename(name: str) -> str:
     """The template file for the reference capture *name*."""
-    return f"default_{name}.yaml"
+    return f"{TEMPLATE_PREFIX}{name}.yaml"
 
 
 def reference_template(name: str) -> dict[str, object]:

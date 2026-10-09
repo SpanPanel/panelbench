@@ -8,8 +8,10 @@ reproduces its capture.
 
 from __future__ import annotations
 
+import fnmatch
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from pathlib import Path
+from typing import ClassVar
 
 import pytest
 import yaml
@@ -19,9 +21,6 @@ from panelbench import __main__ as panelbench_main
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.reference_templates import template_filename, write_reference_templates
 from tests.fidelity.reproduction import assert_reproduces
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def test_every_reference_capture_is_written_as_a_template(tmp_path: Path) -> None:
@@ -130,3 +129,17 @@ def test_each_write_stages_in_a_file_of_its_own(tmp_path: Path) -> None:
 
     assert tmp_path / template_filename(name) in written
     assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith(".")) == [squatter.name]
+
+
+def test_every_template_carries_the_marker_one_ignore_rule_covers() -> None:
+    """Built at every start, never tracked: one rule in .gitignore covers each template
+    by its marker, whatever a future capture is called, and the dashboard still lists it
+    as a ``default_`` template."""
+    rule = "configs/default_reference_*.yaml"
+    ignored = (Path(__file__).parents[1] / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert rule in ignored
+    for name in reference_capture_names():
+        filename = template_filename(name)
+        assert fnmatch.fnmatch(f"configs/{filename}", rule)
+        assert filename.startswith("default_")
