@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Concatenate, cast
 import yaml
 
 from panelbench.inverter import AC_COUPLED, normalise_inverter_type, template_inverter_type
+from panelbench.pv_section import UNFED_INVERTER_POSITION, unfed_inverter_entries
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
@@ -46,6 +47,30 @@ from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class InverterView:
+    """Read-only projection of an inverter no circuit feeds; empty where the config is."""
+
+    vendor: str
+    model: str
+    nameplate_w: float | None
+    relative_position: str
+
+
+def _inverter_view(entry: Mapping[str, object]) -> InverterView:
+    rating = entry.get("nameplate_capacity_w")
+    return InverterView(
+        vendor=str(entry.get("vendor") or ""),
+        model=str(entry.get("product_name") or ""),
+        nameplate_w=(
+            float(rating)
+            if isinstance(rating, int | float) and not isinstance(rating, bool)
+            else None
+        ),
+        relative_position=str(entry.get("relative_position") or UNFED_INVERTER_POSITION),
+    )
 
 
 @dataclass
@@ -534,6 +559,15 @@ class ConfigStore:
             never_backup=bool(template.get("never_backup")),
             commissioned_system=template.get("commissioned_system"),
         )
+
+    def list_unfed_inverters(self) -> list[InverterView]:
+        """The inverters no circuit feeds, each published as its own device.
+
+        As the config describes them (``pv_section.unfed_inverter_entries``): the
+        ``pv`` section's ``inverters``, or the section itself on a panel with no PV
+        circuit.
+        """
+        return [_inverter_view(entry) for entry in unfed_inverter_entries(self._state)]
 
     def list_entities(self) -> list[EntityView]:
         """Return entities with infrastructure (pv, evse) first, then circuits."""

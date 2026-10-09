@@ -244,6 +244,7 @@ def _dashboard_context(request: web.Request) -> dict[str, Any]:
         "panel_config": store.get_panel_config(),
         "sim_params": store.get_simulation_params(),
         "entities": store.list_entities(),
+        "unfed_inverters": store.list_unfed_inverters(),
         "priorities": PRIORITIES,
         "relay_behaviors": RELAY_BEHAVIORS,
         "entity_types": _available_entity_types(store),
@@ -283,6 +284,7 @@ def _entity_list_context(
     recorder_map = store.get_recorder_map()
     ctx: dict[str, Any] = {
         "entities": store.list_entities(),
+        "unfed_inverters": store.list_unfed_inverters(),
         "entity_types": _available_entity_types(store),
         "editing_id": editing_id,
         "unmapped_tabs": store.get_unmapped_tabs(),
