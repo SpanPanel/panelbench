@@ -20,6 +20,7 @@ from panelbench.hardware import (
 )
 from panelbench.pv_rating import rating_conflicts
 from panelbench.pv_section import bound_pv_circuit_id
+from panelbench.registration_limit import registration_limit
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -70,6 +71,7 @@ def validate_panel_config(panel_config: Any) -> None:
     for field in required_panel_fields:
         if field not in panel_config:
             raise ValueError(f"Missing required panel_config field: {field}")
+    registration_limit(panel_config)
 
 
 def validate_circuit_templates(circuit_templates: Any) -> None:

@@ -16,6 +16,7 @@ from panelbench.engine import DynamicSimulationEngine
 from panelbench.firmware import panel_firmware_version
 from panelbench.hardware import proves_proximity, status_hardware_version
 from panelbench.panel_models import panel_model
+from panelbench.registration_limit import RegistrationLimit, registration_limit
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -95,6 +96,14 @@ class PanelInstance:
             msg = "Panel not initialised — call start() first"
             raise RuntimeError(msg)
         return panel_model(self._engine.config)
+
+    @property
+    def registration_limit(self) -> RegistrationLimit | None:
+        """How often a client may register with this panel, or None for no limit."""
+        if self._engine is None:
+            msg = "Panel not initialised — call start() first"
+            raise RuntimeError(msg)
+        return registration_limit(self._engine.config["panel_config"])
 
     @property
     def proves_proximity(self) -> bool:

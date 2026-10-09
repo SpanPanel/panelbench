@@ -44,6 +44,13 @@ class SiteConfigYAML(TypedDict, total=False):
     utility_meter_serial_number: str
 
 
+class RegistrationLimitYAML(TypedDict):
+    """How often each client may register with the panel: ``registration_limit``."""
+
+    per_minute: int
+    retry_after: NotRequired[bool]  # whether a refusal says when to retry; default true
+
+
 class PanelConfig(TypedDict):
     """Panel configuration."""
 
@@ -79,6 +86,8 @@ class PanelConfig(TypedDict):
     # `node/property` paths the panel declares and leaves unvalued, as a clone reads
     # them from its panel. Every device section takes the same list.
     unvalued: NotRequired[list[str]]
+    # Absent, every registration succeeds.
+    registration_limit: NotRequired[RegistrationLimitYAML]
 
 
 class CyclingPattern(TypedDict, total=False):

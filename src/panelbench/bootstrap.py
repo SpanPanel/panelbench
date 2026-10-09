@@ -13,7 +13,8 @@ registration passphrase over the TLS port under that anchor.
 Endpoints:
   GET  /api/v2/status           -> panel identity (serialNumber, firmwareVersion,
                                    and hardwareVersion from r202639)
-  POST /api/v2/auth/register    -> JWT + MQTT credentials (camelCase fields)
+  POST /api/v2/auth/register    -> JWT + MQTT credentials (camelCase fields), or 429
+                                   past a configured registration limit
   GET  /api/v2/certificate/ca   -> self-signed CA PEM
   GET  /api/v2/homie/schema     -> Homie property schema JSON (the panel's firmwareVersion)
 """
@@ -41,6 +42,7 @@ from panelbench.const import (
     WS_PORT,
     WSS_PORT,
 )
+from panelbench.registration_limit import RegistrationLimit, RegistrationLimiter
 
 if TYPE_CHECKING:
     from panelbench.certs import CertificateBundle
@@ -67,6 +69,7 @@ class BootstrapHttpServer:
         https_port: int = DEFAULT_HTTPS_PORT,
         hardware_version: str | None = None,
         proximity_proven: bool = True,
+        registration_limit: RegistrationLimit | None = None,
     ) -> None:
         self._serial = serial
         self._firmware = firmware
@@ -79,6 +82,9 @@ class BootstrapHttpServer:
         self._https_port = https_port
         self._hardware_version = hardware_version
         self._proximity_proven = proximity_proven
+        self._registrations = (
+            None if registration_limit is None else RegistrationLimiter(registration_limit)
+        )
 
         self._homie_schema = schema.raw_json
         self._app = web.Application()
@@ -128,7 +134,17 @@ class BootstrapHttpServer:
         503 (``Serial number is not available yet``) for a panel whose passphrase
         or serial is unavailable. A simulated panel always has both, so it never
         takes those paths, on any firmware.
+
+        A panel given a ``registration_limit`` refuses a client past it with 429,
+        with ``Retry-After`` in seconds unless the limit says otherwise.
         """
+        if self._registrations is not None:
+            wait = self._registrations.refusal(request.remote or "")
+            if wait is not None:
+                headers = {"Retry-After": str(wait)} if self._registrations.retry_after else {}
+                return web.json_response(
+                    {"detail": "Too many registration attempts"}, status=429, headers=headers
+                )
         body: dict[str, str] = {}
         with contextlib.suppress(Exception):
             body = await request.json()
