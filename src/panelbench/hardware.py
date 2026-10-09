@@ -67,6 +67,15 @@ def publishes_outside_meters(config: Mapping[str, object]) -> bool:
     return panel_variant(config) == _EXTENDED_VARIANT
 
 
+def publishes_pv_devices(variant: Variant) -> bool:
+    """Whether *variant* publishes an inverter as a device of its own.
+
+    The variant that publishes meters outside the panel does not: the circuit feeding
+    an inverter carries the solar feeds role instead.
+    """
+    return variant != _EXTENDED_VARIANT
+
+
 def relay_locks_priority(variant: Variant) -> bool:
     """Whether a circuit's locked relay also locks its shed priority under *variant*.
 

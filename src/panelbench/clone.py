@@ -718,6 +718,11 @@ def _build_feed_map(
     feed_map: dict[str, str] = {}
 
     for circuit_uuid in circuit_nodes:
+        # An inverter published as no device of its own: the circuit says it feeds solar.
+        # eBus connection/feeds-role SOLAR
+        if _get_prop(devices, circuit_uuid, "connection", "feeds-role") == "SOLAR":
+            feed_map[circuit_uuid] = "pv"
+            continue
         target = _get_prop(devices, circuit_uuid, "connection", "feeds-device-id")
         if not target:
             continue

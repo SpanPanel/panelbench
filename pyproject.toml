@@ -125,6 +125,11 @@ ignore = ["TC001", "TC002", "TC003"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# The native key, not `--strict-markers` in addopts, which pytest 9 only warns on.
+strict_markers = true
+markers = [
+    "spec_only: a behaviour no reference capture shows, built from the eBus specification alone",
+]
 
 [tool.mypy]
 python_version = "3.14"

@@ -29,7 +29,7 @@ from panelbench.emitter_adapter.instance_ids import (
     stable_circuit_uuid,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
-from panelbench.hardware import panel_hardware_version
+from panelbench.hardware import panel_hardware_version, panel_variant, publishes_pv_devices
 from panelbench.inverter import (
     normalise_inverter_type,
     template_inverter_type,
@@ -102,7 +102,8 @@ def build_manifest(profile: SimulationConfig) -> DeviceManifest:
     bess = _bess_instance(profile)
     if bess is not None:
         instances.append(bess)
-    instances.extend(_pv_instances(profile))
+    if publishes_pv_devices(panel_variant(profile)):
+        instances.extend(_pv_instances(profile))
     instances.extend(_evse_instances(profile))
     mid = _mid_instance(profile)
     if mid is not None:
@@ -278,6 +279,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     **(
                         {"commissioned-system": commissioned_system} if commissioned_system else {}
                     ),
+                    **_solar_role(profile, template),
                     **commissioning.metadata(commissioning.CIRCUIT, c),
                     **_shared_with(panel_id, c),
                     **commissioning.unvalued_metadata(c.get("unvalued"), unpublished),
@@ -285,6 +287,22 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             ),
         )
     return instances
+
+
+def _solar_role(
+    profile: SimulationConfig, template: CircuitTemplateExtended | None
+) -> dict[str, str]:
+    """A PV circuit's feeds role, under a variant that publishes no PV device.
+
+    The inverter is then no device of its own: the circuit feeding it says what it
+    feeds instead, and the emitter books its power as solar. A role the circuit states
+    itself, in ``feeds_role``, is written after this and wins.
+    """
+    if template is None or template.get("device_type") != "pv":
+        return {}
+    if publishes_pv_devices(panel_variant(profile)):
+        return {}
+    return {"feeds-role": "SOLAR"}  # eBus connection/feeds-role SOLAR
 
 
 def _shared_with(panel_id: str, circuit: CircuitDefinitionExtended) -> dict[str, str]:

@@ -24,6 +24,8 @@ from panelbench.pv_section import bound_pv_circuit_id
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from ebus_panel_sim import Variant
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -46,6 +48,7 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_circuits(config_data["circuits"], config_data["circuit_templates"])
     _warn_uncommissioned_pv_circuits(
         panel_firmware_version(config_data),
+        panel_variant(config_data),
         config_data["circuits"],
         config_data["circuit_templates"],
     )
@@ -181,6 +184,7 @@ def _validate_commissioned_variant(
 
 def _warn_uncommissioned_pv_circuits(
     firmware: str,
+    variant: Variant,
     circuits: list[Mapping[str, object]],
     circuit_templates: Mapping[str, Mapping[str, object]],
 ) -> None:
@@ -193,6 +197,9 @@ def _warn_uncommissioned_pv_circuits(
     without ``commissioned_system: pv`` publishes a switchable, re-prioritisable
     circuit the release never does.
 
+    Not under a variant whose locked relay locks the priority, which has no
+    commissioned-system circuits.
+
     Warned, not refused: a config that loaded before must keep loading, such as a
     template shipped before the key existed, and a panel clone recognises a
     commissioned circuit only by the name SPAN gives it, so it can produce one. A PV
@@ -201,7 +208,7 @@ def _warn_uncommissioned_pv_circuits(
     *circuits* and *circuit_templates* have already passed validation, so every
     circuit names a template that exists.
     """
-    if predates(firmware, SPAN_RELEASE_202639):
+    if predates(firmware, SPAN_RELEASE_202639) or relay_locks_priority(variant):
         return
     for circuit in circuits:
         template_name = str(circuit["template"])
