@@ -73,19 +73,11 @@ A difference the emitter shows publishing the definition itself is beyond any co
 PanelBench could write, so it is allowed here with the emitter's reason.
 """
 
-_STANDING: Final[dict[tuple[str, str], str]] = {
-    ("main32_r202633", "clone"): "2 differences: an inverter no circuit feeds is dropped",
-    ("main32_r202633", "import"): "2 differences: an inverter no circuit feeds is dropped",
-}
-"""Each cell PanelBench does not yet reproduce, with what it shows, until it does."""
-
 
 def _cells() -> Iterator[object]:
     for name in reference_capture_names():
         for route in ROUTES:
-            standing = _STANDING.get((name, route))
-            marks = [] if standing is None else [pytest.mark.xfail(strict=True, reason=standing)]
-            yield pytest.param(name, route, marks=marks, id=f"{name}-{route}")
+            yield pytest.param(name, route, id=f"{name}-{route}")
 
 
 def _config(name: str, route: str) -> dict[str, object]:
@@ -101,7 +93,6 @@ def test_every_reference_capture_is_a_cell() -> None:
     names = reference_capture_names()
 
     assert names
-    assert {name for name, _route in _STANDING} <= set(names)
     assert set(EMITTER_EXCEPTIONS) <= set(names)
 
 

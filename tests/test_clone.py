@@ -814,6 +814,27 @@ class TestCircuitsSharingASpace:
             validate_yaml_config(config)
 
 
+class TestAnInverterNoCircuitFeeds:
+    """A panel before release 202639 publishes one aggregate inverter, fed by no circuit."""
+
+    def test_it_is_the_pv_section_in_the_panel(self) -> None:
+        devices = _base_devices()
+        devices["pv-0"].update_property("info", "vendor-name", "Enphase Energy")
+        devices["pv-0"].update_property("info", "model", "IQ7PLUS")
+        devices["ccc333"].properties.pop("connection")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert config["pv"] == {
+            "enabled": True,
+            "relative_position": "IN_PANEL",
+            "vendor": "Enphase Energy",
+            "product_name": "IQ7PLUS",
+            "nameplate_capacity_w": 5000.0,
+        }
+        validate_yaml_config(config)
+
+
 class TestWhereTheBatteryHangs:
     """The battery's place, as the panel publishes it, is where its clone puts it."""
 

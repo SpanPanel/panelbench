@@ -278,9 +278,13 @@ def translate_panel_tree(
         circuits.append(circuit_def)
         used_tabs.update(tabs)
 
-    # Enrich PV circuit template
+    # Enrich PV circuit template; an inverter no circuit feeds is the `pv` section's
+    unfed_pv: list[str] = []
     for pv_id in pv_nodes:
-        _enrich_pv_template(devices, circuit_nodes, pv_id, templates, circuits, keys)
+        if _circuit_feeding(devices, circuit_nodes, pv_id) is None:
+            unfed_pv.append(pv_id)
+        else:
+            _enrich_pv_template(devices, circuit_nodes, pv_id, templates, circuits, keys)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
@@ -304,6 +308,8 @@ def translate_panel_tree(
     }
     if outside_meters:
         config["outside_meters"] = outside_meters
+    if unfed_pv:
+        config["pv"] = _pv_section(devices, unfed_pv)
     lugs = _lugs_config(devices, panel_device_id, unvalued)
     if lugs:
         config["lugs"] = lugs
@@ -1281,6 +1287,37 @@ def _bess_place(
     if bess_node_id in fed_by:
         return {"relative_position": "UPSTREAM"}
     return {"relative_position": "IN_PANEL"}
+
+
+# An unfed inverter's `info` properties and the `pv` section keys it is written to.
+_PV_SECTION_IDENTITY: Final = (
+    ("vendor-name", "vendor"),
+    ("model", "product_name"),
+    ("serial-number", "serial_number"),
+    ("firmware-version", "firmware_version"),
+)
+
+
+def _pv_section(devices: Mapping[str, DiscoveredDevice], unfed: list[str]) -> dict[str, object]:
+    """The top-level ``pv`` section for an inverter no circuit feeds, in the panel.
+
+    As a panel before release 202639 publishes its one aggregate inverter. The section
+    describes one inverter, so a second unfed one is reported and left out.
+    """
+    first, *rest = unfed
+    if rest:
+        _LOGGER.warning(
+            "Inverters %s are fed by no circuit, and a config describes one such inverter; "
+            "cloning %s alone",
+            ", ".join(unfed),
+            first,
+        )
+    section: dict[str, object] = {"enabled": True, "relative_position": "IN_PANEL"}
+    _copy_info(devices, first, section, _PV_SECTION_IDENTITY)
+    rating = _float_prop(devices, first, "info", "nominal-power")
+    if rating is not None and rating > 0:
+        section["nameplate_capacity_w"] = rating
+    return section
 
 
 def _circuit_keys(
