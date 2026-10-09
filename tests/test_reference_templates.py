@@ -117,3 +117,16 @@ def test_a_config_dir_it_cannot_write_is_logged_and_startup_goes_on(
     ]
     assert len(warned) == len(reference_capture_names())
     assert all(str(locked) in message for message in warned)
+
+
+def test_each_write_stages_in_a_file_of_its_own(tmp_path: Path) -> None:
+    """Simulators starting together never share a staging file: one that holds the old
+    fixed staging name stops nothing, and no staging file is left behind."""
+    [name, *_rest] = reference_capture_names()
+    squatter = tmp_path / f".{template_filename(name)}.tmp"
+    squatter.mkdir()
+
+    written = write_reference_templates(tmp_path)
+
+    assert tmp_path / template_filename(name) in written
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith(".")) == [squatter.name]

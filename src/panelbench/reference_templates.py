@@ -16,16 +16,15 @@ several can run on one broker.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+import os
+import tempfile
+from pathlib import Path
 
 import yaml
 from ebus_panel_sim import EmitterError, load_reference_capture, reference_capture_names
 
 from panelbench.definition_import import config_from_definition
 from panelbench.validation import validate_yaml_config
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +75,19 @@ def write_reference_templates(config_dir: Path) -> list[Path]:
 
 def _replace(path: Path, text: str) -> None:
     """Write *text* to *path* whole, so a simulator starting beside another never reads
-    half a file."""
-    staged = path.with_name(f".{path.name}.tmp")
-    staged.write_text(text, encoding="utf-8")
-    staged.replace(path)
+    half a file.
+
+    Staged in a file of its own beside *path*, so simulators starting together never
+    write one staging file, and removed again if the write fails.
+    """
+    descriptor, staged_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as staged_file:
+            staged_file.write(text)
+        os.replace(staged, path)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
