@@ -129,7 +129,6 @@ CELLS = (
 VENDORED: dict[str, str] = {
     "forty_tab_minimal.yaml": "examples/forty_tab_minimal.yaml",
     "forty_tab_minimal.ticks.yaml": "examples/forty_tab_minimal.ticks.yaml",
-    "main32_r202639-tree-v1.json": "tests/fixtures/main32_r202639-tree-v1.json",
 }
 """Each vendored file under ``fixtures/upstream``, by its path in the pinned release."""
 

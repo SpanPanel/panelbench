@@ -23,11 +23,11 @@ from panelbench.clone import (
 from panelbench.scraper import ScrapedPanel
 from panelbench.validation import validate_yaml_config
 from tests._helpers import (
-    CAPTURED_MAIN_32,
     CAPTURED_MAIN_32_SERIAL,
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    discovered_from_tree_snapshot,
+    captured_main_32,
+    discovered_from_tree,
 )
 
 if TYPE_CHECKING:
@@ -1051,7 +1051,7 @@ class TestTheCapturedPanel:
     """The release's masked capture of a real MAIN 32 on SPAN release 202639."""
 
     def test_a_clone_of_it_reads_what_the_panel_publishes(self) -> None:
-        devices = discovered_from_tree_snapshot(CAPTURED_MAIN_32)
+        devices = discovered_from_tree(captured_main_32())
 
         config = translate_panel_tree(CAPTURED_MAIN_32_SERIAL, devices)
 

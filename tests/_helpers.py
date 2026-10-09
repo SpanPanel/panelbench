@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 from zoneinfo import ZoneInfo
 
 import yaml
+from ebus_panel_sim import Tree, load_reference_capture
 from ebus_panel_sim.relay_resolver import RelayRequester, RelayState
 from ebus_sdk import DiscoveredDevice
 
@@ -29,6 +29,7 @@ from panelbench.emitter_adapter.wire_capture import (
     recorded_panel,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, predates
+from tests.fidelity.tree_diff import retained_topics
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -39,14 +40,9 @@ if TYPE_CHECKING:
 
 DEFAULT_CONFIG: Final = Path(__file__).resolve().parents[1] / "configs" / "default_MAIN_40.yaml"
 
-# The pinned emitter release's masked capture of a real MAIN 32 on SPAN release 202639.
-CAPTURED_MAIN_32: Final = (
-    Path(__file__).resolve().parent
-    / "fidelity"
-    / "fixtures"
-    / "upstream"
-    / "main32_r202639-tree-v1.json"
-)
+# The pinned emitter release's masked capture of a real MAIN 32 on SPAN release 202639,
+# by its name among the release's reference captures.
+CAPTURED_MAIN_32: Final = "main32_r202639"
 CAPTURED_MAIN_32_SERIAL: Final = "nt-9874-s7rxt"
 
 # SPAN firmware strings either side of release 202639, where the BESS meter's sign
@@ -174,25 +170,14 @@ async def relay_opened_by_command(
             await asyncio.sleep(0.005)
 
 
-def discovered_from_tree_snapshot(path: Path) -> dict[str, DiscoveredDevice]:
-    """A ``tree-v1`` snapshot as the devices a scrape of that panel would discover.
+def captured_main_32() -> Tree:
+    """The tree the captured MAIN 32 published, as the pinned release ships it."""
+    return load_reference_capture(CAPTURED_MAIN_32).tree
 
-    The snapshot keeps strings and numbers apart; the wire does not, and neither does
-    a discovered device, so both are read back as the strings a panel published.
-    """
-    snapshot = json.loads(path.read_text(encoding="utf-8"))
-    devices: dict[str, DiscoveredDevice] = {}
-    for device_id, entry in snapshot["devices"].items():
-        device = DiscoveredDevice(device_id)
-        device.update_description(json.dumps(entry["description"]))
-        values = {**entry.get("properties", {}), **entry.get("numeric_properties", {})}
-        for key, value in values.items():
-            if value is None:
-                continue
-            capability, prop = key.split("/", 1)
-            device.update_property(capability, prop, str(value))
-        devices[device_id] = device
-    return devices
+
+def discovered_from_tree(tree: Tree) -> dict[str, DiscoveredDevice]:
+    """A captured tree as the devices a scrape of that panel would discover."""
+    return discovered_devices(retained_topics(tree))
 
 
 REHEARSAL_ORIGINAL_INVERTER: Final = "solar_inverter"

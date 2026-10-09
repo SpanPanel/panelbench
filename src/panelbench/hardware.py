@@ -1,7 +1,7 @@
 """The hardware version a PanelBench panel reports.
 
-One value per panel, the config's ``hardware_version``, else ``1.2``, the value a
-captured SPAN Panel publishes (tests/fidelity/fixtures/upstream). The panel publishes
+One value per panel, the config's ``hardware_version``, else ``1.2``, the value the
+captured MAIN 32 the pinned emitter ships as a reference capture publishes. The panel publishes
 it as ``info/hardware-version``, a free string in SPAN's MQTT topic reference. From SPAN
 release 202639, ``GET /api/v2/status`` also reports the panel's hardware version as
 the required ``hardwareVersion``, which SPAN documents as ``1.2`` or ``2.0``, and

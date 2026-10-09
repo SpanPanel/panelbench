@@ -56,7 +56,7 @@ from ebus_panel_sim import (
     load_definition,
     load_ticks,
 )
-from ebus_panel_sim.capture import definition_from_tree, tree_from_retained, tree_from_snapshot
+from ebus_panel_sim.capture import definition_from_tree, tree_from_retained
 
 from panelbench.definition_import import config_from_definition
 from panelbench.emitter_adapter.wire_capture import (
@@ -64,7 +64,7 @@ from panelbench.emitter_adapter.wire_capture import (
     as_capture,
     capture_retained,
 )
-from tests._helpers import DEFAULT_CONFIG, write_config
+from tests._helpers import DEFAULT_CONFIG, captured_main_32, write_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 UPSTREAM = FIXTURES / "upstream"
@@ -136,19 +136,15 @@ async def panelbench_pair(workdir: Path) -> tuple[Capture, Capture]:
     return reference_reading(retained), as_capture(retained)
 
 
-CAPTURED_PANEL = UPSTREAM / "main32_r202639-tree-v1.json"
-"""The pinned release's masked capture of a real panel on SPAN release 202639 or later."""
-
-
-def captured_definition(path: Path = CAPTURED_PANEL) -> PanelDefinition:
+def captured_definition() -> PanelDefinition:
     """Upstream's definition of the captured panel, read by upstream's own readers.
 
-    The ``tree-v1`` snapshot is mapped by ``definition_from_tree`` without masking
-    again, because upstream masked it before shipping it. The variant is inferred,
-    as upstream's capture infers it for a live panel.
+    The pinned release's masked capture of a real panel on SPAN release 202639 or
+    later, mapped by ``definition_from_tree`` without masking again, because upstream
+    masked it before shipping it. The variant is inferred, as upstream's capture
+    infers it for a live panel.
     """
-    tree = tree_from_snapshot(json.loads(path.read_text(encoding="utf-8")))
-    definition, _notes = definition_from_tree(tree, mask=False)
+    definition, _notes = definition_from_tree(captured_main_32(), mask=False)
     return definition
 
 

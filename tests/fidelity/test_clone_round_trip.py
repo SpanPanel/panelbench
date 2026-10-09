@@ -41,13 +41,15 @@ from panelbench.emitter_adapter.wire_capture import (
 )
 from panelbench.hardware import status_hardware_version
 from tests._helpers import (
-    CAPTURED_MAIN_32,
     CAPTURED_MAIN_32_SERIAL,
     REHEARSAL_ADDED_INVERTER,
+    captured_main_32,
     rehearsal_after,
     rehearsal_before,
     write_config,
 )
+
+from .tree_diff import retained_topics
 
 Capture = dict[str, dict[str, str]]
 
@@ -68,19 +70,6 @@ class Difference:
 # -- the two trees ---------------------------------------------------------------
 
 
-def _retained_from_snapshot(path: Path) -> dict[str, bytes]:
-    """A ``tree-v1`` snapshot as the retained topics its panel publishes."""
-    snapshot = json.loads(path.read_text(encoding="utf-8"))
-    retained: dict[str, bytes] = {}
-    for device_id, entry in snapshot["devices"].items():
-        retained[f"ebus/5/{device_id}/$description"] = json.dumps(entry["description"]).encode()
-        for section in ("properties", "numeric_properties"):
-            for key, value in (entry.get(section) or {}).items():
-                if value is not None:
-                    retained[f"ebus/5/{device_id}/{key}"] = str(value).encode()
-    return retained
-
-
 async def _round_trip(
     source: Mapping[str, bytes], serial: str, workdir: Path
 ) -> tuple[Capture, Capture]:
@@ -91,9 +80,7 @@ async def _round_trip(
 
 
 async def _captured_main_32(workdir: Path) -> tuple[Capture, Capture]:
-    return await _round_trip(
-        _retained_from_snapshot(CAPTURED_MAIN_32), CAPTURED_MAIN_32_SERIAL, workdir
-    )
+    return await _round_trip(retained_topics(captured_main_32()), CAPTURED_MAIN_32_SERIAL, workdir)
 
 
 async def _rehearsal_after(workdir: Path) -> tuple[Capture, Capture]:
@@ -428,7 +415,7 @@ def test_a_clone_of_the_captured_main_32_reports_its_hardware_version_over_rest(
 ) -> None:
     """MQTT already round-trips unmasked above; the REST status reads the same value, so
     the clone's ``hardwareVersion`` is the one the captured panel publishes."""
-    source = _retained_from_snapshot(CAPTURED_MAIN_32)
+    source = retained_topics(captured_main_32())
     published = source[f"ebus/5/{CAPTURED_MAIN_32_SERIAL}/info/hardware-version"].decode()
     translated = translate_panel_tree(CAPTURED_MAIN_32_SERIAL, discovered_devices(source))
     written = write_clone_config(translated, tmp_path, CAPTURED_MAIN_32_SERIAL)
