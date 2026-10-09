@@ -52,6 +52,7 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_pv_section(config_data)
     validate_ratings(config_data)
     validate_outside_meters(config_data)
+    validate_shared_circuits(config_data["circuits"])
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -330,6 +331,22 @@ def validate_outside_meters(config_data: Mapping[str, object]) -> None:
             f"outside_meters are not published by the {panel_variant(config_data)!r} variant, "
             f"which hardware_version {panel_hardware_version(config_data)!r} selects"
         )
+
+
+def validate_shared_circuits(circuits: list[Mapping[str, object]]) -> None:
+    """Each circuit a circuit says it shares a meter and relay with is another circuit
+    of the panel. *circuits* has already passed validation."""
+    ids = {str(circuit["id"]) for circuit in circuits}
+    for circuit in circuits:
+        peers = circuit.get("shared_with") or []
+        if not isinstance(peers, list):
+            raise ValueError(f"Circuit {circuit['id']!r} shared_with must be a list")
+        for peer in peers:
+            if str(peer) not in ids or str(peer) == str(circuit["id"]):
+                raise ValueError(
+                    f"Circuit {circuit['id']!r} shares its meter with {peer!r}, "
+                    "which is no other circuit of this panel"
+                )
 
 
 def validate_panel_source(panel_source: Any) -> None:

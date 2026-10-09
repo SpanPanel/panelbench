@@ -334,6 +334,9 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     protection_functions: str  # breaker/protection-functions
     feeds_role: str  # connection/feeds-role: what it feeds where that is no device
     backed_up: BackedUp  # connection/backed-up
+    # The `id`s of the circuits sharing its meter and relay, as circuits sharing one
+    # breaker space do.
+    shared_with: list[str]
     unvalued: list[str]
     # The SPAN Drive it feeds, as commissioned: its maximum charge current, the
     # user's limit where one is set, and what the drive leaves unvalued.

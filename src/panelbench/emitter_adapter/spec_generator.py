@@ -279,11 +279,20 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                         {"commissioned-system": commissioned_system} if commissioned_system else {}
                     ),
                     **commissioning.metadata(commissioning.CIRCUIT, c),
+                    **_shared_with(panel_id, c),
                     **commissioning.unvalued_metadata(c.get("unvalued"), unpublished),
                 },
             ),
         )
     return instances
+
+
+def _shared_with(panel_id: str, circuit: CircuitDefinitionExtended) -> dict[str, str]:
+    """The circuits sharing *circuit*'s meter and relay, by device id, where it names any."""
+    peers = circuit.get("shared_with") or []
+    if not peers:
+        return {}
+    return {"shared-with-device-ids": ",".join(stable_circuit_uuid(panel_id, p) for p in peers)}
 
 
 def _energy_seeds(template: CircuitTemplateExtended | None) -> dict[str, str]:

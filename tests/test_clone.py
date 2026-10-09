@@ -644,6 +644,12 @@ def _panel_config(config: dict[str, object]) -> dict[str, object]:
     return panel
 
 
+def _circuits(config: dict[str, object]) -> list[dict[str, object]]:
+    circuits = config["circuits"]
+    assert isinstance(circuits, list)
+    return circuits
+
+
 def _locked_circuit(
     device_id: str,
     name: str,
@@ -756,6 +762,55 @@ class TestCommissionedSystemByWhatItFeeds:
         config["hardware_version"] = "3.0"
 
         with pytest.raises(ValueError, match="does not have: remove commissioned_system"):
+            validate_yaml_config(config)
+
+
+def _sharing(device_id: str, name: str, peer: str) -> DiscoveredDevice:
+    """A circuit on space 44 whose meter and relay it shares with *peer*."""
+    circuit = _circuit(
+        device_id, name, "44", rating="15", priority="NICE_TO_HAVE", active_power="-10.0"
+    )
+    circuit.update_property("meter", "shared-with-device-ids", peer)
+    circuit.update_property("switch", "shared-with-device-ids", peer)
+    return circuit
+
+
+class TestCircuitsSharingASpace:
+    """Two circuits on one space, as circuits sharing a meter are, stay two circuits."""
+
+    def _devices(self) -> dict[str, DiscoveredDevice]:
+        devices = _base_devices()
+        devices["fff666"] = _sharing("fff666", "Bedroom Lights", "fff777")
+        devices["fff777"] = _sharing("fff777", "Bedroom Outlets", "fff666")
+        return devices
+
+    def test_each_keeps_its_own_id_and_names_the_other(self) -> None:
+        config = translate_scraped_panel(_make_scraped(self._devices()))
+
+        circuits = {c["name"]: c for c in _circuits(config)}
+        lights, outlets = circuits["Bedroom Lights"], circuits["Bedroom Outlets"]
+        assert (lights["id"], outlets["id"]) == ("circuit_44", "circuit_44_2")
+        assert (lights["template"], outlets["template"]) == ("clone_44", "clone_44_2")
+        assert lights["shared_with"] == ["circuit_44_2"]
+        assert outlets["shared_with"] == ["circuit_44"]
+        validate_yaml_config(config)
+
+    def test_a_refresh_updates_each_ones_own_energy(self) -> None:
+        devices = self._devices()
+        config = translate_scraped_panel(_make_scraped(devices))
+        devices["fff777"].update_property("meter", "exported-energy", "777.0")
+
+        assert update_config_from_scrape(config, _make_scraped(devices))
+
+        energy = _templates(config)["clone_44_2"]["energy_profile"]
+        assert energy["initial_consumed_energy_wh"] == 777.0
+
+    def test_sharing_with_no_other_circuit_is_refused(self) -> None:
+        config = translate_scraped_panel(_make_scraped(self._devices()))
+        [lights] = [c for c in _circuits(config) if c["name"] == "Bedroom Lights"]
+        lights["shared_with"] = ["no_such_circuit"]
+
+        with pytest.raises(ValueError, match="no other circuit of this panel"):
             validate_yaml_config(config)
 
 

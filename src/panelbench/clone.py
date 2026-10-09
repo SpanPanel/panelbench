@@ -5,7 +5,8 @@ from a live panel, or read back from a published capture — and produces a comp
 YAML config dict matching the ``SimulationConfig`` TypedDict shape.
 
 Design principles:
-  - Each circuit gets its own template (``clone_{first position}``) for per-circuit
+  - Each circuit gets its own template (``clone_{first position}``, with a suffix for
+    each further circuit sharing that position) for per-circuit
     fidelity.  Users can consolidate via the dashboard later.
   - Energy profile mode is inferred from the circuit's ``connection`` capability,
     which names the DER it feeds.
@@ -253,6 +254,7 @@ def translate_panel_tree(
     circuits: list[dict[str, object]] = []
     outside_meters: list[dict[str, object]] = []
     used_tabs: set[int] = set()
+    keys = _circuit_keys(devices, circuit_nodes)
 
     for node_uuid in sorted(circuit_nodes):
         if _meters_outside_the_panel(devices, node_uuid):
@@ -266,6 +268,7 @@ def translate_panel_tree(
             feed_map,
             unvalued.get(node_uuid, []),
             variant,
+            keys,
         )
         if result is None:
             continue
@@ -277,13 +280,11 @@ def translate_panel_tree(
 
     # Enrich PV circuit template
     for pv_id in pv_nodes:
-        _enrich_pv_template(devices, circuit_nodes, pv_id, feed_map, templates, circuits)
+        _enrich_pv_template(devices, circuit_nodes, pv_id, templates, circuits, keys)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(
-            devices, circuit_nodes, evse_id, feed_map, templates, circuits, unvalued
-        )
+        _enrich_evse_template(devices, circuit_nodes, evse_id, templates, circuits, unvalued, keys)
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -324,7 +325,7 @@ def translate_panel_tree(
     mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
     for bess_id in bess_nodes:
         bess_cfg = _build_bess_config(
-            devices, panel_device_id, bess_id, mid_nodes, circuit_nodes, unvalued
+            devices, panel_device_id, bess_id, mid_nodes, circuit_nodes, unvalued, keys
         )
         if bess_cfg is not None:
             config["bess"] = bess_cfg
@@ -378,15 +379,15 @@ def update_config_from_scrape(
         return False
 
     circuit_nodes = _devices_of_type(scraped.devices, scraped.serial_number, TYPE_CIRCUIT)
+    keys = _circuit_keys(scraped.devices, circuit_nodes)
 
     changed = False
 
     for node_uuid in circuit_nodes:
-        spaces = _spaces_prop(scraped.devices, node_uuid)
-        if not spaces:
+        if node_uuid not in keys:
             continue
 
-        template_name = f"clone_{spaces[0]}"
+        template_name = _template_name(keys[node_uuid])
         template = templates.get(template_name)
         if not isinstance(template, dict):
             continue
@@ -856,12 +857,14 @@ def _translate_circuit(
     feed_map: dict[str, str],
     unvalued: list[str],
     variant: Variant,
+    keys: Mapping[str, str],
 ) -> tuple[str, dict[str, object], dict[str, object], list[int]] | None:
     """Translate a single circuit node into a template and definition.
 
-    *unvalued* is what the circuit declares and leaves unvalued, and *variant* the
-    panel's. Returns (template_name, template_dict, circuit_def, tabs) or None if the
-    circuit cannot be translated (missing space).
+    *unvalued* is what the circuit declares and leaves unvalued, *variant* the panel's,
+    and *keys* every circuit's key (``_circuit_keys``). Returns (template_name,
+    template_dict, circuit_def, tabs) or None if the circuit cannot be translated
+    (missing space).
     """
     tabs = _spaces_prop(devices, node_uuid)
     if not tabs:
@@ -1006,8 +1009,8 @@ def _translate_circuit(
         template["device_type"] = "pv"
 
     # Circuit definition
-    circuit_id = _circuit_id(space)
-    template_name = f"clone_{space}"
+    circuit_id = _circuit_id(keys[node_uuid])
+    template_name = _template_name(keys[node_uuid])
 
     circuit_def: dict[str, object] = {
         "id": circuit_id,
@@ -1019,6 +1022,9 @@ def _translate_circuit(
         "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
         **commissioning.config_values(commissioning.CIRCUIT, _published_by(devices, node_uuid)),
     }
+    shared = _shared_with(devices, node_uuid, keys)
+    if shared:
+        circuit_def["shared_with"] = shared
     # A rating or priority the panel publishes none of is recorded as null above.
     recorded = {
         path
@@ -1197,6 +1203,7 @@ def _build_bess_config(
     mid_nodes: list[str],
     circuit_nodes: list[str],
     unvalued: Mapping[str, list[str]],
+    keys: Mapping[str, str],
 ) -> dict[str, object] | None:
     """Build top-level bess config from scraped BESS node properties.
 
@@ -1249,7 +1256,7 @@ def _build_bess_config(
             bess["mid_unvalued"] = unvalued[mid]
     if unvalued.get(bess_node_id):
         bess["unvalued"] = unvalued[bess_node_id]
-    bess.update(_bess_place(devices, panel_device_id, bess_node_id, circuit_nodes))
+    bess.update(_bess_place(devices, panel_device_id, bess_node_id, circuit_nodes, keys))
     return bess
 
 
@@ -1258,6 +1265,7 @@ def _bess_place(
     panel_device_id: str,
     bess_node_id: str,
     circuit_nodes: list[str],
+    keys: Mapping[str, str],
 ) -> dict[str, object]:
     """Where the panel says its battery hangs, as the ``bess`` section records it.
 
@@ -1266,9 +1274,8 @@ def _bess_place(
     the emitter publishes no connection for it at all.
     """
     feeding = _circuit_feeding(devices, circuit_nodes, bess_node_id)
-    spaces = _spaces_prop(devices, feeding) if feeding is not None else []
-    if spaces:
-        return {"relative_position": "IN_PANEL", "feed": _circuit_id(spaces[0])}
+    if feeding is not None and feeding in keys:
+        return {"relative_position": "IN_PANEL", "feed": _circuit_id(keys[feeding])}
     lugs = _devices_of_type(devices, panel_device_id, TYPE_LUGS)
     fed_by = {_get_prop(devices, lugs_id, "connection", "fed-by-device-id") for lugs_id in lugs}
     if bess_node_id in fed_by:
@@ -1276,23 +1283,57 @@ def _bess_place(
     return {"relative_position": "IN_PANEL"}
 
 
-def _circuit_id(space: int) -> str:
-    """The clone's id for the circuit whose first space is *space*."""
-    return f"circuit_{space}"
+def _circuit_keys(
+    devices: Mapping[str, DiscoveredDevice], circuit_nodes: list[str]
+) -> dict[str, str]:
+    """Each branch circuit's key in the clone, by its device id on the panel.
+
+    Its first space, which names it in every clone. Circuits that share a space, as
+    a meter shared by two circuits does, take that key in device id order, each after
+    the first with a suffix, so each keeps its own and keeps it on a later clone.
+    """
+    by_space: dict[int, list[str]] = {}
+    for node_uuid in sorted(circuit_nodes):
+        spaces = _spaces_prop(devices, node_uuid)
+        if spaces:
+            by_space.setdefault(spaces[0], []).append(node_uuid)
+    return {
+        node_uuid: str(space) if n == 1 else f"{space}_{n}"
+        for space, sharing in by_space.items()
+        for n, node_uuid in enumerate(sharing, start=1)
+    }
+
+
+def _circuit_id(key: str) -> str:
+    """The clone's id for the circuit whose key (``_circuit_keys``) is *key*."""
+    return f"circuit_{key}"
+
+
+def _template_name(key: str) -> str:
+    """The clone's template for the circuit whose key is *key*."""
+    return f"clone_{key}"
+
+
+def _shared_with(
+    devices: Mapping[str, DiscoveredDevice], node_uuid: str, keys: Mapping[str, str]
+) -> list[str]:
+    """The circuits sharing this circuit's meter and relay, by their ids in the clone."""
+    raw = _get_prop(devices, node_uuid, "meter", "shared-with-device-ids") or ""
+    return [_circuit_id(keys[peer]) for peer in raw.split(",") if peer in keys]
 
 
 def _enrich_pv_template(
     devices: Mapping[str, DiscoveredDevice],
     circuit_nodes: list[str],
     pv_node_id: str,
-    feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
     circuits: list[dict[str, object]],
+    keys: Mapping[str, str],
 ) -> None:
     """Enrich the PV circuit template with nameplate capacity and solar profile, and
     write the inverter's identity onto the circuit that feeds it."""
     circuit_uuid = _circuit_feeding(devices, circuit_nodes, pv_node_id)
-    template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
+    template = _find_template_for_feed(circuit_uuid, templates, keys)
     if template is None:
         return
 
@@ -1316,16 +1357,16 @@ def _enrich_evse_template(
     devices: Mapping[str, DiscoveredDevice],
     circuit_nodes: list[str],
     evse_node_id: str,
-    feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
     circuits: list[dict[str, object]],
     unvalued: Mapping[str, list[str]],
+    keys: Mapping[str, str],
 ) -> None:
     """Enrich the EVSE circuit template with time-of-day charging profile, and write
     the drive's identity, its commissioned charge limits and what it leaves unvalued
     onto the circuit that feeds it."""
     circuit_uuid = _circuit_feeding(devices, circuit_nodes, evse_node_id)
-    template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
+    template = _find_template_for_feed(circuit_uuid, templates, keys)
     if template is None:
         return
 
@@ -1378,21 +1419,11 @@ def _copy_info(
 
 def _find_template_for_feed(
     circuit_uuid: str | None,
-    feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
-    devices: Mapping[str, DiscoveredDevice],
+    keys: Mapping[str, str],
 ) -> dict[str, object] | None:
-    """Find the template associated with a circuit UUID via the feed map.
-
-    The feed map maps circuit_uuid -> device_role. Templates are keyed
-    ``clone_{first position}``, so this resolves the circuit's ``info/spaces`` and
-    takes the first entry — the same key ``_translate_circuit`` built it under.
-    """
-    if circuit_uuid is None:
+    """The template of the circuit with device id *circuit_uuid*, by its key
+    (``_circuit_keys``): the name ``_translate_circuit`` built it under."""
+    if circuit_uuid is None or circuit_uuid not in keys:
         return None
-
-    spaces = _spaces_prop(devices, circuit_uuid)
-    if not spaces:
-        return None
-
-    return templates.get(f"clone_{spaces[0]}")
+    return templates.get(_template_name(keys[circuit_uuid]))
