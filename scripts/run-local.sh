@@ -28,7 +28,11 @@ Options:
 Environment variables:
   ADVERTISE_ADDRESS Override mDNS advertised IP (auto-detected from en0/en1)
   CONFIG_DIR        Config directory (default: ./configs)
-  CONFIG_NAME       Specific config file to load (e.g., default_MAIN_16.yaml)
+  CONFIG_NAME       Specific config file to load (e.g., default_MAIN_16.yaml). Each
+                    CONFIG_NAME runs as its own simulator, so several run side by
+                    side given their own HTTP_PORT and DASHBOARD_PORT and one broker.
+  UV_NO_SYNC        Set to 1 to run in the current .venv as it is, without syncing it
+                    to the lockfile: keeps an editable emitter installed there.
   TICK_INTERVAL     Simulation tick interval in seconds (default: 1.0)
   LOG_LEVEL         Logging level (default: INFO)
   BROKER_USERNAME   MQTT broker username (default: span)
@@ -79,13 +83,30 @@ ensure_prerequisites() {
 }
 
 ensure_venv() {
-    echo "==> Syncing dependencies..."
-    # Every dependency resolves from the lockfile — the emitter is a pinned git
-    # dependency rather than a local path or a vendored copy — so a plain sync is
-    # sufficient. dev-setup.sh remains the documented entry point.
-    bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
+    if [[ -n "${UV_NO_SYNC:-}" ]]; then
+        # uv's own switch, honoured here too: a sync would replace an emitter
+        # installed editable from a local checkout with the locked release.
+        echo "==> Using .venv as it is (UV_NO_SYNC)"
+    else
+        echo "==> Syncing dependencies..."
+        # Every dependency resolves from the lockfile — the emitter is a pinned
+        # dependency rather than a local path or a vendored copy — so a plain sync is
+        # sufficient. dev-setup.sh remains the documented entry point.
+        bash "${REPO_DIR}/scripts/dev-setup.sh" >/dev/null
+    fi
     # shellcheck disable=SC1091
     source "${VENV_DIR}/bin/activate"
+    echo "    Emitter:    $("${VENV_DIR}/bin/python3" -c 'import ebus_panel_sim as e; print(e.__file__)')"
+}
+
+# One PID file per simulator: the default one, or one per CONFIG_NAME, so several
+# configs run side by side and --stop stops every one.
+simulator_pid_file() {
+    if [[ -n "${CONFIG_NAME:-}" ]]; then
+        echo "${PID_DIR}/simulator-${CONFIG_NAME%.*}.pid"
+    else
+        echo "${PID_DIR}/simulator.pid"
+    fi
 }
 
 generate_certs() {
@@ -168,14 +189,15 @@ wait_for_exit() {
 }
 
 stop_all() {
-    local pid
-    echo "==> Stopping simulator..."
-    if [[ -f "${PID_DIR}/simulator.pid" ]]; then
-        pid="$(cat "${PID_DIR}/simulator.pid")"
+    local pid pid_file
+    echo "==> Stopping simulators..."
+    for pid_file in "${PID_DIR}"/simulator*.pid; do
+        [[ -f "${pid_file}" ]] || continue
+        pid="$(cat "${pid_file}")"
         kill "${pid}" 2>/dev/null || true
-        wait_for_exit "${pid}" "Simulator"
-        rm -f "${PID_DIR}/simulator.pid"
-    fi
+        wait_for_exit "${pid}" "Simulator $(basename "${pid_file}" .pid)"
+        rm -f "${pid_file}"
+    done
     echo "==> Stopping Mosquitto..."
     if [[ -f "${PID_DIR}/mosquitto.pid" ]]; then
         pid="$(cat "${PID_DIR}/mosquitto.pid")"
@@ -194,12 +216,16 @@ show_status() {
         echo "  Not running"
     fi
     echo ""
-    echo "==> Simulator:"
-    if [[ -f "${PID_DIR}/simulator.pid" ]] && kill -0 "$(cat "${PID_DIR}/simulator.pid")" 2>/dev/null; then
-        echo "  Running (pid $(cat "${PID_DIR}/simulator.pid"))"
-    else
-        echo "  Not running"
-    fi
+    echo "==> Simulators:"
+    local pid_file found=""
+    for pid_file in "${PID_DIR}"/simulator*.pid; do
+        [[ -f "${pid_file}" ]] || continue
+        if kill -0 "$(cat "${pid_file}")" 2>/dev/null; then
+            echo "  $(basename "${pid_file}" .pid): running (pid $(cat "${pid_file}"))"
+            found=1
+        fi
+    done
+    [[ -n "${found}" ]] || echo "  Not running"
 }
 
 run_simulator() {
@@ -240,7 +266,9 @@ run_simulator() {
         &
 
     local sim_pid=$!
-    echo "${sim_pid}" > "${PID_DIR}/simulator.pid"
+    local pid_file
+    pid_file="$(simulator_pid_file)"
+    echo "${sim_pid}" > "${pid_file}"
     echo "==> Simulator started (pid ${sim_pid})"
     echo ""
     echo "    Stop:    $(basename "$0") --stop"
@@ -249,7 +277,7 @@ run_simulator() {
 
     # Wait for the simulator (foreground)
     wait "${sim_pid}" || true
-    rm -f "${PID_DIR}/simulator.pid"
+    rm -f "${pid_file}"
 }
 
 # --- Main ---

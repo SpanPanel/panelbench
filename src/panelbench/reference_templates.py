@@ -63,7 +63,10 @@ def write_reference_templates(config_dir: Path) -> list[Path]:
             continue
         if path.exists() and path.read_text(encoding="utf-8") == text:
             continue
-        path.write_text(text, encoding="utf-8")
+        # Replaced whole, so a simulator starting beside another never reads half a file.
+        staged = path.with_name(f".{path.name}.tmp")
+        staged.write_text(text, encoding="utf-8")
+        staged.replace(path)
         _LOGGER.info("Wrote reference capture template: %s", path.name)
         written.append(path)
     return written
