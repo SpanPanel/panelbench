@@ -25,11 +25,12 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
 import yaml
-from ebus_panel_sim import EmitterError, PanelDefinition
+from ebus_panel_sim import EmitterError, PanelDefinition, Variant
 from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_tree
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.emitter_adapter import commissioning
+from panelbench.hardware import relay_locks_priority, variant_for
 from panelbench.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
@@ -196,6 +197,7 @@ def translate_panel_tree(
     pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
     evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
     unvalued = _unvalued_by_device(_emitter_reading(devices, panel_device_id))
+    variant = variant_for(_get_prop(devices, panel_device_id, "info", "hardware-version") or "")
 
     # Build feed cross-reference: circuit_uuid → device_type
     feed_map = _build_feed_map(devices, circuit_nodes)
@@ -258,6 +260,7 @@ def translate_panel_tree(
             node_uuid,
             feed_map,
             unvalued.get(node_uuid, []),
+            variant,
         )
         if result is None:
             continue
@@ -313,7 +316,7 @@ def translate_panel_tree(
     # Build top-level BESS config (only when a battery is actually connected)
     mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
     for bess_id in bess_nodes:
-        bess_cfg = _build_bess_config(devices, bess_id, mid_nodes)
+        bess_cfg = _build_bess_config(devices, panel_device_id, bess_id, mid_nodes, circuit_nodes)
         if bess_cfg is not None:
             config["bess"] = bess_cfg
 
@@ -830,12 +833,13 @@ def _translate_circuit(
     node_uuid: str,
     feed_map: dict[str, str],
     unvalued: list[str],
+    variant: Variant,
 ) -> tuple[str, dict[str, object], dict[str, object], list[int]] | None:
     """Translate a single circuit node into a template and definition.
 
-    *unvalued* is what the circuit declares and leaves unvalued. Returns
-    (template_name, template_dict, circuit_def, tabs) or None if the circuit cannot
-    be translated (missing space).
+    *unvalued* is what the circuit declares and leaves unvalued, and *variant* the
+    panel's. Returns (template_name, template_dict, circuit_def, tabs) or None if the
+    circuit cannot be translated (missing space).
     """
     tabs = _spaces_prop(devices, node_uuid)
     if not tabs:
@@ -876,14 +880,20 @@ def _translate_circuit(
     # value meaning "never shed"; a production capture publishes two `NEVER` circuits with
     # `$settable = true`, which no value-derived flag can produce.
     priority_locked = not _is_settable(devices, node_uuid, "load-shed", "priority")
+    # Under a variant whose locked relay locks the priority with it, that is the whole
+    # of the lock, and nothing more is recorded for it.
+    locked_with_the_relay = relay_locks_priority(variant) and not relay_controllable
     # A circuit SPAN adds for a commissioned PV or battery system is the third lock:
     # priority locked at NEVER on a locked relay.
     commissioned_system = (
         _commissioned_system(devices, node_uuid, name)
-        if priority_locked and not relay_controllable and priority == "NEVER"
+        if priority_locked
+        and not relay_controllable
+        and priority == "NEVER"
+        and not locked_with_the_relay
         else None
     )
-    never_backup = priority_locked and commissioned_system is None
+    never_backup = priority_locked and commissioned_system is None and not locked_with_the_relay
     if never_backup and priority != "OFF_GRID":
         # The panel contradicted itself: a circuit commissioned never-backup *is*
         # permanently OFF_GRID, and the emitter rejects the pair at construction rather
@@ -974,7 +984,7 @@ def _translate_circuit(
         template["device_type"] = "pv"
 
     # Circuit definition
-    circuit_id = f"circuit_{space}"
+    circuit_id = _circuit_id(space)
     template_name = f"clone_{space}"
 
     circuit_def: dict[str, object] = {
@@ -1160,8 +1170,10 @@ def _device_role_to_mode(device_role: str | None) -> str:
 
 def _build_bess_config(
     devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
     bess_node_id: str,
     mid_nodes: list[str],
+    circuit_nodes: list[str],
 ) -> dict[str, object] | None:
     """Build top-level bess config from scraped BESS node properties.
 
@@ -1204,7 +1216,36 @@ def _build_bess_config(
     )
     if mid is not None:
         _copy_info(devices, mid, bess, _MID_IDENTITY)
+    bess.update(_bess_place(devices, panel_device_id, bess_node_id, circuit_nodes))
     return bess
+
+
+def _bess_place(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    bess_node_id: str,
+    circuit_nodes: list[str],
+) -> dict[str, object]:
+    """Where the panel says its battery hangs, as the ``bess`` section records it.
+
+    A circuit feeding it puts it in the panel, fed by that circuit; lugs fed by it put
+    it upstream. A battery neither names is in the panel with no feed, which is how
+    the emitter publishes no connection for it at all.
+    """
+    feeding = _circuit_feeding(devices, circuit_nodes, bess_node_id)
+    spaces = _spaces_prop(devices, feeding) if feeding is not None else []
+    if spaces:
+        return {"relative_position": "IN_PANEL", "feed": _circuit_id(spaces[0])}
+    lugs = _devices_of_type(devices, panel_device_id, TYPE_LUGS)
+    fed_by = {_get_prop(devices, lugs_id, "connection", "fed-by-device-id") for lugs_id in lugs}
+    if bess_node_id in fed_by:
+        return {"relative_position": "UPSTREAM"}
+    return {"relative_position": "IN_PANEL"}
+
+
+def _circuit_id(space: int) -> str:
+    """The clone's id for the circuit whose first space is *space*."""
+    return f"circuit_{space}"
 
 
 def _enrich_pv_template(

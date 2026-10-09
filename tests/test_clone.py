@@ -729,6 +729,62 @@ class TestCommissionedSystemByWhatItFeeds:
 
         assert "commissioned_system" not in templates["clone_7"]
 
+    def test_under_a_variant_whose_relay_lock_locks_the_priority_it_is_that_lock_alone(
+        self,
+    ) -> None:
+        """That variant has no commissioned-system circuits: a battery's breaker there is
+        an ordinary circuit with a locked relay at priority NEVER, and nothing more is
+        recorded for it."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "hardware-version", "3.0")
+        devices["ddd444"] = _locked_circuit(
+            "ddd444", "Powerwall", "11,13", feeds=("bess-0", "energy.ebus.device.bess")
+        )
+
+        template = _templates(translate_scraped_panel(_make_scraped(devices)))["clone_11"]
+
+        assert "commissioned_system" not in template
+        assert "never_backup" not in template
+        assert (template["relay_behavior"], template["priority"]) == ("non-controllable", "NEVER")
+
+    def test_a_commissioned_system_under_that_variant_is_refused(self) -> None:
+        devices = _base_devices()
+        devices["ddd444"] = _locked_circuit(
+            "ddd444", "Powerwall", "11,13", feeds=("bess-0", "energy.ebus.device.bess")
+        )
+        config = translate_scraped_panel(_make_scraped(devices))
+        config["hardware_version"] = "3.0"
+
+        with pytest.raises(ValueError, match="does not have: remove commissioned_system"):
+            validate_yaml_config(config)
+
+
+class TestWhereTheBatteryHangs:
+    """The battery's place, as the panel publishes it, is where its clone puts it."""
+
+    def test_a_battery_a_circuit_feeds_is_in_the_panel_fed_by_that_circuit(self) -> None:
+        devices = _base_devices()
+        devices["ddd444"] = _locked_circuit(
+            "ddd444", "Powerwall", "11,13", feeds=("bess-0", "energy.ebus.device.bess")
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert (bess["relative_position"], bess["feed"]) == ("IN_PANEL", "circuit_11")
+
+    def test_a_battery_nothing_names_is_in_the_panel_with_no_feed(self) -> None:
+        devices = _base_devices()
+        devices["ddd444"] = _circuit(
+            "ddd444", "Battery Storage", "11,13", rating="40", priority="NEVER", active_power="0.0"
+        )
+
+        bess = translate_scraped_panel(_make_scraped(devices))["bess"]
+
+        assert isinstance(bess, dict)
+        assert bess["relative_position"] == "IN_PANEL"
+        assert "feed" not in bess
+
 
 class TestPanelSize:
     """The panel's size is the model it publishes, not its highest occupied space."""

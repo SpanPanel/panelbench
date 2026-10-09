@@ -26,10 +26,11 @@ if TYPE_CHECKING:
 
 DEFAULT_HARDWARE_VERSION: Final = "1.2"
 
-_OUTSIDE_METER_VARIANT: Final = "span-alpha-test-b2"
-"""The emitter variant that publishes a meter outside the panel, the only one that does."""
+_EXTENDED_VARIANT: Final = "span-alpha-test-b2"
+"""The emitter variant that adds site, busbar and frequency properties, commissioning
+facts and a meter outside the panel to the ``span`` one."""
 
-_VARIANT_BY_HARDWARE_VERSION: Final[Mapping[str, Variant]] = {"3.0": _OUTSIDE_METER_VARIANT}
+_VARIANT_BY_HARDWARE_VERSION: Final[Mapping[str, Variant]] = {"3.0": _EXTENDED_VARIANT}
 """The emitter variant a hardware version string selects, as the emitter's capture
 reads a SPAN panel; every other string publishes ``span``."""
 
@@ -47,18 +48,32 @@ def panel_hardware_version(config: Mapping[str, object]) -> str:
     return str(config.get("hardware_version") or DEFAULT_HARDWARE_VERSION)
 
 
-def panel_variant(config: Mapping[str, object]) -> Variant:
-    """The set of device profiles the panel *config* describes publishes.
+def variant_for(hardware_version: str) -> Variant:
+    """The set of device profiles a panel reporting *hardware_version* publishes.
 
-    Selected by its hardware version string, as a panel's own hardware decides what it
-    declares, so a clone that keeps the string publishes what its panel does.
+    Selected by the string, as a panel's own hardware decides what it declares, so a
+    clone that keeps the string publishes what its panel does.
     """
-    return _VARIANT_BY_HARDWARE_VERSION.get(panel_hardware_version(config), "span")
+    return _VARIANT_BY_HARDWARE_VERSION.get(hardware_version, "span")
+
+
+def panel_variant(config: Mapping[str, object]) -> Variant:
+    """``variant_for`` the panel *config* describes."""
+    return variant_for(panel_hardware_version(config))
 
 
 def publishes_outside_meters(config: Mapping[str, object]) -> bool:
     """Whether the panel *config* describes can publish a meter outside the panel."""
-    return panel_variant(config) == _OUTSIDE_METER_VARIANT
+    return panel_variant(config) == _EXTENDED_VARIANT
+
+
+def relay_locks_priority(variant: Variant) -> bool:
+    """Whether a circuit's locked relay also locks its shed priority under *variant*.
+
+    So it is under the variant with no commissioned-system circuits: a PV or battery
+    breaker there is an ordinary circuit with a locked relay at priority NEVER.
+    """
+    return variant == _EXTENDED_VARIANT
 
 
 def status_hardware_version(config: SimulationConfig) -> str | None:

@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any
 from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
-from panelbench.hardware import panel_hardware_version, panel_variant, publishes_outside_meters
+from panelbench.hardware import (
+    panel_hardware_version,
+    panel_variant,
+    publishes_outside_meters,
+    relay_locks_priority,
+)
 from panelbench.pv_rating import rating_conflicts
 from panelbench.pv_section import bound_pv_circuit_id
 
@@ -37,6 +42,7 @@ def validate_yaml_config(config_data: Any) -> None:
     _validate_commissioned_firmware(
         panel_firmware_version(config_data), config_data["circuit_templates"]
     )
+    _validate_commissioned_variant(config_data, config_data["circuit_templates"])
     validate_circuits(config_data["circuits"], config_data["circuit_templates"])
     _warn_uncommissioned_pv_circuits(
         panel_firmware_version(config_data),
@@ -148,6 +154,27 @@ def _validate_commissioned_firmware(
                 f"Circuit template '{template_name}' is a commissioned-system circuit, which is "
                 f"locked only from SPAN release 202639, but firmware_version is {firmware!r}: "
                 "remove commissioned_system, or name release 202639 or later"
+            )
+
+
+def _validate_commissioned_variant(
+    config_data: Mapping[str, object], circuit_templates: Mapping[str, Mapping[str, object]]
+) -> None:
+    """A variant whose locked relay locks the priority has no commissioned-system circuits.
+
+    A PV or battery breaker there is an ordinary circuit with a locked relay at
+    priority NEVER, and the emitter refuses the key, so it is refused here naming the
+    template. *circuit_templates* has already passed `validate_circuit_templates`.
+    """
+    variant = panel_variant(config_data)
+    if not relay_locks_priority(variant):
+        return
+    for template_name, template in circuit_templates.items():
+        if template.get("commissioned_system") is not None:
+            raise ValueError(
+                f"Circuit template '{template_name}' is a commissioned-system circuit, which "
+                f"the {variant!r} variant does not have: remove commissioned_system, and a "
+                "non-controllable relay at priority NEVER locks it as that variant does"
             )
 
 

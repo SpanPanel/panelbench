@@ -317,7 +317,9 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
     if "firmware_version" in bess_cfg:
         bess_meta["firmware-version"] = str(bess_cfg["firmware_version"])
     if "feed" in bess_cfg:
-        bess_meta["feed"] = str(bess_cfg["feed"])
+        bess_meta["feed"] = stable_circuit_uuid(
+            profile["panel_config"]["serial_number"], str(bess_cfg["feed"])
+        )
     if "initial_soe_kwh" in bess_cfg:
         bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
     instance_id = bess_device_id(profile["panel_config"]["serial_number"], bess_cfg)

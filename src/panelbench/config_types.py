@@ -168,7 +168,7 @@ class BESSConfigYAML(TypedDict, total=False):
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
-    feed: str
+    feed: str  # the `id` of the circuit feeding a battery in the panel
     nameplate_capacity_kwh: float
     max_charge_w: float
     max_discharge_w: float
