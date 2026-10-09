@@ -136,7 +136,7 @@ switchable and not always-on, and its priority is `OFF_GRID` and can be changed,
    same panel come back on the new release.
 
 Run both from the same checkout with the same `HTTP_PORT`, `DASHBOARD_PORT` and `BROKER_PORT`; the defaults are fine. The second instance must answer where the
-first did. The two must never run at once: `run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number.
+first did. The two must never run at once: both would claim the same ports and advertise the same serial number.
 
 From release 202639 the second instance does what SPAN's public [CHANGELOG](https://github.com/spanio/SPAN-API-Client-Docs) lists for that release. It publishes
 the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes the
@@ -375,7 +375,7 @@ All variables can also be passed as CLI arguments (`--help` for full list).
 | `HTTP_PORT`         | `8081`          | Bootstrap HTTP server port (TLS on +1000) |
 | `DASHBOARD_PORT`    | `18080`         | Dashboard web UI port                     |
 | `BROKER_HOST`       | `localhost`     | MQTT broker hostname                      |
-| `BROKER_PORT`       | `18883`         | MQTTS broker port                         |
+| `BROKER_PORT`       | `18883`         | MQTTS broker port, one broker per port    |
 | `ADVERTISE_ADDRESS` | auto-detected   | IP to advertise via mDNS                  |
 
 ## Development

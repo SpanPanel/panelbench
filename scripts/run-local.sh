@@ -30,7 +30,7 @@ Environment variables:
   CONFIG_DIR        Config directory (default: ./configs)
   CONFIG_NAME       Specific config file to load (e.g., default_MAIN_16.yaml). Each
                     CONFIG_NAME runs as its own simulator, so several run side by
-                    side given their own HTTP_PORT and DASHBOARD_PORT and one broker.
+                    side given their own HTTP_PORT, DASHBOARD_PORT and BROKER_PORT.
   UV_NO_SYNC        Set to 1 to run in the current .venv as it is, without syncing it
                     to the lockfile: keeps an editable emitter installed there.
   TICK_INTERVAL     Simulation tick interval in seconds (default: 1.0)
@@ -39,7 +39,7 @@ Environment variables:
   BROKER_PASSWORD   MQTT broker password (default: sim-password)
   HTTP_PORT         Base HTTP port for panel instances (default: 8081)
   DASHBOARD_PORT    Dashboard UI port (default: 18080)
-  BROKER_PORT       MQTTS port (default: 18883)
+  BROKER_PORT       MQTTS port (default: 18883); each port is a broker of its own
   HA_URL            Home Assistant URL (alternative to --ha-url)
   HA_TOKEN          Long-lived access token. Set it in .env; it is exported to the
                     simulator rather than passed as a flag.
@@ -48,7 +48,6 @@ EOF
 }
 
 CERT_DIR="${REPO_DIR}/.local/certs"
-MOSQUITTO_DIR="${REPO_DIR}/.local/mosquitto"
 PID_DIR="${REPO_DIR}/.local/pids"
 VENV_DIR="${REPO_DIR}/.venv"
 BROKER_USERNAME="${BROKER_USERNAME:-span}"
@@ -66,6 +65,12 @@ fi
 HTTP_PORT="${HTTP_PORT:-8081}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-18080}"
 BROKER_PORT="${BROKER_PORT:-18883}"
+# One broker per BROKER_PORT, as a real panel carries its own. Panels sharing a
+# broker would hand every subscriber all of their retained trees at once, and a
+# large tree plus its neighbours overruns the per-client queue that a broker of
+# its own never reaches. Side-by-side panels each take a distinct BROKER_PORT.
+MOSQUITTO_DIR="${REPO_DIR}/.local/mosquitto-${BROKER_PORT}"
+MOSQUITTO_PID_FILE="${PID_DIR}/mosquitto-${BROKER_PORT}.pid"
 
 get_host_ip() {
     ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo ""
@@ -146,20 +151,20 @@ log_type warning
 log_type error
 log_type notice
 
-pid_file ${PID_DIR}/mosquitto.pid
+pid_file ${MOSQUITTO_PID_FILE}
 CONF
 }
 
 start_mosquitto() {
-    if [[ -f "${PID_DIR}/mosquitto.pid" ]] && kill -0 "$(cat "${PID_DIR}/mosquitto.pid")" 2>/dev/null; then
-        echo "==> Mosquitto already running (pid $(cat "${PID_DIR}/mosquitto.pid"))"
+    if [[ -f "${MOSQUITTO_PID_FILE}" ]] && kill -0 "$(cat "${MOSQUITTO_PID_FILE}")" 2>/dev/null; then
+        echo "==> Mosquitto already running on port ${BROKER_PORT} (pid $(cat "${MOSQUITTO_PID_FILE}"))"
         return
     fi
     echo "==> Starting Mosquitto on port ${BROKER_PORT}..."
     mosquitto -c "${MOSQUITTO_DIR}/mosquitto.conf" -d
     sleep 1
-    if [[ -f "${PID_DIR}/mosquitto.pid" ]]; then
-        echo "==> Mosquitto started (pid $(cat "${PID_DIR}/mosquitto.pid"))"
+    if [[ -f "${MOSQUITTO_PID_FILE}" ]]; then
+        echo "==> Mosquitto started (pid $(cat "${MOSQUITTO_PID_FILE}"))"
     else
         echo "Error: Mosquitto failed to start"
         exit 1
@@ -199,25 +204,30 @@ stop_all() {
         rm -f "${pid_file}"
     done
     echo "==> Stopping Mosquitto..."
-    if [[ -f "${PID_DIR}/mosquitto.pid" ]]; then
-        pid="$(cat "${PID_DIR}/mosquitto.pid")"
+    for pid_file in "${PID_DIR}"/mosquitto*.pid; do
+        [[ -f "${pid_file}" ]] || continue
+        pid="$(cat "${pid_file}")"
         kill "${pid}" 2>/dev/null || true
-        wait_for_exit "${pid}" "Mosquitto"
-        rm -f "${PID_DIR}/mosquitto.pid"
-    fi
+        wait_for_exit "${pid}" "Mosquitto $(basename "${pid_file}" .pid)"
+        rm -f "${pid_file}"
+    done
     echo "==> Stopped"
 }
 
 show_status() {
+    local pid_file found=""
     echo "==> Mosquitto:"
-    if [[ -f "${PID_DIR}/mosquitto.pid" ]] && kill -0 "$(cat "${PID_DIR}/mosquitto.pid")" 2>/dev/null; then
-        echo "  Running (pid $(cat "${PID_DIR}/mosquitto.pid"))"
-    else
-        echo "  Not running"
-    fi
+    for pid_file in "${PID_DIR}"/mosquitto*.pid; do
+        [[ -f "${pid_file}" ]] || continue
+        if kill -0 "$(cat "${pid_file}")" 2>/dev/null; then
+            echo "  $(basename "${pid_file}" .pid): running (pid $(cat "${pid_file}"))"
+            found=1
+        fi
+    done
+    [[ -n "${found}" ]] || echo "  Not running"
+    found=""
     echo ""
     echo "==> Simulators:"
-    local pid_file found=""
     for pid_file in "${PID_DIR}"/simulator*.pid; do
         [[ -f "${pid_file}" ]] || continue
         if kill -0 "$(cat "${pid_file}")" 2>/dev/null; then
