@@ -10,7 +10,7 @@ name: Spec Provenance
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "prerelease/**"]
     paths:
       - ".ebus-spec.json"
       # Where the vendored catalogs actually are. This filter named

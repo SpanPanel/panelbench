@@ -53,6 +53,39 @@ jobs:
           version=$(grep '^version:' panelbench/config.yaml | sed 's/version: *"\(.*\)"/\1/')
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # `:latest` is what an unversioned pull gets, so only main moves it. A build
+      # dispatched from any other ref, a pre-release branch above all, publishes its
+      # version tag alone.
+      #
+      # That version tag is what an installed add-on pulls, so only main may build a
+      # stable version. A pre-release branch is cut while config.yaml still names the
+      # last release, and a dispatch from it before the bump would overwrite that
+      # release's image under every installation; it is refused instead.
+      - name: Check the version and choose image tags
+        id: tags
+        env:
+          IMAGE: ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          stable='^[0-9]+\.[0-9]+\.[0-9]+$'
+          prerelease='^[0-9]+\.[0-9]+\.[0-9]+(a|b|rc)[0-9]+$'
+          if [[ ! "${VERSION}" =~ ${stable} && ! "${VERSION}" =~ ${prerelease} ]]; then
+            echo "::error::panelbench/config.yaml declares version '${VERSION}', which is neither X.Y.Z nor a pre-release such as X.Y.ZbN."
+            exit 1
+          fi
+          if [ "${GITHUB_REF}" != "refs/heads/main" ] && [[ ! "${VERSION}" =~ ${prerelease} ]]; then
+            echo "::error::${GITHUB_REF} declares the stable version ${VERSION}, which only main may build. Bump panelbench/config.yaml to a pre-release version such as X.Y.ZbN first."
+            exit 1
+          fi
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE}:${VERSION}"
+            if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+              echo "${IMAGE}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -62,6 +95,4 @@ jobs:
           push: true
           build-args: |
             BUILD_FROM=${{ matrix.base }}
-          tags: |
-            ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/spanpanel/panelbench/${{ matrix.arch }}:latest
+          tags: ${{ steps.tags.outputs.tags }}
