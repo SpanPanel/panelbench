@@ -56,10 +56,11 @@ _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-
 
 # What the emitter is given for a circuit whose template records that its panel
 # publishes no breaker rating (`breaker_rating: null`, which a clone writes). The
-# emitter requires one (ebus-panel-sim 0.9.0, `manifest_physics` reads
-# `breaker-rating-a` with `_req_float`) and publishes it, so until it accepts the
-# absence this is what the wire shows; the round-trip fidelity test pins it as an
-# upstream difference rather than letting it pass as the panel's own value.
+# emitter requires one (ebus-panel-sim 0.10.0b1, `manifest_physics` reads
+# `breaker-rating-a` with `_req_float`) and publishes it unless the device lists
+# `breaker/rating` as unvalued, which PanelBench does not yet do, so this is what the
+# wire shows; the round-trip fidelity test pins it as a known difference rather than
+# letting it pass as the panel's own value.
 _UNPUBLISHED_BREAKER_RATING_A = 20.0
 
 
@@ -159,6 +160,7 @@ def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
 def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     templates = profile.get("circuit_templates") or {}
     panel_id = profile["panel_config"]["serial_number"]
+    named_by_id = not predates(panel_firmware_version(profile), SPAN_RELEASE_202639)
     instances: list[DeviceInstance] = []
     for idx, c in enumerate(profile.get("circuits") or [], start=1):
         tabs = c.get("tabs") or [0]
@@ -183,15 +185,16 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             rating = template.get("breaker_rating_a") or template.get("breaker_rating", 20)
             breaker_rating = float(rating) if rating is not None else _UNPUBLISHED_BREAKER_RATING_A
         relay_behavior = normalise_relay_behavior(relay_behavior_raw)
+        instance_id = stable_circuit_uuid(panel_id, c["id"])
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
-                instance_id=stable_circuit_uuid(panel_id, c["id"]),
-                # The emitter publishes this as both the device's $description name and
-                # its info/name. SPAN release 202639 names the device after its id and
-                # keeps this in info/name; one display name cannot be both, so the
-                # circuit keeps the name people read until the emitter separates them.
+                instance_id=instance_id,
+                # The circuit's own name, published as its info/name. From SPAN release
+                # 202639 the panel names the device itself after its id, so that is its
+                # $description name; before, the device carries the circuit's name too.
                 display_name=c.get("name", c["id"]),
+                description_name=instance_id if named_by_id else None,
                 metadata={
                     "tab-numbers": ",".join(str(int(t)) for t in tabs if t),
                     "breaker-rating-a": str(breaker_rating),

@@ -24,7 +24,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard.config_store import ConfigStore
-from tests._helpers import default_config, pv_rating, write_config
+from tests._helpers import default_config, pv_rating, rating_literal, write_config
 
 if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
@@ -101,7 +101,7 @@ async def test_a_released_edit_loads_and_is_the_rating(
     with caplog.at_level(logging.WARNING):
         published, produced = await pv_rating(path)
 
-    assert published == str(watts)
+    assert published == rating_literal(watts)
     assert produced == (await pv_rating(control))[1]
     warned = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert any(
@@ -131,7 +131,7 @@ async def test_a_released_edit_survives_a_save_and_reload(
     reloaded.load_from_file(path)
     assert reloaded.get_entity("solar_inverter").energy_profile["nameplate_capacity_w"] == watts
     published, produced = await pv_rating(path)
-    assert published == str(watts)
+    assert published == rating_literal(watts)
     control = write_config(
         tmp_path / "control.yaml",
         _without_the_stale_copy(_edited(name, template, watts), template),
@@ -193,5 +193,7 @@ async def test_a_released_template_clone_still_runs_unedited(
 
     published, produced = await pv_rating(path)
 
-    assert published == str(stale), "its stale copy agrees with its profile, so nothing drops"
+    assert published == rating_literal(stale), (
+        "its stale copy agrees with its profile, so nothing drops"
+    )
     assert produced > 0

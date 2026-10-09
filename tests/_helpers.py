@@ -135,6 +135,11 @@ def discharging_bess_meter(runtime: CloneRuntime, recorder: RecordingTransport) 
     return meter
 
 
+def rating_literal(watts: float) -> str:
+    """*watts* as a SPAN panel publishes an inverter's ``info/nominal-power``: an integer."""
+    return f"{watts:.0f}"
+
+
 async def pv_rating(path: Path, circuit_id: str = "solar_inverter") -> tuple[str | None, float]:
     """The panel at *path*'s one PV device's published ``info/nominal-power``, and what
     its PV circuit *circuit_id* produces at `NOON`.

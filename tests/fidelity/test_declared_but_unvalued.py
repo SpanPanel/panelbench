@@ -37,7 +37,7 @@ where the device hangs rather than its name.
 
 Shrinking this file is not the goal — being right about each line is. Membership
 was audited against the specification and SPAN's r202633 topic reference, and
-what remains is there for five different reasons:
+what remains is there for six different reasons:
 
   `connection/feeds-device-*` on a mixed-load circuit is *correct* absence, not a
   gap. The catalog omits the triple "when mixed-load with no commissioned
@@ -78,6 +78,12 @@ what remains is there for five different reasons:
   names no network, so its panel publishes none, and PanelBench's import now
   carries that rather than its own default network, as a clone of a panel on
   Ethernet does. This line leaves when the example names an SSID.
+
+  `panel pcs/off-grid-import-limit*` is commissioning the example does not record.
+  From ebus-panel-sim 0.10.0b1 the off-grid import limit and its enablement are
+  published only where a definition commissions them, as a SPAN panel leaves them
+  unvalued until they are configured (the captured MAIN 32 on release 202639
+  does). These lines leave when the example commissions the limit.
 
 One kind of line has left:
 

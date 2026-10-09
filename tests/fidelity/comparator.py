@@ -164,7 +164,9 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
     """A device's declared ``type::name``.
 
     Stable across producers for the devices both name the same way: the panel, its
-    lugs, and a circuit, whose name is the one a user gave it. Not for a battery,
+    lugs, and a circuit, whose name is the one a user gave it. A circuit's is its
+    ``info/name``: from SPAN release 202639 the panel names the device itself after
+    its id, and the two producers' ids differ by construction. Not for a battery,
     its MID, an inverter or a SPAN Drive, which SPAN firmware names after their own
     device ids (``role_key``).
 
@@ -179,7 +181,10 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
         parsed = json.loads(description)
     except json.JSONDecodeError:
         return f"<unparsable-description>::{device_id}"
-    return f"{parsed.get('type', '?')}::{parsed.get('name', device_id)}"
+    device_type = parsed.get("type", "?")
+    if str(device_type).rsplit(".", 1)[-1] == "circuit" and "info/name" in properties:
+        return f"{device_type}::{properties['info/name']}"
+    return f"{device_type}::{parsed.get('name', device_id)}"
 
 
 _KEYED_BY_FEED = frozenset({"bess", "evse", "pv"})

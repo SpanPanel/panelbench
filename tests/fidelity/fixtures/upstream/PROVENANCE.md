@@ -13,7 +13,7 @@ of the example cell: a panel definition and the ticks that drive it.
 Upstream masked it before shipping it, and PanelBench reads it as published.
 
 - **Repository:** `electrification-bus/distribution-enclosure-simulator`
-- **Release:** `v0.9.0`, the version `pyproject.toml` pins (commit `2dbddf7c507776a08e03a64825454972696d23df`)
+- **Release:** `v0.10.0b1`, the version `pyproject.toml` pins (commit `844033902c580527af412a919ae0ac5c8ed3c633`)
 
 ## Why only data
 
