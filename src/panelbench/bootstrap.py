@@ -64,6 +64,7 @@ class BootstrapHttpServer:
         broker_username: str = DEFAULT_BROKER_USERNAME,
         broker_password: str = DEFAULT_BROKER_PASSWORD,
         broker_host: str = "localhost",
+        broker_port: int = MQTTS_PORT,
         host: str = "0.0.0.0",
         port: int = 443,
         https_port: int = DEFAULT_HTTPS_PORT,
@@ -77,6 +78,7 @@ class BootstrapHttpServer:
         self._broker_username = broker_username
         self._broker_password = broker_password
         self._broker_host = broker_host
+        self._broker_port = broker_port
         self._host = host
         self._port = port
         self._https_port = https_port
@@ -164,7 +166,8 @@ class BootstrapHttpServer:
             "ebusBrokerUsername": self._broker_username,
             "ebusBrokerPassword": self._broker_password,
             "ebusBrokerHost": broker_host,
-            "ebusBrokerMqttsPort": MQTTS_PORT,
+            # The port the panel's broker listens on, which a client connects to.
+            "ebusBrokerMqttsPort": self._broker_port,
             "ebusBrokerWsPort": WS_PORT,
             "ebusBrokerWssPort": WSS_PORT,
             "hostname": f"span-sim-{self._serial}",

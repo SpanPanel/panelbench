@@ -358,6 +358,7 @@ class SimulatorApp:
                 broker_username=self._broker_username,
                 broker_password=self._broker_password,
                 broker_host=self._broker_host,
+                broker_port=self._broker_port,
                 port=http_port,
                 https_port=https_port_for(http_port),
                 hardware_version=status_hardware,
