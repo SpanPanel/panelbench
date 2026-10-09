@@ -57,6 +57,7 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_ratings(config_data)
     validate_outside_meters(config_data)
     validate_shared_circuits(config_data["circuits"])
+    validate_unvalued_lists(config_data)
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -358,6 +359,44 @@ def validate_shared_circuits(circuits: list[Mapping[str, object]]) -> None:
                     f"Circuit {circuit['id']!r} shares its meter with {peer!r}, "
                     "which is no other circuit of this panel"
                 )
+
+
+def validate_unvalued_lists(config_data: Mapping[str, object]) -> None:
+    """Every ``unvalued``, ``mid_unvalued`` and ``device_unvalued`` is a list of
+    ``node/property`` paths.
+
+    Anything else, such as a bare string, would otherwise publish as nothing being
+    unvalued, without a word. Whether each path is one the device declares is the
+    emitter's check, made when the panel starts. *config_data*'s sections have
+    already passed validation.
+    """
+    places: list[tuple[str, object]] = []
+
+    def section(where: str, value: object, *keys: str) -> None:
+        if isinstance(value, dict):
+            places.extend((f"{where}.{key}", value.get(key)) for key in keys)
+
+    section("panel_config", config_data.get("panel_config"), "unvalued")
+    for index, circuit in enumerate(_listed(config_data.get("circuits"))):
+        section(f"circuits[{index}]", circuit, "unvalued", "device_unvalued")
+    section("bess", config_data.get("bess"), "unvalued", "mid_unvalued")
+    lugs = config_data.get("lugs")
+    if isinstance(lugs, dict):
+        for direction in ("upstream", "downstream"):
+            section(f"lugs.{direction}", lugs.get(direction), "unvalued")
+    for index, meter in enumerate(_listed(config_data.get("outside_meters"))):
+        section(f"outside_meters[{index}]", meter, "unvalued")
+    for where, paths in places:
+        if paths is None:
+            continue
+        if not isinstance(paths, list) or not all(
+            isinstance(path, str) and "/" in path for path in paths
+        ):
+            raise ValueError(f"{where} must be a list of node/property paths, got {paths!r}")
+
+
+def _listed(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
 
 def validate_panel_source(panel_source: Any) -> None:

@@ -8,6 +8,7 @@ cloned, keeps every fact it stated.
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
 import pytest
@@ -228,3 +229,39 @@ async def test_a_drives_commissioned_charge_limits_are_cloned(tmp_path: Path) ->
     assert cloned["max_current_a"] == 48.0
     assert cloned["user_max_charge_current_a"] == 40
     assert cloned["device_unvalued"] == ["info/model"]
+
+
+_PLACES: dict[str, tuple[tuple[str | int, ...], str]] = {
+    "panel": (("panel_config",), "unvalued"),
+    "circuit": (("circuits", 0), "unvalued"),
+    "drive": (("circuits", 0), "device_unvalued"),
+    "battery": (("bess",), "unvalued"),
+    "mid": (("bess",), "mid_unvalued"),
+    "lugs": (("lugs", "upstream"), "unvalued"),
+    "outside meter": (("outside_meters", 0), "unvalued"),
+}
+"""Where each ``unvalued`` list lives: the section's path, and the key."""
+
+
+def _section(config: dict[str, object], path: tuple[str | int, ...]) -> dict[str, object]:
+    """The mapping at *path* in *config*, as written YAML holds it."""
+    node: object = config
+    for step in path:
+        if isinstance(step, int):
+            assert isinstance(node, list)
+        else:
+            assert isinstance(node, dict)
+        node = node[step]
+    assert isinstance(node, dict)
+    return node
+
+
+@pytest.mark.parametrize("where", sorted(_PLACES))
+def test_an_unvalued_list_that_is_no_list_of_paths_is_refused(where: str) -> None:
+    """A bare string where a list belongs would otherwise be dropped without a word."""
+    config: dict[str, object] = copy.deepcopy(dict(_commissioned()))
+    path, key = _PLACES[where]
+    _section(config, path)[key] = "breaker/rating"
+
+    with pytest.raises(ValueError, match="must be a list of node/property paths"):
+        validate_yaml_config(config)
