@@ -19,7 +19,12 @@ from ebus_panel_sim import load_reference_capture, reference_capture_names
 
 from panelbench import __main__ as panelbench_main
 from panelbench.dashboard.config_store import ConfigStore
-from panelbench.reference_templates import template_filename, write_reference_templates
+from panelbench.reference_templates import (
+    TEMPLATE_PREFIX,
+    reference_template,
+    template_filename,
+    write_reference_templates,
+)
 from tests.fidelity.reproduction import assert_reproduces
 
 
@@ -30,6 +35,36 @@ def test_every_reference_capture_is_written_as_a_template(tmp_path: Path) -> Non
     assert names
     assert sorted(path.name for path in written) == sorted(template_filename(n) for n in names)
     assert all(path.name.startswith("default_") for path in written)
+
+
+@pytest.mark.parametrize("name", reference_capture_names())
+def test_a_template_is_named_for_the_panel_its_capture_publishes(name: str) -> None:
+    """By the model the panel publishes, or ``UNKNOWN`` and its spaces where it publishes
+    none, then by its firmware release: a capture's handle says neither. A name may go
+    on to tell two captures of one model and release apart."""
+    config = reference_template(name)
+    panel = config["panel_config"]
+    assert isinstance(panel, dict)
+    model = panel["model"]
+    if model == "UNKNOWN":
+        model = f"UNKNOWN_{panel['total_tabs']}"
+    [_platform, release, _build] = str(config["firmware_version"]).split("/")
+
+    named = template_filename(name).removeprefix(TEMPLATE_PREFIX).removesuffix(".yaml")
+
+    assert named == f"{model}_{release}" or named.startswith(f"{model}_{release}_")
+
+
+def test_no_two_reference_captures_share_a_template() -> None:
+    """Each is written under its own name, so none overwrites another's template."""
+    filenames = [template_filename(n) for n in reference_capture_names()]
+
+    assert len(set(filenames)) == len(filenames)
+
+
+def test_a_capture_with_no_name_here_keeps_its_handle() -> None:
+    """An emitter newer than the pinned one still brings its captures' templates."""
+    assert template_filename("a-later-capture") == f"{TEMPLATE_PREFIX}a-later-capture.yaml"
 
 
 def test_a_current_template_is_left_alone_and_a_stale_one_refreshed(tmp_path: Path) -> None:

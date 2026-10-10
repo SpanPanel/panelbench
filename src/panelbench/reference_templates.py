@@ -11,6 +11,9 @@ into the config directory where it is missing or stale, as ``run.sh`` refreshes 
 shipped templates. So no copy of a capture lives in this repository, and a new emitter
 release brings its captures' templates with it. Each takes a serial of its own, so
 several can run on one broker.
+
+A template is named for the panel it is, not for its capture's handle, so the
+dashboard's list reads as hardware (``_TEMPLATE_NAMES``).
 """
 
 from __future__ import annotations
@@ -18,7 +21,9 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Final
 
 import yaml
 from ebus_panel_sim import EmitterError, load_reference_capture, reference_capture_names
@@ -34,10 +39,29 @@ TEMPLATE_PREFIX = "default_reference_"
 as a read-only template, then a marker one ignore rule covers by convention, so no
 generated template is tracked however a capture is named."""
 
+_TEMPLATE_NAMES: Final[Mapping[str, str]] = {
+    "main32_r202633": "MAIN_32_r202633",
+    "main32_r202639": "MAIN_32_r202639",
+    "r202639-a": "UNKNOWN_16_r202639",
+    "r202639-b": "MAIN_16_r202639",
+    "r202639-c": "MAIN_40_r202639",
+    "r202639-d": "MLO_24_r202639",
+    "r202639-e": "MLO_48_r202639",
+}
+"""What each reference capture's template is called, by the capture's handle: the model
+its panel publishes, or ``UNKNOWN`` and its spaces where it publishes none, then its
+firmware release, then whatever tells two captures of one model and release apart.
+Written out rather than read from the capture, so publishing a capture again never
+renames the template a ``--config`` names."""
+
 
 def template_filename(name: str) -> str:
-    """The template file for the reference capture *name*."""
-    return f"{TEMPLATE_PREFIX}{name}.yaml"
+    """The template file for the reference capture *name*.
+
+    A capture this release has no name for keeps its handle, so an emitter newer than
+    the pinned one still brings its captures' templates with it.
+    """
+    return f"{TEMPLATE_PREFIX}{_TEMPLATE_NAMES.get(name, name)}.yaml"
 
 
 def reference_template(name: str) -> dict[str, object]:
