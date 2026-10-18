@@ -59,6 +59,7 @@ from panelbench.rates.openei import (
     fetch_rate_plans,
     fetch_utilities,
 )
+from panelbench.reference_templates import TEMPLATE_PREFIX, is_template
 from panelbench.solar import compute_solar_curve
 from panelbench.weather import fetch_historical_weather, get_cached_weather
 
@@ -215,7 +216,8 @@ def _all_panels(request: web.Request) -> list[dict[str, object]]:
             "serial": running_map.get(fname, ""),
             "running": fname in running_map,
             "active": fname == active_file,
-            "is_default": fname.startswith("default_"),
+            "is_default": is_template(fname),
+            "clone_name": fname.removeprefix("default_").removeprefix(TEMPLATE_PREFIX),
             "port": port_map.get(running_map.get(fname, ""), 0),
             # Shown beside the HTTP port because adding a panel by hand asks
             # for both: the bootstrap port to reach it, and the TLS port the
@@ -230,9 +232,9 @@ def _all_panels(request: web.Request) -> list[dict[str, object]]:
 
 
 def _is_readonly(ctx: DashboardContext) -> bool:
-    """Config is read-only when viewing a default template or no config."""
+    """Config is read-only when viewing a template or no config."""
     f = ctx.config_filter
-    return f is None or f.startswith("default_")
+    return f is None or is_template(f)
 
 
 def _dashboard_context(request: web.Request) -> dict[str, Any]:
@@ -858,11 +860,11 @@ async def handle_get_entity_edit(request: web.Request) -> web.Response:
 def _persist_config(request: web.Request) -> None:
     """Write current in-memory config to disk and reload the running engine.
 
-    No-op when viewing a default template (read-only).
+    No-op when viewing a template (read-only).
     """
     ctx = _ctx(request)
     filename = ctx.config_filter
-    if not filename or filename.startswith("default_"):
+    if not filename or is_template(filename):
         return
     output_path = ctx.config_dir / filename
     _save_or_refuse(_store(request), output_path)
@@ -889,7 +891,7 @@ def _persist_config_live_bess(request: web.Request) -> None:
     running panel matches the current filter (e.g. panel is stopped)."""
     ctx = _ctx(request)
     filename = ctx.config_filter
-    if not filename or filename.startswith("default_"):
+    if not filename or is_template(filename):
         return
     output_path = ctx.config_dir / filename
     store = _store(request)
@@ -1897,7 +1899,7 @@ async def handle_clone(request: web.Request) -> web.Response:
 async def handle_save_reload(request: web.Request) -> web.Response:
     ctx = _ctx(request)
     filename = ctx.config_filter or "default_config.yaml"
-    if filename.startswith("default_"):
+    if is_template(filename):
         raise web.HTTPBadRequest(text="Cannot save changes to a default template. Clone it first.")
 
     _persist_config(request)
@@ -2151,8 +2153,8 @@ async def handle_delete_config(request: web.Request) -> web.Response:
             content_type="text/html",
         )
 
-    # Default templates are protected — clone instead.
-    if filename.startswith("default_"):
+    # Templates are protected — clone instead.
+    if is_template(filename):
         return web.Response(
             text='<div class="flash error">Default templates cannot be deleted.'
             " Clone to create your own.</div>",

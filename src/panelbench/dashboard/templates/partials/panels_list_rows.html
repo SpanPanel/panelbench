@@ -20,7 +20,7 @@
   <span class="badge badge-editing">{{ 'viewing' if p.is_default else 'editing' }}</span>
   {% endif %}
   <button class="btn btn-sm btn-secondary"
-          onclick="event.stopPropagation();cloneConfig(this,'{{ p.filename }}','{{ p.filename.replace('default_', '') }}')"
+          onclick="event.stopPropagation();cloneConfig(this,'{{ p.filename }}','{{ p.clone_name }}')"
           title="Clone this config">
     Clone
   </button>

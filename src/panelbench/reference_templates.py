@@ -1,9 +1,9 @@
 """A template for each reference capture the pinned emitter ships.
 
 The emitter ships masked captures of real SPAN panels, each with the panel definition
-recorded with it (``load_reference_capture``). Each becomes a ``default_*`` template,
-read-only in the dashboard and cloned like the shipped ones, so a user can run a panel
-as a real one published itself.
+recorded with it (``load_reference_capture``). Each becomes a ``ref_*`` template,
+read-only in the dashboard and cloned like the shipped ``default_*`` ones, so a user can
+run a panel as a real one published itself.
 
 A template is built, not kept: at every start the definition is read through
 PanelBench's own definition import, as the dashboard's Import reads one, and written
@@ -13,7 +13,8 @@ release brings its captures' templates with it. Each takes a serial of its own, 
 several can run on one broker.
 
 A template is named for the panel it is, not for its capture's handle, so the
-dashboard's list reads as hardware (``_TEMPLATE_NAMES``).
+dashboard's list reads as hardware (``_TEMPLATE_NAMES``). A capture the release has
+retired gets no template (``_RETIRED_CAPTURES``).
 """
 
 from __future__ import annotations
@@ -34,25 +35,43 @@ from panelbench.validation import validate_yaml_config
 _LOGGER = logging.getLogger(__name__)
 
 
-TEMPLATE_PREFIX = "default_reference_"
-"""What names a reference capture's template: ``default_``, which the dashboard lists
-as a read-only template, then a marker one ignore rule covers by convention, so no
-generated template is tracked however a capture is named."""
+TEMPLATE_PREFIX = "ref_"
+"""What names a reference capture's template, a marker one ignore rule covers, so no
+generated template is tracked however a capture is named. The dashboard keeps a
+template under it read-only, as it keeps the shipped ``default_*`` ones
+(``is_template``)."""
+
+_SHIPPED_PREFIX = "default_"
 
 _TEMPLATE_NAMES: Final[Mapping[str, str]] = {
-    "main32_r202633": "MAIN_32_r202633",
-    "main32_r202639": "MAIN_32_r202639",
-    "r202639-a": "UNKNOWN_16_r202639",
-    "r202639-b": "MAIN_16_r202639",
-    "r202639-c": "MAIN_40_r202639",
-    "r202639-d": "MLO_24_r202639",
-    "r202639-e": "MLO_48_r202639",
+    "main32_r202639": "MAIN_32",
+    "r202639-a": "UNKNOWN_16",
+    "r202639-b": "MAIN_16",
+    "r202639-c": "MAIN_40",
+    "r202639-d": "MLO_24",
+    "r202639-e": "MLO_48",
 }
 """What each reference capture's template is called, by the capture's handle: the model
-its panel publishes, or ``UNKNOWN`` and its spaces where it publishes none, then its
-firmware release, then whatever tells two captures of one model and release apart.
-Written out rather than read from the capture, so publishing a capture again never
-renames the template a ``--config`` names."""
+its panel publishes, or ``UNKNOWN`` and its spaces where it publishes none, then
+whatever tells two captures of one model apart. The firmware release is not in the
+name: the template carries it as ``firmware_version``. Written out rather than read
+from the capture, so publishing a capture again never renames the template a
+``--config`` names."""
+
+_RETIRED_CAPTURES: Final = frozenset({"main32_r202633"})
+"""Captures written as no template: a panel on a release before 202639, whose name
+would be ``MAIN_32`` as the r202639 capture's is."""
+
+
+def is_template(filename: str) -> bool:
+    """Whether *filename* is a template the dashboard keeps read-only: shipped, or
+    built from a reference capture."""
+    return filename.startswith((_SHIPPED_PREFIX, TEMPLATE_PREFIX))
+
+
+def template_capture_names() -> tuple[str, ...]:
+    """The reference captures written as templates, in the emitter's order."""
+    return tuple(n for n in reference_capture_names() if n not in _RETIRED_CAPTURES)
 
 
 def template_filename(name: str) -> str:
@@ -84,7 +103,7 @@ def write_reference_templates(config_dir: Path) -> list[Path]:
     the app from starting.
     """
     written: list[Path] = []
-    for name in reference_capture_names():
+    for name in template_capture_names():
         path = config_dir / template_filename(name)
         try:
             text = yaml.dump(reference_template(name), default_flow_style=False, sort_keys=False)
