@@ -9,6 +9,13 @@ from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, TypedDict
 
+Enablement = Literal["UNSPECIFIED", "UNCONFIGURED", "DISABLED", "ENABLED"]
+"""Whether a commissioned import limit is in force, as the ``pcs`` catalog spells it."""
+
+BackedUp = Literal["BACKED_UP", "NOT_BACKED_UP", "UNKNOWN"]
+"""Whether a path is on the backup side of a microgrid interconnect, as the
+``connection`` catalog spells it."""
+
 
 class PanelSource(TypedDict, total=False):
     """Source panel provenance for clone configs.
@@ -22,12 +29,36 @@ class PanelSource(TypedDict, total=False):
     last_synced: str  # ISO 8601 timestamp of last sync
 
 
+class SiteConfigYAML(TypedDict, total=False):
+    """The site as recorded when the panel was commissioned.
+
+    Published in the panel's ``info`` where its variant declares the property, beside
+    ``panel_config``'s ``latitude`` and ``longitude``. A clone keeps its panel's.
+    """
+
+    name: str
+    address_lines: str
+    locality: str
+    region: str
+    country_code: str
+    utility_meter_serial_number: str
+
+
+class RegistrationLimitYAML(TypedDict):
+    """How often each client may register with the panel: ``registration_limit``."""
+
+    per_minute: int
+    retry_after: NotRequired[bool]  # whether a refusal says when to retry; default true
+
+
 class PanelConfig(TypedDict):
     """Panel configuration."""
 
     serial_number: str
     total_tabs: int
-    main_size: int  # Main breaker size in Amps
+    # Main breaker size in Amps; null for a panel with no main breaker, which then
+    # publishes no `breaker` node.
+    main_size: int | None
     latitude: NotRequired[float]  # degrees north, default 37.7
     longitude: NotRequired[float]  # degrees east, default -122.4
     soc_shed_threshold: NotRequired[float]  # SOC % below which SOC_THRESHOLD circuits are shed
@@ -46,6 +77,17 @@ class PanelConfig(TypedDict):
     wifi_link: NotRequired[bool]
     ethernet_link: NotRequired[bool]
     wifi_ssid: NotRequired[str | None]
+    site: NotRequired[SiteConfigYAML]
+    # Commissioned import limits, published as the panel's `pcs` state. Absent, an
+    # enablement is unpublished; the off-grid limit's value is required while ENABLED.
+    off_grid_import_limit_enablement: NotRequired[Enablement]
+    off_grid_import_limit_a: NotRequired[float]
+    operator_import_limit_enablement: NotRequired[Enablement]
+    # `node/property` paths the panel declares and leaves unvalued, as a clone reads
+    # them from its panel. Every device section takes the same list.
+    unvalued: NotRequired[list[str]]
+    # Absent, every registration succeeds.
+    registration_limit: NotRequired[RegistrationLimitYAML]
 
 
 class CyclingPattern(TypedDict, total=False):
@@ -137,7 +179,7 @@ class BESSConfigYAML(TypedDict, total=False):
     serial_number: str
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
-    feed: str
+    feed: str  # the `id` of the circuit feeding a battery in the panel
     nameplate_capacity_kwh: float
     max_charge_w: float
     max_discharge_w: float
@@ -150,17 +192,13 @@ class BESSConfigYAML(TypedDict, total=False):
     initial_soe_kwh: float
     rate_label: str  # When charge_mode=="custom": pinned utility-rate label.
     active_days: list[int]  # Days of week active (0=Mon..6=Sun); empty = all.
+    unvalued: list[str]  # what the battery declares and leaves unvalued
+    mid_unvalued: list[str]  # what its MID declares and leaves unvalued
 
 
-class PVConfigYAML(TypedDict, total=False):
-    """Top-level PV configuration in the simulator YAML.
+class PVInverterYAML(TypedDict, total=False):
+    """One inverter's identity and rating, as the ``pv`` section and its ``inverters`` give it."""
 
-    The simulator's PV physics live in the per-circuit producer templates;
-    this section carries device-identity metadata used to publish the PV
-    DeviceInstance and to decide whether the panel can island.
-    """
-
-    enabled: bool
     vendor: str
     instance_id: str
     product_name: str
@@ -169,9 +207,27 @@ class PVConfigYAML(TypedDict, total=False):
     inverter_type: Literal["hybrid", "ac_coupled", "ac-coupled"]
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
+
+
+class PVConfigYAML(PVInverterYAML, total=False):
+    """Top-level PV configuration in the simulator YAML.
+
+    The simulator's PV physics live in the per-circuit producer templates;
+    this section carries device-identity metadata used to publish the PV
+    DeviceInstance and to decide whether the panel can island.
+
+    The section's own keys describe one inverter: the one a PV circuit feeds
+    (``pv_section.bound_pv_circuit_id``), or, on a panel with no PV circuit, the
+    one inverter no circuit feeds. ``inverters`` lists the inverters no circuit
+    feeds instead, each its own device; given, it lists every one of them
+    (``pv_section.unfed_inverters``).
+    """
+
+    enabled: bool
     # The `id` of the PV circuit feeding the inverter this section describes: see
     # `spec_generator.pv_section_circuit`.
     feed: str
+    inverters: list[PVInverterYAML]
 
 
 class EVSEConfigYAML(TypedDict, total=False):
@@ -186,6 +242,35 @@ class EVSEConfigYAML(TypedDict, total=False):
     firmware_version: str
     max_current_a: float
     feed: str
+
+
+class LugsConfigYAML(TypedDict, total=False):
+    """One set of lugs as commissioned, published in its ``connection`` node."""
+
+    feeds_role: str  # what the lugs feed where it is not a device of its own
+    backed_up: BackedUp
+    service_rating_a: int  # the utility service rating at a service entrance
+    overcurrent_protection_a: int
+    unvalued: list[str]
+
+
+class LugsSectionYAML(TypedDict, total=False):
+    """The panel's two sets of lugs, by direction."""
+
+    upstream: LugsConfigYAML
+    downstream: LugsConfigYAML
+
+
+class OutsideMeterYAML(TypedDict):
+    """A meter the panel reads that sits outside it, on no breaker space.
+
+    It meters the service conductor, as the emitter models such a meter, and
+    publishes as a circuit device with a meter alone, named after its device id as
+    the panel names it. ``id`` scopes that device id as a circuit's ``id`` does.
+    """
+
+    id: str
+    unvalued: NotRequired[list[str]]
 
 
 class BrokerConfigYAML(TypedDict, total=False):
@@ -262,6 +347,23 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     # pcs/priority. Absent, the circuit's position; None, a panel that publishes none
     # for it, as a clone writes it.
     pcs_priority: int | None
+    # The circuit as commissioned, published where the variant declares the property.
+    tags: list[str]  # info/tags: the loads it serves
+    locations: list[str]  # info/locations: where in the home
+    dedicated: bool  # info/dedicated: commissioned as serving a single load
+    nominal_voltage: float  # info/nominal-voltage
+    protection_functions: str  # breaker/protection-functions
+    feeds_role: str  # connection/feeds-role: what it feeds where that is no device
+    backed_up: BackedUp  # connection/backed-up
+    # The `id`s of the circuits sharing its meter and relay, as circuits sharing one
+    # breaker space do.
+    shared_with: list[str]
+    unvalued: list[str]
+    # The SPAN Drive it feeds, as commissioned: its maximum charge current, the
+    # user's limit where one is set, and what the drive leaves unvalued.
+    max_current_a: float
+    user_max_charge_current_a: int
+    device_unvalued: list[str]
 
 
 class TabSynchronization(TypedDict):
@@ -300,6 +402,8 @@ class SimulationConfig(TypedDict):
     pv: NotRequired[PVConfigYAML | None]
     evse: NotRequired[EVSEConfigYAML | None]
     broker: NotRequired[BrokerConfigYAML | None]
+    lugs: NotRequired[LugsSectionYAML]
+    outside_meters: NotRequired[list[OutsideMeterYAML]]
     # Identity metadata that surfaces in the panel DeviceInstance.
     firmware_version: NotRequired[str]
     hardware_version: NotRequired[str]

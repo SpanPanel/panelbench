@@ -30,6 +30,8 @@ SPAN_RELEASE_202639: Final = 202639
 """The SPAN release that reversed the BESS meter's sign, left the EVSE user limit
 unpublished until set, published one PV device per inverter, and added
 ``hardwareVersion`` to ``GET /api/v2/status`` (SPAN-API-Client-Docs, Release 202639).
+Its panels also name each circuit's device after its id, keeping the circuit's own
+name in ``info/name``, as the emitter's captured MAIN 32 on the release shows.
 """
 
 _RELEASE_SEGMENT: Final = re.compile(r"r(\d{6})")

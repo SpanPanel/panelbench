@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from ebus_panel_sim import DeviceInstance, DeviceManifest
 
+from panelbench.emitter_adapter import commissioning
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
     evse_circuit_serial,
@@ -28,13 +29,13 @@ from panelbench.emitter_adapter.instance_ids import (
     stable_circuit_uuid,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
-from panelbench.hardware import panel_hardware_version
+from panelbench.hardware import panel_hardware_version, panel_variant, publishes_pv_devices
 from panelbench.inverter import (
     normalise_inverter_type,
     template_inverter_type,
 )
 from panelbench.panel_models import DEFAULT_PANEL_SIZE, panel_model
-from panelbench.pv_section import bound_pv_circuit_id
+from panelbench.pv_section import UNFED_INVERTER_POSITION, bound_pv_circuit_id, unfed_inverters
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
         CircuitTemplateExtended,
         EVSEConfigYAML,
         PVConfigYAML,
+        PVInverterYAML,
         SimulationConfig,
     )
 
@@ -56,10 +58,9 @@ _VALID_RELAY_BEHAVIORS = frozenset({"controllable", "non-controllable", "always-
 
 # What the emitter is given for a circuit whose template records that its panel
 # publishes no breaker rating (`breaker_rating: null`, which a clone writes). The
-# emitter requires one (ebus-panel-sim 0.9.0, `manifest_physics` reads
-# `breaker-rating-a` with `_req_float`) and publishes it, so until it accepts the
-# absence this is what the wire shows; the round-trip fidelity test pins it as an
-# upstream difference rather than letting it pass as the panel's own value.
+# emitter requires one (ebus-panel-sim 0.10.0b2, `manifest_physics` reads
+# `breaker-rating-a` with `_req_float`), and the circuit lists `breaker/rating` as
+# unvalued, so it is never published.
 _UNPUBLISHED_BREAKER_RATING_A = 20.0
 
 
@@ -97,11 +98,13 @@ def build_manifest(profile: SimulationConfig) -> DeviceManifest:
         _panel_instance(profile),
         *_lugs_instances(profile),
         *_circuit_instances(profile),
+        *_outside_meter_instances(profile),
     ]
     bess = _bess_instance(profile)
     if bess is not None:
         instances.append(bess)
-    instances.extend(_pv_instances(profile))
+    if publishes_pv_devices(panel_variant(profile)):
+        instances.extend(_pv_instances(profile))
     instances.extend(_evse_instances(profile))
     mid = _mid_instance(profile)
     if mid is not None:
@@ -123,19 +126,30 @@ def _panel_instance(profile: SimulationConfig) -> DeviceInstance:
             "firmware-version": panel_firmware_version(profile),
             "hardware-version": panel_hardware_version(profile),
             "panel-size": str(panel_size),
-            "main-breaker-rating-a": str(int(panel_cfg.get("main_size", 200))),
+            **_main_breaker(panel_cfg.get("main_size", 200)),
             "panel-model": panel_model(profile),
             "postal-code": str(panel_cfg.get("postal_code", "94103")),
             "time-zone": str(panel_cfg.get("time_zone", "America/Los_Angeles")),
             "service-voltage-v": str(panel_cfg.get("service_voltage_v", 240.0)),
             "line-voltage-v": str(panel_cfg.get("line_voltage_v", 120.0)),
             "islandable": "true" if _islandable(profile) else "false",
+            **commissioning.metadata(commissioning.SITE, panel_cfg.get("site") or {}),
+            **commissioning.metadata(commissioning.SITE_LOCATION, panel_cfg),
+            **commissioning.metadata(commissioning.IMPORT_LIMITS, panel_cfg),
+            **commissioning.unvalued_metadata(panel_cfg.get("unvalued")),
         },
     )
 
 
+def _main_breaker(main_size: int | None) -> dict[str, str]:
+    """The main breaker's metadata, or none for a panel without one, which then
+    publishes no ``breaker`` node."""
+    return {} if main_size is None else {"main-breaker-rating-a": str(int(main_size))}
+
+
 def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     upstream_id, downstream_id = lugs_device_ids(profile["panel_config"]["serial_number"])
+    lugs = profile.get("lugs") or {}
     # Named after their ids, as SPAN release 202639 names every device it proxies or
     # synthesizes: the captured MAIN 32 publishes its lugs, battery and MID that way.
     # A name on the wire is a $description name only for these, so nothing a person
@@ -143,28 +157,56 @@ def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     return [
         DeviceInstance(
             entity_class="lugs",
-            instance_id=upstream_id,
-            display_name=upstream_id,
-            metadata={"direction": "upstream"},
-        ),
-        DeviceInstance(
-            entity_class="lugs",
-            instance_id=downstream_id,
-            display_name=downstream_id,
-            metadata={"direction": "downstream"},
-        ),
+            instance_id=device_id,
+            display_name=device_id,
+            metadata={
+                "direction": direction,
+                **commissioning.metadata(commissioning.LUGS, section),
+                **commissioning.unvalued_metadata(section.get("unvalued")),
+            },
+        )
+        for device_id, direction, section in (
+            (upstream_id, "upstream", lugs.get("upstream") or {}),
+            (downstream_id, "downstream", lugs.get("downstream") or {}),
+        )
     ]
+
+
+def _outside_meter_instances(profile: SimulationConfig) -> list[DeviceInstance]:
+    """Each meter outside the panel, a circuit device with a meter alone.
+
+    Named after its device id, which scopes its config ``id`` to the panel as a
+    circuit's is scoped, because the panel publishes no other name for it.
+    """
+    panel_id = profile["panel_config"]["serial_number"]
+    instances: list[DeviceInstance] = []
+    for meter in profile.get("outside_meters") or []:
+        instance_id = stable_circuit_uuid(panel_id, meter["id"])
+        instances.append(
+            DeviceInstance(
+                entity_class="remote-ct",
+                instance_id=instance_id,
+                display_name=instance_id,
+                metadata=commissioning.unvalued_metadata(meter.get("unvalued")),
+            )
+        )
+    return instances
 
 
 def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     templates = profile.get("circuit_templates") or {}
     panel_id = profile["panel_config"]["serial_number"]
+    named_by_id = not predates(panel_firmware_version(profile), SPAN_RELEASE_202639)
     instances: list[DeviceInstance] = []
     for idx, c in enumerate(profile.get("circuits") or [], start=1):
         tabs = c.get("tabs") or [0]
         template_name = c.get("template", "")
         template: CircuitTemplateExtended | None = templates.get(template_name)
         commissioned_system: str | None
+        # What the circuit records as unpublished by a null rather than in `unvalued`.
+        unpublished: list[str] = []
+        if c.get("pcs_priority", 0) is None:
+            unpublished.append("pcs/priority")
         if template is None:
             relay_behavior_raw = "controllable"
             priority = "NICE_TO_HAVE"
@@ -182,16 +224,19 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             # recorded as absent is not 20 A: see `_UNPUBLISHED_BREAKER_RATING_A`.
             rating = template.get("breaker_rating_a") or template.get("breaker_rating", 20)
             breaker_rating = float(rating) if rating is not None else _UNPUBLISHED_BREAKER_RATING_A
+            if rating is None:
+                unpublished.append("breaker/rating")
         relay_behavior = normalise_relay_behavior(relay_behavior_raw)
+        instance_id = stable_circuit_uuid(panel_id, c["id"])
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
-                instance_id=stable_circuit_uuid(panel_id, c["id"]),
-                # The emitter publishes this as both the device's $description name and
-                # its info/name. SPAN release 202639 names the device after its id and
-                # keeps this in info/name; one display name cannot be both, so the
-                # circuit keeps the name people read until the emitter separates them.
+                instance_id=instance_id,
+                # The circuit's own name, published as its info/name. From SPAN release
+                # 202639 the panel names the device itself after its id, so that is its
+                # $description name; before, the device carries the circuit's name too.
                 display_name=c.get("name", c["id"]),
+                description_name=instance_id if named_by_id else None,
                 metadata={
                     "tab-numbers": ",".join(str(int(t)) for t in tabs if t),
                     "breaker-rating-a": str(breaker_rating),
@@ -235,10 +280,38 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     **(
                         {"commissioned-system": commissioned_system} if commissioned_system else {}
                     ),
+                    **_solar_role(profile, template),
+                    **commissioning.metadata(commissioning.CIRCUIT, c),
+                    **_shared_with(panel_id, c),
+                    **commissioning.unvalued_metadata(c.get("unvalued"), unpublished),
                 },
             ),
         )
     return instances
+
+
+def _solar_role(
+    profile: SimulationConfig, template: CircuitTemplateExtended | None
+) -> dict[str, str]:
+    """A PV circuit's feeds role, under a variant that publishes no PV device.
+
+    The inverter is then no device of its own: the circuit feeding it says what it
+    feeds instead, and the emitter books its power as solar. A role the circuit states
+    itself, in ``feeds_role``, is written after this and wins.
+    """
+    if template is None or template.get("device_type") != "pv":
+        return {}
+    if publishes_pv_devices(panel_variant(profile)):
+        return {}
+    return {"feeds-role": "SOLAR"}  # eBus connection/feeds-role SOLAR
+
+
+def _shared_with(panel_id: str, circuit: CircuitDefinitionExtended) -> dict[str, str]:
+    """The circuits sharing *circuit*'s meter and relay, by device id, where it names any."""
+    peers = circuit.get("shared_with") or []
+    if not peers:
+        return {}
+    return {"shared-with-device-ids": ",".join(stable_circuit_uuid(panel_id, p) for p in peers)}
 
 
 def _energy_seeds(template: CircuitTemplateExtended | None) -> dict[str, str]:
@@ -278,9 +351,12 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
     if "firmware_version" in bess_cfg:
         bess_meta["firmware-version"] = str(bess_cfg["firmware_version"])
     if "feed" in bess_cfg:
-        bess_meta["feed"] = str(bess_cfg["feed"])
+        bess_meta["feed"] = stable_circuit_uuid(
+            profile["panel_config"]["serial_number"], str(bess_cfg["feed"])
+        )
     if "initial_soe_kwh" in bess_cfg:
         bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
+    bess_meta.update(commissioning.unvalued_metadata(bess_cfg.get("unvalued")))
     instance_id = bess_device_id(profile["panel_config"]["serial_number"], bess_cfg)
     return DeviceInstance(
         entity_class="bess",
@@ -341,6 +417,7 @@ def _mid_instance(profile: SimulationConfig) -> DeviceInstance | None:
     mid_hardware = bess_cfg.get("mid_hardware_version")
     if mid_hardware is not None:
         metadata["hardware-version"] = str(mid_hardware)
+    metadata.update(commissioning.unvalued_metadata(bess_cfg.get("mid_unvalued")))
     instance_id = mid_device_id(profile["panel_config"]["serial_number"], bess_cfg)
     return DeviceInstance(
         entity_class="mid",
@@ -368,14 +445,18 @@ def pv_section_circuit(profile: SimulationConfig) -> CircuitDefinitionExtended |
 
 
 def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
-    """The single PV device this panel has always published, fed by ``pv_section_circuit``."""
+    """The single PV device this panel has always published, fed by ``pv_section_circuit``.
+
+    With no PV circuit, the inverter no circuit feeds that the section's own keys
+    describe, where they describe one (``pv_section.unfed_inverters``).
+    """
     pv_cfg = profile.get("pv") or {}
     circuit = pv_section_circuit(profile)
-    if not pv_cfg.get("enabled") and circuit is None:
+    if circuit is None and unfed_inverters(profile) != "section":
         return None
     relative_position = pv_cfg.get("relative_position")
     if relative_position is None:
-        relative_position = "IN_PANEL" if circuit is not None else "UPSTREAM"
+        relative_position = "IN_PANEL" if circuit is not None else UNFED_INVERTER_POSITION
     templates = profile.get("circuit_templates") or {}
     # With no PV circuit -- an inverter upstream of the panel, or a config written
     # before templates carried `device_type` -- the first producer's template is the
@@ -397,12 +478,13 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
             feed=_circuit_device_id(profile, circuit),
             inverter_template=inverter_template or {},
             relative_position=str(relative_position),
+            firmware=_circuit_firmware(circuit, pv_cfg),
         ),
     )
 
 
 def _inverter_identity(
-    circuit: CircuitDefinitionExtended | None, defaults: PVConfigYAML
+    circuit: CircuitDefinitionExtended | None, defaults: PVInverterYAML
 ) -> dict[str, str]:
     """The ``info`` metadata naming the inverter *circuit* feeds.
 
@@ -429,20 +511,21 @@ def _inverter_identity(
 def _pv_metadata(
     profile: SimulationConfig,
     circuit: CircuitDefinitionExtended | None,
-    defaults: PVConfigYAML,
+    defaults: PVInverterYAML,
     *,
     feed: str | None,
     inverter_template: Mapping[str, object],
     relative_position: str,
+    firmware: str | None,
 ) -> dict[str, str]:
     """One inverter's manifest metadata, for the single device and for each of several.
 
     *defaults* is the top-level ``pv`` section for the inverter ``pv_section_circuit``
-    binds it to and empty for the others. Its declared inverter type wins over
-    *inverter_template*'s. Its nameplate is read only where there is no circuit:
-    the circuit template's is the one source, and the loader has folded the
-    section's into it. The firmware version is not read from *defaults*: see
-    ``_circuit_firmware``.
+    binds it to, the inverter itself for one no circuit feeds listed in the
+    section's ``inverters``, and empty for the others. Its declared inverter type
+    wins over *inverter_template*'s. Its nameplate is read only where there is no
+    circuit: the circuit template's is the one source, and the loader has folded the
+    section's into it. *firmware* is the caller's: see ``_circuit_firmware``.
     """
     declared_inverter = defaults.get("inverter_type")
     inverter_type = (
@@ -464,7 +547,6 @@ def _pv_metadata(
         "inverter-type": inverter_type,
         "relative-position": relative_position,
     }
-    firmware = _circuit_firmware(circuit, profile.get("pv") or {})
     if firmware is not None:
         metadata["firmware-version"] = firmware
     if feed is not None:
@@ -500,11 +582,23 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     Every PV device is named after its own device id, as SPAN firmware names an
     inverter (both public MAIN 32 captures, r202633 and r202639), so no name
     follows a circuit's place in the list.
+
+    The inverters no circuit feeds that the section's ``inverters`` lists follow,
+    each its own device (``_unfed_pv_instances``).
     """
     circuits = _circuits_for_device_type(profile, "pv")
     if len(circuits) < 2 or predates(panel_firmware_version(profile), SPAN_RELEASE_202639):
         single = _pv_instance(profile)
-        return [] if single is None else [single]
+        fed = [] if single is None else [single]
+    else:
+        fed = _fed_pv_instances(profile, circuits)
+    return [*fed, *_unfed_pv_instances(profile, numbered_after=len(fed))]
+
+
+def _fed_pv_instances(
+    profile: SimulationConfig, circuits: list[CircuitDefinitionExtended]
+) -> list[DeviceInstance]:
+    """One PV device per PV circuit, each fed by its own circuit."""
     panel_id = profile["panel_config"]["serial_number"]
     pv_cfg = profile.get("pv") or {}
     section_circuit = pv_section_circuit(profile)
@@ -521,6 +615,7 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             feed=circuit_id,
             inverter_template=templates.get(circuit["template"]) or {},
             relative_position=str(defaults.get("relative_position", "IN_PANEL")),
+            firmware=_circuit_firmware(circuit, pv_cfg),
         )
         identifier = metadata.get("serial-number") or metadata.get("model")
         instance_id = pv_inverter_device_id(panel_id, identifier, circuit_id)
@@ -530,6 +625,48 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                 instance_id=instance_id,
                 display_name=instance_id,
                 metadata=metadata,
+            )
+        )
+    return instances
+
+
+def _unfed_pv_instances(profile: SimulationConfig, *, numbered_after: int) -> list[DeviceInstance]:
+    """One PV device per inverter the ``pv`` section's ``inverters`` lists, fed by no circuit.
+
+    As release 202639 publishes each inverter of a panel whose inverters no circuit
+    feeds. Each is identified and rated by its own entry, its firmware version
+    defaulting to the section's as every inverter's does (``_circuit_firmware``), and
+    placed upstream of the panel unless it says otherwise, as the section's own
+    inverter is with no circuit. Numbered after the inverters PV circuits feed, so an
+    id defaulted by number never repeats one of theirs.
+    """
+    if unfed_inverters(profile) != "inverters":
+        return []
+    pv_cfg = profile.get("pv") or {}
+    panel_id = profile["panel_config"]["serial_number"]
+    inverter_template: Mapping[str, object] = _first_producer_template(profile) or {}
+    instances: list[DeviceInstance] = []
+    for number, inverter in enumerate(pv_cfg.get("inverters") or [], start=numbered_after + 1):
+        own_firmware = inverter.get("firmware_version")
+        instance_id = pv_device_id(panel_id, inverter, number)
+        instances.append(
+            DeviceInstance(
+                entity_class="pv",
+                instance_id=instance_id,
+                display_name=instance_id,
+                metadata=_pv_metadata(
+                    profile,
+                    None,
+                    inverter,
+                    feed=None,
+                    inverter_template=inverter_template,
+                    relative_position=str(
+                        inverter.get("relative_position", UNFED_INVERTER_POSITION)
+                    ),
+                    firmware=(
+                        str(own_firmware) if own_firmware else _circuit_firmware(None, pv_cfg)
+                    ),
+                ),
             )
         )
     return instances
@@ -592,6 +729,9 @@ def _evse_metadata(
         "serial-number": evse_circuit_serial(circuit)
         or evse_serial_number(evse_cfg, panel_id, idx),
     }
+    if circuit is not None:
+        metadata.update(commissioning.metadata(commissioning.EVSE, circuit))
+        metadata.update(commissioning.unvalued_metadata(circuit.get("device_unvalued")))
     if feed:
         metadata["feed"] = feed
     return metadata

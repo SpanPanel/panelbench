@@ -107,9 +107,9 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
         device.get_property("info", "model"): device for device in _inverters(recorder).values()
     }
     assert set(inverters) == {"IQ8PLUS-72-2-US", "SE3800H-US"}
-    assert inverters["IQ8PLUS-72-2-US"].get_property("info", "nominal-power") == "10000.0"
+    assert inverters["IQ8PLUS-72-2-US"].get_property("info", "nominal-power") == "10000"
     added = inverters["SE3800H-US"]
-    assert added.get_property("info", "nominal-power") == "3800.0"
+    assert added.get_property("info", "nominal-power") == "3800"
     assert added.get_property("info", "serial-number") == "sim-inv-0002"
 
     engine = runtime.engine
@@ -124,7 +124,7 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
     spaces = str(circuit_device.get_property("info", "spaces"))
     assert [int(t) for t in spaces.split(",")] == first_time["tabs"]
     assert len(first_time["tabs"]) == 2
-    assert (circuit_device.description or {}).get("name") == "Solar Inverter 2"
+    assert circuit_device.get_property("info", "name") == "Solar Inverter 2"
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert not any("one tab" in message for message in warnings)
     assert not any("commissioned_system: pv" in message for message in warnings)

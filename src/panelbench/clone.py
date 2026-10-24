@@ -5,7 +5,8 @@ from a live panel, or read back from a published capture — and produces a comp
 YAML config dict matching the ``SimulationConfig`` TypedDict shape.
 
 Design principles:
-  - Each circuit gets its own template (``clone_{first position}``) for per-circuit
+  - Each circuit gets its own template (``clone_{first position}``, with a suffix for
+    each further circuit sharing that position) for per-circuit
     fidelity.  Users can consolidate via the dashboard later.
   - Energy profile mode is inferred from the circuit's ``connection`` capability,
     which names the DER it feeds.
@@ -19,14 +20,18 @@ import json
 import logging
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
 import yaml
+from ebus_panel_sim import EmitterError, PanelDefinition, Variant
+from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_tree
 from ebus_sdk import DiscoveredDevice
 
+from panelbench.emitter_adapter import commissioning
+from panelbench.hardware import relay_locks_priority, variant_for
 from panelbench.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
@@ -38,6 +43,7 @@ TYPE_BESS = "energy.ebus.device.bess"
 TYPE_PV = "energy.ebus.device.pv"
 TYPE_EVSE = "energy.ebus.device.evse"
 TYPE_MID = "energy.ebus.device.mid"
+TYPE_LUGS = "energy.ebus.device.lugs"
 
 COMMISSIONED_SYSTEM_FEEDS: Final[Mapping[str, str]] = MappingProxyType(
     {TYPE_PV: "pv", TYPE_BESS: "backup"}
@@ -59,6 +65,10 @@ _DEFAULT_MAIN_BREAKER_A: Final = 200
 # What sizes the simulated power range of a circuit that publishes no rating. Only
 # that: the clone records the rating as absent, and publishes none of its own.
 _MODELLING_BREAKER_A: Final = 20
+
+# What sizes the simulated battery of a panel that declares its capacity and publishes
+# none. Only that: the capacity stays unvalued on the wire.
+_MODELLING_BESS_KWH: Final = 13.5
 
 # A battery that publishes no `info/nominal-power` is given 5 kW per 13.5 kWh, a
 # Powerwall 2's continuous rating: the most common battery behind these panels, and
@@ -191,13 +201,16 @@ def translate_panel_tree(
     bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
     pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
     evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
+    unvalued = _unvalued_by_device(_emitter_reading(devices, panel_device_id))
+    variant = variant_for(_get_prop(devices, panel_device_id, "info", "hardware-version") or "")
 
     # Build feed cross-reference: circuit_uuid → device_type
     feed_map = _build_feed_map(devices, circuit_nodes)
 
-    # Extract panel-level values
-    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating")
-    if not main_breaker:
+    # Extract panel-level values. A panel declaring no main breaker has none; one
+    # declaring it unvalued still has one, which the modelling needs a size for.
+    main_breaker = _int_prop(devices, panel_device_id, "breaker", "rating") or None
+    if main_breaker is None and _declares(devices, panel_device_id, "breaker", "rating"):
         _LOGGER.warning(
             "Panel %s publishes no breaker/rating; cloning it with a %d A main breaker",
             panel_device_id,
@@ -215,6 +228,9 @@ def translate_panel_tree(
         "main_size": main_breaker,
         "latitude": 37.7,
         "longitude": -122.4,
+        **commissioning.config_values(
+            commissioning.SITE_LOCATION, _published_by(devices, panel_device_id)
+        ),
     }
     panel_device = devices.get(panel_device_id)
     panel_description = panel_device.description if panel_device is not None else None
@@ -228,6 +244,7 @@ def translate_panel_tree(
         panel_config["model"] = model
     _copy_envelope(devices, panel_device_id, panel_config)
     _copy_site_values(devices, panel_device_id, panel_config)
+    _copy_commissioning(devices, panel_device_id, panel_config, unvalued)
     shed_threshold = _soc_shed_threshold(devices, panel_device_id)
     if shed_threshold is not None:
         panel_config["soc_shed_threshold"] = shed_threshold
@@ -235,13 +252,23 @@ def translate_panel_tree(
     # Build per-circuit templates and definitions
     templates: dict[str, dict[str, object]] = {}
     circuits: list[dict[str, object]] = []
+    outside_meters: list[dict[str, object]] = []
     used_tabs: set[int] = set()
+    keys = _circuit_keys(devices, circuit_nodes)
 
     for node_uuid in sorted(circuit_nodes):
+        if _meters_outside_the_panel(devices, node_uuid):
+            outside_meters.append(
+                _outside_meter(len(outside_meters) + 1, unvalued.get(node_uuid, []))
+            )
+            continue
         result = _translate_circuit(
             devices,
             node_uuid,
             feed_map,
+            unvalued.get(node_uuid, []),
+            variant,
+            keys,
         )
         if result is None:
             continue
@@ -251,13 +278,18 @@ def translate_panel_tree(
         circuits.append(circuit_def)
         used_tabs.update(tabs)
 
-    # Enrich PV circuit template
+    # Enrich PV circuit template; an inverter no circuit feeds is the `pv` section's
+    unfed_pv: list[str] = []
     for pv_id in pv_nodes:
-        _enrich_pv_template(devices, circuit_nodes, pv_id, feed_map, templates, circuits)
+        if _circuit_feeding(devices, circuit_nodes, pv_id) is None:
+            unfed_pv.append(pv_id)
+        else:
+            _enrich_pv_template(devices, circuit_nodes, pv_id, templates, circuits, keys)
+    fed_pv = len(pv_nodes) - len(unfed_pv)
 
     # Enrich EVSE circuit templates
     for evse_id in evse_nodes:
-        _enrich_evse_template(devices, circuit_nodes, evse_id, feed_map, templates, circuits)
+        _enrich_evse_template(devices, circuit_nodes, evse_id, templates, circuits, unvalued, keys)
 
     # Unmapped tabs
     all_tabs = set(range(1, total_tabs + 1))
@@ -275,6 +307,13 @@ def translate_panel_tree(
             "enable_realistic_behaviors": True,
         },
     }
+    if outside_meters:
+        config["outside_meters"] = outside_meters
+    if unfed_pv:
+        config["pv"] = _pv_section(devices, unfed_pv, fed=fed_pv)
+    lugs = _lugs_config(devices, panel_device_id, unvalued)
+    if lugs:
+        config["lugs"] = lugs
 
     # The panel's firmware decides which side of SPAN release 202639 the clone
     # publishes (the BESS meter's sign, the EVSE limit), so a clone of a panel on an
@@ -292,7 +331,9 @@ def translate_panel_tree(
     # Build top-level BESS config (only when a battery is actually connected)
     mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
     for bess_id in bess_nodes:
-        bess_cfg = _build_bess_config(devices, bess_id, mid_nodes)
+        bess_cfg = _build_bess_config(
+            devices, panel_device_id, bess_id, mid_nodes, circuit_nodes, unvalued, keys
+        )
         if bess_cfg is not None:
             config["bess"] = bess_cfg
 
@@ -345,15 +386,15 @@ def update_config_from_scrape(
         return False
 
     circuit_nodes = _devices_of_type(scraped.devices, scraped.serial_number, TYPE_CIRCUIT)
+    keys = _circuit_keys(scraped.devices, circuit_nodes)
 
     changed = False
 
     for node_uuid in circuit_nodes:
-        spaces = _spaces_prop(scraped.devices, node_uuid)
-        if not spaces:
+        if node_uuid not in keys:
             continue
 
-        template_name = f"clone_{spaces[0]}"
+        template_name = _template_name(keys[node_uuid])
         template = templates.get(template_name)
         if not isinstance(template, dict):
             continue
@@ -552,6 +593,19 @@ def _bool_prop(
     return raw.lower() == "true"
 
 
+def _declares(
+    devices: Mapping[str, DiscoveredDevice],
+    device_id: str,
+    capability: str,
+    prop: str,
+) -> bool:
+    """Whether the device's ``$description`` declares the property, valued or not."""
+    device = devices.get(device_id)
+    if device is None or not isinstance(device.description, dict):
+        return False
+    return prop in device.get_node_properties(capability)
+
+
 def _is_settable(
     devices: Mapping[str, DiscoveredDevice],
     device_id: str,
@@ -665,6 +719,11 @@ def _build_feed_map(
     feed_map: dict[str, str] = {}
 
     for circuit_uuid in circuit_nodes:
+        # An inverter published as no device of its own: the circuit says it feeds solar.
+        # eBus connection/feeds-role SOLAR
+        if _get_prop(devices, circuit_uuid, "connection", "feeds-role") == "SOLAR":
+            feed_map[circuit_uuid] = "pv"
+            continue
         target = _get_prop(devices, circuit_uuid, "connection", "feeds-device-id")
         if not target:
             continue
@@ -808,11 +867,16 @@ def _translate_circuit(
     devices: Mapping[str, DiscoveredDevice],
     node_uuid: str,
     feed_map: dict[str, str],
+    unvalued: list[str],
+    variant: Variant,
+    keys: Mapping[str, str],
 ) -> tuple[str, dict[str, object], dict[str, object], list[int]] | None:
     """Translate a single circuit node into a template and definition.
 
-    Returns (template_name, template_dict, circuit_def, tabs) or None
-    if the circuit cannot be translated (missing space).
+    *unvalued* is what the circuit declares and leaves unvalued, *variant* the panel's,
+    and *keys* every circuit's key (``_circuit_keys``). Returns (template_name,
+    template_dict, circuit_def, tabs) or None if the circuit cannot be translated
+    (missing space).
     """
     tabs = _spaces_prop(devices, node_uuid)
     if not tabs:
@@ -828,6 +892,11 @@ def _translate_circuit(
     modelling_rating = breaker_rating or _MODELLING_BREAKER_A
     active_power = _float_prop(devices, node_uuid, "meter", "active-power")
     priority = _get_prop(devices, node_uuid, "load-shed", "priority") or "NEVER"
+    if priority == "UNKNOWN":
+        # Each priority carried over from the REST era publishes as UNKNOWN, so it
+        # reads back as one of them, as the emitter's own capture reads it; no config
+        # can name UNKNOWN itself.
+        priority = "NICE_TO_HAVE"
     # v1.0 publishes controllability directly as `switch/relay-controllable`, where
     # flat inferred it from `always-on`. Not a rename: `pcs/managed` is the opposite
     # sense (PCS manages this circuit), so mapping always-on onto it inverts the
@@ -848,14 +917,20 @@ def _translate_circuit(
     # value meaning "never shed"; a production capture publishes two `NEVER` circuits with
     # `$settable = true`, which no value-derived flag can produce.
     priority_locked = not _is_settable(devices, node_uuid, "load-shed", "priority")
+    # Under a variant whose locked relay locks the priority with it, that is the whole
+    # of the lock, and nothing more is recorded for it.
+    locked_with_the_relay = relay_locks_priority(variant) and not relay_controllable
     # A circuit SPAN adds for a commissioned PV or battery system is the third lock:
     # priority locked at NEVER on a locked relay.
     commissioned_system = (
         _commissioned_system(devices, node_uuid, name)
-        if priority_locked and not relay_controllable and priority == "NEVER"
+        if priority_locked
+        and not relay_controllable
+        and priority == "NEVER"
+        and not locked_with_the_relay
         else None
     )
-    never_backup = priority_locked and commissioned_system is None
+    never_backup = priority_locked and commissioned_system is None and not locked_with_the_relay
     if never_backup and priority != "OFF_GRID":
         # The panel contradicted itself: a circuit commissioned never-backup *is*
         # permanently OFF_GRID, and the emitter rejects the pair at construction rather
@@ -946,8 +1021,8 @@ def _translate_circuit(
         template["device_type"] = "pv"
 
     # Circuit definition
-    circuit_id = f"circuit_{space}"
-    template_name = f"clone_{space}"
+    circuit_id = _circuit_id(keys[node_uuid])
+    template_name = _template_name(keys[node_uuid])
 
     circuit_def: dict[str, object] = {
         "id": circuit_id,
@@ -957,9 +1032,153 @@ def _translate_circuit(
         # The panel's own value, or none where it publishes none, as a commissioned
         # PV circuit does: never the position-derived one PanelBench's configs get.
         "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
+        **commissioning.config_values(commissioning.CIRCUIT, _published_by(devices, node_uuid)),
     }
+    shared = _shared_with(devices, node_uuid, keys)
+    if shared:
+        circuit_def["shared_with"] = shared
+    # A rating or priority the panel publishes none of is recorded as null above.
+    recorded = {
+        path
+        for path, value in (
+            ("breaker/rating", breaker_rating),
+            ("pcs/priority", circuit_def["pcs_priority"]),
+        )
+        if value is None
+    }
+    if listed := [path for path in unvalued if path not in recorded]:
+        circuit_def["unvalued"] = listed
 
     return template_name, template, circuit_def, tabs
+
+
+def _meters_outside_the_panel(devices: Mapping[str, DiscoveredDevice], node_uuid: str) -> bool:
+    """Whether a circuit device is a meter outside the panel: it declares no space.
+
+    Read from the declaration, not the value, so a branch circuit whose spaces are
+    not yet published is not taken for one.
+    """
+    device = devices.get(node_uuid)
+    if device is None or not isinstance(device.description, dict):
+        return False
+    return "spaces" not in device.get_node_properties("info")
+
+
+def _outside_meter(ordinal: int, unvalued: list[str]) -> dict[str, object]:
+    """A meter outside the panel, as ``outside_meters`` holds it.
+
+    Its id is its place among the panel's such meters, as a circuit's is its first
+    space: the panel publishes nothing else to tell them apart.
+    """
+    meter: dict[str, object] = {"id": f"outside_meter_{ordinal}"}
+    if unvalued:
+        meter["unvalued"] = unvalued
+    return meter
+
+
+def _lugs_config(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    unvalued: Mapping[str, list[str]],
+) -> dict[str, object]:
+    """Each set of lugs' commissioning, by direction, where the panel records any."""
+    section: dict[str, object] = {}
+    for lugs_id in _devices_of_type(devices, panel_device_id, TYPE_LUGS):
+        direction = (_get_prop(devices, lugs_id, "info", "direction") or "").lower()
+        if direction not in ("upstream", "downstream"):
+            continue
+        lugs = commissioning.config_values(commissioning.LUGS, _published_by(devices, lugs_id))
+        if unvalued.get(lugs_id):
+            lugs["unvalued"] = unvalued[lugs_id]
+        if lugs:
+            section[direction] = lugs
+    return section
+
+
+def _copy_commissioning(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    panel_config: dict[str, object],
+    unvalued: Mapping[str, list[str]],
+) -> None:
+    """The panel's site and commissioned import limits, and what it leaves unvalued."""
+    published = _published_by(devices, panel_device_id)
+    site = commissioning.config_values(commissioning.SITE, published)
+    if site:
+        panel_config["site"] = site
+    panel_config.update(commissioning.config_values(commissioning.IMPORT_LIMITS, published))
+    if unvalued.get(panel_device_id):
+        panel_config["unvalued"] = unvalued[panel_device_id]
+
+
+def _published_by(
+    devices: Mapping[str, DiscoveredDevice], device_id: str
+) -> Callable[[str], str | None]:
+    """A device's published value for a ``node/property`` path, or None."""
+
+    def published(path: str) -> str | None:
+        node, _, prop = path.partition("/")
+        return _get_prop(devices, device_id, node, prop)
+
+    return published
+
+
+def _emitter_reading(
+    devices: Mapping[str, DiscoveredDevice], panel_device_id: str
+) -> PanelDefinition | None:
+    """The panel as the emitter's own capture reads it, unmasked, or None.
+
+    Read for what only the emitter can say: which declared properties the panel
+    leaves unvalued that a republish would otherwise value. A tree the emitter cannot
+    read is cloned without them, and said so.
+    """
+    try:
+        definition, _notes = definition_from_tree(
+            _as_tree(devices), mask=False, root=panel_device_id
+        )
+    except (CaptureError, EmitterError, ValueError, ArithmeticError) as exc:
+        # A value the emitter cannot parse, such as an infinite priority, is as
+        # unreadable to it as a malformed tree.
+        _LOGGER.warning(
+            "The emitter cannot read panel %s as a definition (%s); cloning it without "
+            "the properties it leaves unvalued",
+            panel_device_id,
+            exc,
+        )
+        return None
+    return definition
+
+
+def _as_tree(devices: Mapping[str, DiscoveredDevice]) -> Tree:
+    """Discovered devices as the emitter's capture reads a tree."""
+    tree: Tree = {}
+    for device_id, device in devices.items():
+        description = device.description
+        if not isinstance(description, dict):
+            continue
+        tree[device_id] = Device(
+            description=description,
+            properties={
+                f"{node}/{prop}": str(value)
+                for node, values in device.properties.items()
+                for prop, value in values.items()
+                if value is not None
+            },
+        )
+    return tree
+
+
+def _unvalued_by_device(reading: PanelDefinition | None) -> dict[str, list[str]]:
+    """Each device's declared and unvalued properties, by its device id on the panel."""
+    if reading is None:
+        return {}
+    found: dict[str, list[str]] = {}
+    for instance in reading.manifest.instances:
+        listed = instance.metadata.get("unvalued", "")
+        paths = sorted(path for path in listed.split(",") if path)
+        if paths:
+            found[instance.instance_id] = paths
+    return found
 
 
 def _commissioned_system(
@@ -991,17 +1210,27 @@ def _device_role_to_mode(device_role: str | None) -> str:
 
 def _build_bess_config(
     devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
     bess_node_id: str,
     mid_nodes: list[str],
+    circuit_nodes: list[str],
+    unvalued: Mapping[str, list[str]],
+    keys: Mapping[str, str],
 ) -> dict[str, object] | None:
     """Build top-level bess config from scraped BESS node properties.
 
     Returns ``None`` when the BESS node is an empty slot (no battery
-    connected) — indicated by a missing or zero nameplate capacity.
+    connected) — indicated by a zero nameplate capacity. A battery that publishes no
+    capacity is still a battery: what it leaves unvalued is listed in ``unvalued``,
+    and its MID's in ``mid_unvalued``.
     """
     nameplate = _float_prop(devices, bess_node_id, "info", "nameplate-capacity")
-    if not nameplate:
+    if nameplate == 0:
         return None
+    if nameplate is None:
+        # Declared and unpublished: the battery is there, and its unvalued capacity
+        # is listed with the rest; the modelling still needs a size.
+        nameplate = _MODELLING_BESS_KWH
     # `info/nominal-power` is the battery's "nameplate maximum rated power output"
     # (eBus devices/bess.md, `info`); a battery that publishes none is scaled from its
     # capacity by `_BESS_W_PER_KWH_UNPUBLISHED`. Either way, charge as discharge.
@@ -1035,21 +1264,123 @@ def _build_bess_config(
     )
     if mid is not None:
         _copy_info(devices, mid, bess, _MID_IDENTITY)
+        if unvalued.get(mid):
+            bess["mid_unvalued"] = unvalued[mid]
+    if unvalued.get(bess_node_id):
+        bess["unvalued"] = unvalued[bess_node_id]
+    bess.update(_bess_place(devices, panel_device_id, bess_node_id, circuit_nodes, keys))
     return bess
+
+
+def _bess_place(
+    devices: Mapping[str, DiscoveredDevice],
+    panel_device_id: str,
+    bess_node_id: str,
+    circuit_nodes: list[str],
+    keys: Mapping[str, str],
+) -> dict[str, object]:
+    """Where the panel says its battery hangs, as the ``bess`` section records it.
+
+    A circuit feeding it puts it in the panel, fed by that circuit; lugs fed by it put
+    it upstream. A battery neither names is in the panel with no feed, which is how
+    the emitter publishes no connection for it at all.
+    """
+    feeding = _circuit_feeding(devices, circuit_nodes, bess_node_id)
+    if feeding is not None and feeding in keys:
+        return {"relative_position": "IN_PANEL", "feed": _circuit_id(keys[feeding])}
+    lugs = _devices_of_type(devices, panel_device_id, TYPE_LUGS)
+    fed_by = {_get_prop(devices, lugs_id, "connection", "fed-by-device-id") for lugs_id in lugs}
+    if bess_node_id in fed_by:
+        return {"relative_position": "UPSTREAM"}
+    return {"relative_position": "IN_PANEL"}
+
+
+# An unfed inverter's `info` properties and the `pv` section keys it is written to.
+_PV_SECTION_IDENTITY: Final = (
+    ("vendor-name", "vendor"),
+    ("model", "product_name"),
+    ("serial-number", "serial_number"),
+    ("firmware-version", "firmware_version"),
+)
+
+
+def _pv_section(
+    devices: Mapping[str, DiscoveredDevice], unfed: list[str], *, fed: int
+) -> dict[str, object]:
+    """The top-level ``pv`` section for the inverters no circuit feeds, in the panel.
+
+    The section itself describes the one such inverter of a panel with no PV circuit,
+    as a panel before release 202639 publishes its one aggregate inverter. Otherwise,
+    several of them, or one beside *fed* inverters PV circuits feed, each is an entry
+    of its ``inverters``, as release 202639 publishes each its own device
+    (``pv_section.unfed_inverters``).
+    """
+    if len(unfed) == 1 and not fed:
+        return {"enabled": True, **_unfed_inverter(devices, unfed[0])}
+    return {"enabled": True, "inverters": [_unfed_inverter(devices, pv_id) for pv_id in unfed]}
+
+
+def _unfed_inverter(devices: Mapping[str, DiscoveredDevice], pv_id: str) -> dict[str, object]:
+    """An inverter no circuit feeds, in the panel: its published identity and rating."""
+    inverter: dict[str, object] = {"relative_position": "IN_PANEL"}
+    _copy_info(devices, pv_id, inverter, _PV_SECTION_IDENTITY)
+    rating = _float_prop(devices, pv_id, "info", "nominal-power")
+    if rating is not None and rating > 0:
+        inverter["nameplate_capacity_w"] = rating
+    return inverter
+
+
+def _circuit_keys(
+    devices: Mapping[str, DiscoveredDevice], circuit_nodes: list[str]
+) -> dict[str, str]:
+    """Each branch circuit's key in the clone, by its device id on the panel.
+
+    Its first space, which names it in every clone. Circuits that share a space, as
+    a meter shared by two circuits does, take that key in device id order, each after
+    the first with a suffix, so each keeps its own and keeps it on a later clone.
+    """
+    by_space: dict[int, list[str]] = {}
+    for node_uuid in sorted(circuit_nodes):
+        spaces = _spaces_prop(devices, node_uuid)
+        if spaces:
+            by_space.setdefault(spaces[0], []).append(node_uuid)
+    return {
+        node_uuid: str(space) if n == 1 else f"{space}_{n}"
+        for space, sharing in by_space.items()
+        for n, node_uuid in enumerate(sharing, start=1)
+    }
+
+
+def _circuit_id(key: str) -> str:
+    """The clone's id for the circuit whose key (``_circuit_keys``) is *key*."""
+    return f"circuit_{key}"
+
+
+def _template_name(key: str) -> str:
+    """The clone's template for the circuit whose key is *key*."""
+    return f"clone_{key}"
+
+
+def _shared_with(
+    devices: Mapping[str, DiscoveredDevice], node_uuid: str, keys: Mapping[str, str]
+) -> list[str]:
+    """The circuits sharing this circuit's meter and relay, by their ids in the clone."""
+    raw = _get_prop(devices, node_uuid, "meter", "shared-with-device-ids") or ""
+    return [_circuit_id(keys[peer]) for peer in raw.split(",") if peer in keys]
 
 
 def _enrich_pv_template(
     devices: Mapping[str, DiscoveredDevice],
     circuit_nodes: list[str],
     pv_node_id: str,
-    feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
     circuits: list[dict[str, object]],
+    keys: Mapping[str, str],
 ) -> None:
     """Enrich the PV circuit template with nameplate capacity and solar profile, and
     write the inverter's identity onto the circuit that feeds it."""
     circuit_uuid = _circuit_feeding(devices, circuit_nodes, pv_node_id)
-    template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
+    template = _find_template_for_feed(circuit_uuid, templates, keys)
     if template is None:
         return
 
@@ -1073,14 +1404,16 @@ def _enrich_evse_template(
     devices: Mapping[str, DiscoveredDevice],
     circuit_nodes: list[str],
     evse_node_id: str,
-    feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
     circuits: list[dict[str, object]],
+    unvalued: Mapping[str, list[str]],
+    keys: Mapping[str, str],
 ) -> None:
     """Enrich the EVSE circuit template with time-of-day charging profile, and write
-    the drive's serial and firmware onto the circuit that feeds it."""
+    the drive's identity, its commissioned charge limits and what it leaves unvalued
+    onto the circuit that feeds it."""
     circuit_uuid = _circuit_feeding(devices, circuit_nodes, evse_node_id)
-    template = _find_template_for_feed(circuit_uuid, feed_map, templates, devices)
+    template = _find_template_for_feed(circuit_uuid, templates, keys)
     if template is None:
         return
 
@@ -1096,6 +1429,11 @@ def _enrich_evse_template(
     circuit = _circuit_using(template, templates, circuits)
     if circuit is not None:
         _copy_info(devices, evse_node_id, circuit, _EVSE_IDENTITY)
+        circuit.update(
+            commissioning.config_values(commissioning.EVSE, _published_by(devices, evse_node_id))
+        )
+        if unvalued.get(evse_node_id):
+            circuit["device_unvalued"] = unvalued[evse_node_id]
 
 
 def _circuit_using(
@@ -1128,21 +1466,11 @@ def _copy_info(
 
 def _find_template_for_feed(
     circuit_uuid: str | None,
-    feed_map: dict[str, str],
     templates: dict[str, dict[str, object]],
-    devices: Mapping[str, DiscoveredDevice],
+    keys: Mapping[str, str],
 ) -> dict[str, object] | None:
-    """Find the template associated with a circuit UUID via the feed map.
-
-    The feed map maps circuit_uuid -> device_role. Templates are keyed
-    ``clone_{first position}``, so this resolves the circuit's ``info/spaces`` and
-    takes the first entry — the same key ``_translate_circuit`` built it under.
-    """
-    if circuit_uuid is None:
+    """The template of the circuit with device id *circuit_uuid*, by its key
+    (``_circuit_keys``): the name ``_translate_circuit`` built it under."""
+    if circuit_uuid is None or circuit_uuid not in keys:
         return None
-
-    spaces = _spaces_prop(devices, circuit_uuid)
-    if not spaces:
-        return None
-
-    return templates.get(f"clone_{spaces[0]}")
+    return templates.get(_template_name(keys[circuit_uuid]))

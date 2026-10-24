@@ -136,7 +136,7 @@ switchable and not always-on, and its priority is `OFF_GRID` and can be changed,
    same panel come back on the new release.
 
 Run both from the same checkout with the same `HTTP_PORT`, `DASHBOARD_PORT` and `BROKER_PORT`; the defaults are fine. The second instance must answer where the
-first did. The two must never run at once: `run-local.sh` keeps one simulator PID file per checkout, and both would advertise the same serial number.
+first did. The two must never run at once: both would claim the same ports and advertise the same serial number.
 
 From release 202639 the second instance does what SPAN's public [CHANGELOG](https://github.com/spanio/SPAN-API-Client-Docs) lists for that release. It publishes
 the battery's own power reading as positive while discharging, and leaves a SPAN Drive's user charge limit unpublished until one is set. It publishes the
@@ -171,6 +171,29 @@ out of `unmapped_tabs`. PanelBench warns when a solar circuit sits on one tab. T
 - Where the config has a top-level `pv` section, as a clone of a template does, set `pv.feed` to the `id` of the original inverter's circuit. The section
   describes one inverter, the one whose circuit `pv.feed` names; with two PV circuits and no `pv.feed` it describes neither, and the original inverter would
   lose the identity the first config gave it. A clone of your panel names each inverter on its own circuit instead, and needs no `pv.feed`.
+
+### Inverters no circuit feeds
+
+An inverter can sit where no circuit of the panel feeds it, ahead of the panel beside a battery. From release 202639 the panel publishes each such inverter as
+its own device, fed by no circuit. List them under the `pv` section's `inverters`, each with its own `vendor`, `product_name` and `nameplate_capacity_w`, and
+optionally `serial_number`, `firmware_version`, `inverter_type` and `relative_position` (`UPSTREAM` unless it says otherwise):
+
+```yaml
+pv:
+  enabled: true
+  inverters:
+    - vendor: SolarEdge
+      product_name: SE7600H-US
+      nameplate_capacity_w: 7600.0
+    - vendor: SolarEdge
+      product_name: SE7600H-US
+      nameplate_capacity_w: 7600.0
+```
+
+With `inverters` given, the section's own keys describe only an inverter a PV circuit feeds, so on a panel with none they are refused; `firmware_version` stays
+every inverter's default. A panel with one such inverter and no PV circuit may still describe it in the section's own keys, as a clone of a panel before release
+202639 does, and a config naming such a release takes one solar device at most. A clone writes whichever of the two describes the panel. The dashboard shows
+them in a card of their own. Their production is not yet published: the emitter takes solar power from circuits alone.
 
 ## Running with Docker (Linux only)
 
@@ -375,7 +398,7 @@ All variables can also be passed as CLI arguments (`--help` for full list).
 | `HTTP_PORT`         | `8081`          | Bootstrap HTTP server port (TLS on +1000) |
 | `DASHBOARD_PORT`    | `18080`         | Dashboard web UI port                     |
 | `BROKER_HOST`       | `localhost`     | MQTT broker hostname                      |
-| `BROKER_PORT`       | `18883`         | MQTTS broker port                         |
+| `BROKER_PORT`       | `18883`         | MQTTS broker port, one broker per port    |
 | `ADVERTISE_ADDRESS` | auto-detected   | IP to advertise via mDNS                  |
 
 ## Development

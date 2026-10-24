@@ -5,7 +5,9 @@ The emitter reads the panel's `firmware-version` once, at construction. A
 `spanos3/r202633/02`, keeps the earlier conventions; anything else,
 including a simulator string such as `sim/v0.1.0`, gets the current ones. Two
 conventions differ: the BESS meter's sign, and whether an EVSE's
-`config/user-max-charge-current` is published before a user sets it.
+`config/user-max-charge-current` is published before a user sets it. A third,
+what a circuit's device is named, PanelBench decides by the same rule and gives
+the emitter as each circuit's description name.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from panelbench.emitter_adapter.wire_capture import discovered_devices
 from panelbench.firmware import SPAN_RELEASE_202639, predates
 from tests._helpers import (
     CURRENT_FIRMWARE,
@@ -86,3 +89,22 @@ async def test_panelbench_reads_the_release_as_the_emitter_publishes_it(
 
     emitter_publishes_earlier = meter < 0
     assert predates(firmware, SPAN_RELEASE_202639) is emitter_publishes_earlier
+
+
+@pytest.mark.parametrize(
+    ("firmware", "named_by_id"), [(EARLIER_FIRMWARE, False), (CURRENT_FIRMWARE, True)]
+)
+async def test_a_circuit_device_is_named_after_its_id_from_202639(
+    tmp_path: Path, firmware: str, named_by_id: bool
+) -> None:
+    """From release 202639 the panel names each circuit's device after its id; the
+    circuit keeps its own name in `info/name` on either side."""
+    runtime, recorder = await _ticked(tmp_path, firmware)
+    devices = discovered_devices(recorder.retained)
+    names = {c["id"]: c["name"] for c in runtime.engine.config["circuits"]}
+
+    for uuid, circuit_id in runtime.uuid_to_circuit_id.items():
+        circuit = devices[uuid]
+        assert circuit.get_property("info", "name") == names[circuit_id]
+        expected = uuid if named_by_id else names[circuit_id]
+        assert (circuit.description or {}).get("name") == expected

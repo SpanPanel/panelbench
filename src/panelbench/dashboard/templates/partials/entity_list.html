@@ -36,6 +36,25 @@
   </div>
 </div>
 
+{% if unfed_inverters is defined and unfed_inverters %}
+<div class="card">
+  <div class="card-header">
+    <h2>Inverters No Circuit Feeds ({{ unfed_inverters|length }})</h2>
+  </div>
+  <p class="hint" style="padding: 0.5rem 1rem;">Each is published as its own device, fed by no circuit. They are listed in the config's <code>pv.inverters</code>.</p>
+  <div class="entity-table">
+    {% for inverter in unfed_inverters %}
+    <div class="entity-row">
+      <span class="badge badge-pv">PV</span>
+      <span class="entity-name">{{ [inverter.vendor, inverter.model]|select|join(' ') or 'Inverter' }}</span>
+      <span class="entity-tabs">{{ inverter.relative_position|replace('_', ' ')|lower }}</span>
+      {% if inverter.nameplate_w is not none %}<span class="entity-power">{{ inverter.nameplate_w|round|int }}W nameplate</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if not readonly and unmapped_tabs is defined and unmapped_tabs %}
 <div class="card unmapped-card">
   <div class="card-header">

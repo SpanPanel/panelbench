@@ -55,8 +55,8 @@ _CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
 _NODE = "power-flows"
 _TERMS = ("grid", "pv", "battery", "site")
 
-_TOLERANCE = 1e-6
-"""Absolute watts the balance may miss by.
+_FLOAT_ERROR = 1e-6
+"""Absolute watts the balance may miss by beyond the terms' published rounding.
 
 Generous against float error and mean against a real defect. The terms are sums
 of O(10^4) W readings, so double-precision error lands around 1e-9; the frame
@@ -65,18 +65,34 @@ plausible defect hiding between the two.
 """
 
 
-def _flows(captured: dict[str, dict[str, str]]) -> dict[str, dict[str, float]]:
-    """Every device's `power-flows` values, by device id.
+def _rounding(payload: str) -> float:
+    """The most a published term can differ from the value it was rounded from.
+
+    A SPAN panel publishes each flow in its own literal form, some as integers and
+    `site` with one decimal, and the emitter does the same. Each term is then off by
+    up to half its last place, so the four can miss zero by the sum of those halves.
+    """
+    _whole, _point, decimals = payload.partition(".")
+    return 0.5 * 10.0 ** -len(decimals)
+
+
+def _tolerance(payloads: dict[str, str]) -> float:
+    """What the balance may miss by: every term's rounding, and float error."""
+    return sum(_rounding(payload) for payload in payloads.values()) + _FLOAT_ERROR
+
+
+def _flows(captured: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+    """Every device's `power-flows` payloads, by device id.
 
     Keyed off the published topic rather than off a device type, because the
     question is about whatever publishes the capability — a second enclosure on
     the tree would have to balance too, and finding it by type would need this
     test to know which types can carry the node.
     """
-    found: dict[str, dict[str, float]] = {}
+    found: dict[str, dict[str, str]] = {}
     for device_id, body in captured.items():
         values = {
-            topic.split("/", 1)[1]: float(payload)
+            topic.split("/", 1)[1]: payload
             for topic, payload in body.items()
             if topic.startswith(f"{_NODE}/") and not topic.startswith("$")
         }
@@ -86,12 +102,18 @@ def _flows(captured: dict[str, dict[str, str]]) -> dict[str, dict[str, float]]:
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def flows() -> dict[str, dict[str, float]]:
+async def flows() -> dict[str, dict[str, str]]:
     return _flows(await capture(_CONFIG))
 
 
+def test_a_term_may_be_off_by_half_its_last_place() -> None:
+    """An integer may be off by half a watt, a one-decimal reading by 0.05 W."""
+    assert _rounding("-469") == 0.5
+    assert _rounding("3968.9") == pytest.approx(0.05)
+
+
 @pytest.mark.asyncio(loop_scope="module")
-async def test_something_publishes_power_flows(flows: dict[str, dict[str, float]]) -> None:
+async def test_something_publishes_power_flows(flows: dict[str, dict[str, str]]) -> None:
     """Guard the premise: an empty capture would make every assertion below vacuous.
 
     The failure mode this prevents is the quiet one — a rename or a config change
@@ -102,7 +124,7 @@ async def test_something_publishes_power_flows(flows: dict[str, dict[str, float]
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_every_publisher_carries_all_four_terms(flows: dict[str, dict[str, float]]) -> None:
+async def test_every_publisher_carries_all_four_terms(flows: dict[str, dict[str, str]]) -> None:
     """A balance missing a term is not a balance, and would silently pass as one."""
     for device_id, values in flows.items():
         missing = set(_TERMS) - set(values)
@@ -110,7 +132,7 @@ async def test_every_publisher_carries_all_four_terms(flows: dict[str, dict[str,
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_the_four_flows_sum_to_zero(flows: dict[str, dict[str, float]]) -> None:
+async def test_the_four_flows_sum_to_zero(flows: dict[str, dict[str, str]]) -> None:
     """`grid + pv + battery + site == 0`, for every device that publishes the node.
 
     Sum to **zero**, not "three sum to the fourth". All four are published in one
@@ -130,10 +152,11 @@ async def test_the_four_flows_sum_to_zero(flows: dict[str, dict[str, float]]) ->
     device types can carry the capability to check that.
     """
     for device_id, values in flows.items():
-        terms = {name: values[name] for name in _TERMS}
+        payloads = {name: values[name] for name in _TERMS}
+        terms = {name: float(payload) for name, payload in payloads.items()}
         residual = sum(terms.values())
 
-        assert abs(residual) <= _TOLERANCE, (
+        assert abs(residual) <= _tolerance(payloads), (
             f"{device_id} {_NODE} does not sum to zero: "
             + " + ".join(f"{name}={value}" for name, value in terms.items())
             + f" = {residual}.\n"

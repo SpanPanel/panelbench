@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.7.0
+
+- spanos3/r202639/03 batch 2: PanelBench reproduces more of this firmware's data.
+
 ## 2.6.0 — 2026-10-08
 
 The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's. The add-on
