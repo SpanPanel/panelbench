@@ -19,6 +19,7 @@ from panelbench.emitter_adapter.wire_capture import capture_retained, discovered
 from panelbench.hardware import (
     DEFAULT_HARDWARE_VERSION,
     panel_hardware_version,
+    proves_proximity,
     status_hardware_version,
 )
 from tests._helpers import (
@@ -119,3 +120,14 @@ async def test_a_clone_keeps_the_source_hardware_version(tmp_path: Path) -> None
     cloned = translate_panel_tree(_SERIAL, devices)
 
     assert cloned["hardware_version"] == "2.0"
+
+
+@pytest.mark.spec_only
+def test_passphrase_only_hardware_reports_its_string_and_no_proximity() -> None:
+    """The string the reference captures' panels publish is reported over REST as it is,
+    and that hardware offers no proof of proximity, so its status never reports it."""
+    config = _panel(firmware=CURRENT_FIRMWARE, hardware="3.0")
+
+    assert status_hardware_version(config) == panel_hardware_version(config) == "3.0"
+    assert proves_proximity(config) is False
+    assert proves_proximity(_panel(firmware=CURRENT_FIRMWARE, hardware="1.2")) is True

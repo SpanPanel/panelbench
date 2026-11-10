@@ -65,3 +65,15 @@ DEFAULT_BROKER_PASSWORD = "sim-password"
 # other simulated identity here, so it attests the mapping rather than claiming
 # to be what a real network is called.
 DEFAULT_WIFI_SSID = "sim-wifi"
+
+# The shed priorities a circuit can be commissioned with: the emitter's own set. It
+# publishes the three carried over from the REST era as UNKNOWN, which is therefore
+# never one a config can name.
+SHED_PRIORITIES = (
+    "MUST_HAVE",
+    "NICE_TO_HAVE",
+    "NON_ESSENTIAL",
+    "NEVER",
+    "SOC_THRESHOLD",
+    "OFF_GRID",
+)

@@ -7,15 +7,27 @@ dashboard can validate configs without circular imports.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
+from panelbench.config_types import PVInverterYAML
+from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
+from panelbench.hardware import (
+    panel_hardware_version,
+    panel_variant,
+    publishes_outside_meters,
+    publishes_pv_devices,
+    relay_locks_priority,
+)
 from panelbench.pv_rating import rating_conflicts
-from panelbench.pv_section import bound_pv_circuit_id
+from panelbench.pv_section import bound_pv_circuit_id, pv_circuit_ids
+from panelbench.registration_limit import registration_limit
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from ebus_panel_sim import Variant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,14 +47,20 @@ def validate_yaml_config(config_data: Any) -> None:
     _validate_commissioned_firmware(
         panel_firmware_version(config_data), config_data["circuit_templates"]
     )
+    _validate_commissioned_variant(config_data, config_data["circuit_templates"])
     validate_circuits(config_data["circuits"], config_data["circuit_templates"])
     _warn_uncommissioned_pv_circuits(
         panel_firmware_version(config_data),
+        panel_variant(config_data),
         config_data["circuits"],
         config_data["circuit_templates"],
     )
     validate_pv_section(config_data)
+    validate_unfed_inverters(config_data)
     validate_ratings(config_data)
+    validate_outside_meters(config_data)
+    validate_shared_circuits(config_data["circuits"])
+    validate_unvalued_lists(config_data)
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -57,6 +75,7 @@ def validate_panel_config(panel_config: Any) -> None:
     for field in required_panel_fields:
         if field not in panel_config:
             raise ValueError(f"Missing required panel_config field: {field}")
+    registration_limit(panel_config)
 
 
 def validate_circuit_templates(circuit_templates: Any) -> None:
@@ -86,6 +105,12 @@ def validate_single_template(template_name: str, template: Any) -> None:
             raise ValueError(
                 f"Missing required field '{field}' in circuit template '{template_name}'"
             )
+    priority = str(template["priority"]).upper()
+    if priority not in SHED_PRIORITIES:
+        raise ValueError(
+            f"Circuit template '{template_name}' has priority {template['priority']!r}; "
+            f"it must be one of {', '.join(SHED_PRIORITIES)}"
+        )
     _validate_commissioned_system(template_name, template)
 
 
@@ -142,8 +167,30 @@ def _validate_commissioned_firmware(
             )
 
 
+def _validate_commissioned_variant(
+    config_data: Mapping[str, object], circuit_templates: Mapping[str, Mapping[str, object]]
+) -> None:
+    """A variant whose locked relay locks the priority has no commissioned-system circuits.
+
+    A PV or battery breaker there is an ordinary circuit with a locked relay at
+    priority NEVER, and the emitter refuses the key, so it is refused here naming the
+    template. *circuit_templates* has already passed `validate_circuit_templates`.
+    """
+    variant = panel_variant(config_data)
+    if not relay_locks_priority(variant):
+        return
+    for template_name, template in circuit_templates.items():
+        if template.get("commissioned_system") is not None:
+            raise ValueError(
+                f"Circuit template '{template_name}' is a commissioned-system circuit, which "
+                f"the {variant!r} variant does not have: remove commissioned_system, and a "
+                "non-controllable relay at priority NEVER locks it as that variant does"
+            )
+
+
 def _warn_uncommissioned_pv_circuits(
     firmware: str,
+    variant: Variant,
     circuits: list[Mapping[str, object]],
     circuit_templates: Mapping[str, Mapping[str, object]],
 ) -> None:
@@ -156,6 +203,9 @@ def _warn_uncommissioned_pv_circuits(
     without ``commissioned_system: pv`` publishes a switchable, re-prioritisable
     circuit the release never does.
 
+    Not under a variant whose locked relay locks the priority, which has no
+    commissioned-system circuits.
+
     Warned, not refused: a config that loaded before must keep loading, such as a
     template shipped before the key existed, and a panel clone recognises a
     commissioned circuit only by the name SPAN gives it, so it can produce one. A PV
@@ -164,7 +214,7 @@ def _warn_uncommissioned_pv_circuits(
     *circuits* and *circuit_templates* have already passed validation, so every
     circuit names a template that exists.
     """
-    if predates(firmware, SPAN_RELEASE_202639):
+    if predates(firmware, SPAN_RELEASE_202639) or relay_locks_priority(variant):
         return
     for circuit in circuits:
         template_name = str(circuit["template"])
@@ -249,6 +299,106 @@ def validate_pv_section(config_data: Mapping[str, object]) -> None:
     bound_pv_circuit_id(config_data)
 
 
+_INVERTER_KEYS: Final = PVInverterYAML.__optional_keys__
+_RELATIVE_POSITIONS: Final = ("UPSTREAM", "DOWNSTREAM", "IN_PANEL")
+_INVERTER_TYPES: Final = ("hybrid", "ac_coupled", "ac-coupled")
+# What describes one inverter in the section's own keys. A firmware version is every
+# inverter's default, so it is not among them.
+_SECTION_INVERTER_KEYS: Final = _INVERTER_KEYS - {"firmware_version"}
+
+
+def validate_unfed_inverters(config_data: Mapping[str, object]) -> None:
+    """Validate the ``pv`` section's ``inverters``, the inverters no circuit feeds.
+
+    Each a mapping of an inverter's own keys, placed and typed as the section's own
+    inverter is, rated above zero, with an identifier no other inverter publishes.
+    The section's own keys then describe only an inverter a PV circuit feeds, so on a
+    panel with none they describe nothing and are refused rather than dropped. A
+    release before 202639 publishes one solar device, and a variant that publishes no
+    inverter device cannot publish one no circuit feeds. *config_data*'s templates
+    and circuits have already passed validation.
+    """
+    pv_cfg = config_data.get("pv")
+    if not isinstance(pv_cfg, dict) or "inverters" not in pv_cfg:
+        return
+    inverters = pv_cfg["inverters"]
+    if not isinstance(inverters, list) or not inverters:
+        raise ValueError("pv.inverters must be a list of the inverters no circuit feeds")
+    identifiers: dict[str, int] = {}
+    for index, inverter in enumerate(inverters):
+        _validate_unfed_inverter(index, inverter, identifiers)
+    pv_circuits = pv_circuit_ids(config_data)
+    if not pv_circuits:
+        described = sorted(_SECTION_INVERTER_KEYS & pv_cfg.keys())
+        if described:
+            raise ValueError(
+                f"pv has {', '.join(described)} beside pv.inverters, on a panel with no PV "
+                "circuit for them to describe: move them into the pv.inverters entry they "
+                "belong to"
+            )
+    else:
+        for key in ("serial_number", "instance_id"):
+            own = pv_cfg.get(key)
+            if own is not None and str(own) in identifiers:
+                raise ValueError(
+                    f"pv.inverters[{identifiers[str(own)]}] has the identifier {str(own)!r}, "
+                    "which the inverter a PV circuit feeds already has"
+                )
+    firmware = panel_firmware_version(config_data)
+    if predates(firmware, SPAN_RELEASE_202639) and len(inverters) + bool(pv_circuits) > 1:
+        raise ValueError(
+            f"firmware_version {firmware!r} names a release before 202639, which publishes "
+            "one solar device, but pv.inverters makes this panel publish several"
+        )
+    variant = panel_variant(config_data)
+    if not publishes_pv_devices(variant):
+        raise ValueError(
+            f"pv.inverters are not published by the {variant!r} variant, which hardware_version "
+            f"{panel_hardware_version(config_data)!r} selects: it publishes no inverter "
+            "device, only the circuit feeding one"
+        )
+
+
+def _validate_unfed_inverter(index: int, inverter: object, identifiers: dict[str, int]) -> None:
+    """One ``pv.inverters`` entry; *identifiers* collects each entry's by its index."""
+    prefix = f"pv.inverters[{index}]"
+    if not isinstance(inverter, dict):
+        raise ValueError(f"{prefix} must be a mapping")
+    unknown = sorted(str(key) for key in inverter.keys() - _INVERTER_KEYS)
+    if unknown:
+        raise ValueError(
+            f"{prefix} has {', '.join(unknown)}; an inverter takes "
+            f"{', '.join(sorted(_INVERTER_KEYS))}"
+        )
+    position = inverter.get("relative_position")
+    if position is not None and position not in _RELATIVE_POSITIONS:
+        raise ValueError(
+            f"{prefix}.relative_position is {position!r}; it must be one of "
+            f"{', '.join(_RELATIVE_POSITIONS)}"
+        )
+    inverter_type = inverter.get("inverter_type")
+    if inverter_type is not None and inverter_type not in _INVERTER_TYPES:
+        raise ValueError(
+            f"{prefix}.inverter_type is {inverter_type!r}; it must be one of "
+            f"{', '.join(_INVERTER_TYPES)}"
+        )
+    rating = inverter.get("nameplate_capacity_w")
+    if rating is not None and (
+        isinstance(rating, bool) or not isinstance(rating, int | float) or rating <= 0
+    ):
+        raise ValueError(f"{prefix}.nameplate_capacity_w is {rating!r}; it must be above zero")
+    for key in ("serial_number", "instance_id"):
+        identifier = inverter.get(key)
+        if identifier is None:
+            continue
+        if str(identifier) in identifiers:
+            raise ValueError(
+                f"{prefix} has the identifier {str(identifier)!r}, which "
+                f"pv.inverters[{identifiers[str(identifier)]}] already has"
+            )
+        identifiers[str(identifier)] = index
+
+
 def validate_ratings(config_data: Mapping[str, object]) -> None:
     """Refuse a circuit rated in two places with different values.
 
@@ -259,6 +409,97 @@ def validate_ratings(config_data: Mapping[str, object]) -> None:
     conflicts = rating_conflicts(config_data)
     if conflicts:
         raise ValueError("; ".join(conflicts))
+
+
+def validate_outside_meters(config_data: Mapping[str, object]) -> None:
+    """Meters outside the panel: at most one, a mapping with an id no circuit shares, on
+    a panel whose variant publishes them.
+
+    A meter's device id is scoped from its ``id`` as a circuit's is, so a shared id
+    would publish two devices on one topic, and the emitter models one such meter, on
+    the service conductor. *config_data*'s circuits have already passed validation.
+    """
+    meters = config_data.get("outside_meters")
+    if meters is None:
+        return
+    if not isinstance(meters, list):
+        raise ValueError("outside_meters must be a list")
+    if len(meters) > 1:
+        raise ValueError(f"outside_meters names {len(meters)} meters; a panel has at most one")
+    circuits = config_data.get("circuits")
+    taken = (
+        {str(c["id"]) for c in circuits if isinstance(c, dict)}
+        if isinstance(circuits, list)
+        else set()
+    )
+    for index, meter in enumerate(meters):
+        if not isinstance(meter, dict) or "id" not in meter:
+            raise ValueError(f"outside_meters[{index}] must be a mapping with an id")
+        meter_id = str(meter["id"])
+        if meter_id in taken:
+            raise ValueError(
+                f"outside_meters[{index}] has id {meter_id!r}, which is already taken"
+            )
+        taken.add(meter_id)
+    if meters and not publishes_outside_meters(config_data):
+        raise ValueError(
+            f"outside_meters are not published by the {panel_variant(config_data)!r} variant, "
+            f"which hardware_version {panel_hardware_version(config_data)!r} selects"
+        )
+
+
+def validate_shared_circuits(circuits: list[Mapping[str, object]]) -> None:
+    """Each circuit a circuit says it shares a meter and relay with is another circuit
+    of the panel. *circuits* has already passed validation."""
+    ids = {str(circuit["id"]) for circuit in circuits}
+    for circuit in circuits:
+        peers = circuit.get("shared_with") or []
+        if not isinstance(peers, list):
+            raise ValueError(f"Circuit {circuit['id']!r} shared_with must be a list")
+        for peer in peers:
+            if str(peer) not in ids or str(peer) == str(circuit["id"]):
+                raise ValueError(
+                    f"Circuit {circuit['id']!r} shares its meter with {peer!r}, "
+                    "which is no other circuit of this panel"
+                )
+
+
+def validate_unvalued_lists(config_data: Mapping[str, object]) -> None:
+    """Every ``unvalued``, ``mid_unvalued`` and ``device_unvalued`` is a list of
+    ``node/property`` paths.
+
+    Anything else, such as a bare string, would otherwise publish as nothing being
+    unvalued, without a word. Whether each path is one the device declares is the
+    emitter's check, made when the panel starts. *config_data*'s sections have
+    already passed validation.
+    """
+    places: list[tuple[str, object]] = []
+
+    def section(where: str, value: object, *keys: str) -> None:
+        if isinstance(value, dict):
+            places.extend((f"{where}.{key}", value.get(key)) for key in keys)
+
+    section("panel_config", config_data.get("panel_config"), "unvalued")
+    for index, circuit in enumerate(_listed(config_data.get("circuits"))):
+        section(f"circuits[{index}]", circuit, "unvalued", "device_unvalued")
+    section("bess", config_data.get("bess"), "unvalued", "mid_unvalued")
+    lugs = config_data.get("lugs")
+    if isinstance(lugs, dict):
+        for direction in ("upstream", "downstream"):
+            section(f"lugs.{direction}", lugs.get(direction), "unvalued")
+    for index, meter in enumerate(_listed(config_data.get("outside_meters"))):
+        section(f"outside_meters[{index}]", meter, "unvalued")
+    for where, paths in places:
+        if paths is None:
+            continue
+        if not isinstance(paths, list) or not all(
+            isinstance(path, str) and "/" in path for path in paths
+        ):
+            raise ValueError(f"{where} must be a list of node/property paths, got {paths!r}")
+
+
+def _listed(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
 
 def validate_panel_source(panel_source: Any) -> None:
