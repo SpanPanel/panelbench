@@ -56,7 +56,7 @@ from ebus_panel_sim import (
     load_definition,
     load_ticks,
 )
-from ebus_panel_sim.capture import definition_from_tree, tree_from_retained, tree_from_snapshot
+from ebus_panel_sim.capture import definition_from_tree, tree_from_retained
 
 from panelbench.definition_import import config_from_definition
 from panelbench.emitter_adapter.wire_capture import (
@@ -64,7 +64,7 @@ from panelbench.emitter_adapter.wire_capture import (
     as_capture,
     capture_retained,
 )
-from tests._helpers import DEFAULT_CONFIG, write_config
+from tests._helpers import DEFAULT_CONFIG, captured_main_32, write_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 UPSTREAM = FIXTURES / "upstream"
@@ -136,19 +136,15 @@ async def panelbench_pair(workdir: Path) -> tuple[Capture, Capture]:
     return reference_reading(retained), as_capture(retained)
 
 
-CAPTURED_PANEL = UPSTREAM / "main32_r202639-tree-v1.json"
-"""The pinned release's masked capture of a real panel on SPAN release 202639 or later."""
-
-
-def captured_definition(path: Path = CAPTURED_PANEL) -> PanelDefinition:
+def captured_definition() -> PanelDefinition:
     """Upstream's definition of the captured panel, read by upstream's own readers.
 
-    The ``tree-v1`` snapshot is mapped by ``definition_from_tree`` without masking
-    again, because upstream masked it before shipping it. The variant is inferred,
-    as upstream's capture infers it for a live panel.
+    The pinned release's masked capture of a real panel on SPAN release 202639 or
+    later, mapped by ``definition_from_tree`` without masking again, because upstream
+    masked it before shipping it. The variant is inferred, as upstream's capture
+    infers it for a live panel.
     """
-    tree = tree_from_snapshot(json.loads(path.read_text(encoding="utf-8")))
-    definition, _notes = definition_from_tree(tree, mask=False)
+    definition, _notes = definition_from_tree(captured_main_32(), mask=False)
     return definition
 
 
@@ -164,7 +160,9 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
     """A device's declared ``type::name``.
 
     Stable across producers for the devices both name the same way: the panel, its
-    lugs, and a circuit, whose name is the one a user gave it. Not for a battery,
+    lugs, and a circuit, whose name is the one a user gave it. A circuit's is its
+    ``info/name``: from SPAN release 202639 the panel names the device itself after
+    its id, and the two producers' ids differ by construction. Not for a battery,
     its MID, an inverter or a SPAN Drive, which SPAN firmware names after their own
     device ids (``role_key``).
 
@@ -179,7 +177,10 @@ def role_of(device_id: str, properties: dict[str, str]) -> str:
         parsed = json.loads(description)
     except json.JSONDecodeError:
         return f"<unparsable-description>::{device_id}"
-    return f"{parsed.get('type', '?')}::{parsed.get('name', device_id)}"
+    device_type = parsed.get("type", "?")
+    if str(device_type).rsplit(".", 1)[-1] == "circuit" and "info/name" in properties:
+        return f"{device_type}::{properties['info/name']}"
+    return f"{device_type}::{parsed.get('name', device_id)}"
 
 
 _KEYED_BY_FEED = frozenset({"bess", "evse", "pv"})

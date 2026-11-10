@@ -18,6 +18,7 @@ parent/child device tree (`data-model-version` `1.x`).
 
 Requires the SpanPanel/span integration **v2.1.2 or later**, which
 reads the SPAN firmware release 202639 the included configs publish.
+The `ref_` templates of real SPAN panels need **v2.2.0 or later**.
 
 Visit [SPAN PanelBench](https://github.com/SpanPanel/panelbench)
 page for more details.

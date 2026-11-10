@@ -248,9 +248,10 @@ they hang rather than by name, because real firmware names a battery, MID or inv
 Drive by the circuit that feeds it, an upstream battery by the lugs it feeds, and a MID by its battery. The module docstring of
 `tests/fidelity/test_upstream_parity.py` describes each cell and what it cannot see.
 
-The reference data is the release's own, vendored byte-identical under `tests/fidelity/fixtures/upstream/` (see its `PROVENANCE.md`). No upstream code is
-copied: reading a definition or a capture is the pinned package's public API. `test_vendored_example_matches_the_pinned_release` compares the vendored bytes
-with the release's tag in a local checkout of the upstream repository, and skips without one:
+The reference data is the release's own. Its captures ship in its wheel and are read through `load_reference_capture`; its example, which does not, is
+vendored byte-identical under `tests/fidelity/fixtures/upstream/` (see its `PROVENANCE.md`). No upstream code is copied: reading a definition or a capture
+is the pinned package's public API. `test_vendored_example_matches_the_pinned_release` compares the vendored bytes with the release's tag in a local
+checkout of the upstream repository, and skips without one:
 
 ```bash
 EBUS_EMITTER_CHECKOUT=/path/to/distribution-enclosure-simulator uv run pytest tests/fidelity
@@ -359,6 +360,10 @@ panel_config:
   wifi_link: bool # status/wifi
   ethernet_link: bool # status/ethernet
   wifi_ssid: str | null # status/wifi-ssid (default: sim-wifi while Wi-Fi is up); null publishes none
+  unvalued: [str] # node/property paths the panel declares and leaves unvalued, as a clone reads them
+  registration_limit: # Absent, every registration succeeds
+    per_minute: int # Registrations each client may make in a minute; past it, registration answers 429
+    retry_after: bool # Whether the refusal carries Retry-After (default: true)
 
 circuit_templates: # Reusable template definitions
   template_name:
@@ -450,10 +455,25 @@ circuits:
     # EVSE circuit: its drive's serial (else evse.serial_number or the panel serial, by position)
     firmware_version: str # PV circuit: its inverter's firmware (every inverter: else pv.firmware_version)
     # EVSE circuit: its drive's firmware (every drive: else evse.firmware_version)
+    tags: [str] # Published as info/tags, as commissioned; a clone keeps its panel's
+    locations: [str] # Published as info/locations, as commissioned
+    shared_with: [str] # The ids of the circuits sharing its meter and relay, as circuits on one space do
+    unvalued: [str] # node/property paths the circuit declares and leaves unvalued
     overrides: # Override any template field but its rating, which the loader moves into the template
       typical_power: 500.0
 
 unmapped_tabs: [int] # Tab numbers with no circuit assigned
+
+outside_meters: # A meter the panel reads that sits outside it, on no breaker space; one at most
+  - id: str # Scopes its device id, as a circuit's id does
+    unvalued: [str]
+
+lugs: # Each set of lugs as commissioned, published in its connection node
+  upstream: # downstream takes the same keys
+    feeds_role: str # What the lugs feed where it is not a device of its own
+    service_rating_a: int # The utility service rating at a service entrance
+    overcurrent_protection_a: int
+    unvalued: [str]
 
 pv: # One inverter's identity, and every inverter's default firmware
   enabled: bool # Publishes a PV device with no PV circuit, one upstream of the panel
@@ -472,6 +492,7 @@ pv: # One inverter's identity, and every inverter's default firmware
     str # The id, under circuits, of the PV circuit feeding the inverter this section describes.
     # Optional with one PV circuit; without it, several PV circuits each name their own inverter,
     # and a firmware_version before release 202639 is refused. A value naming no PV circuit is refused.
+  inverters: [map] # One entry for each inverter no circuit feeds; see the README, "Inverters no circuit feeds"
 
 simulation_params:
   update_interval: int # Seconds between snapshots (default: 5)
@@ -487,7 +508,8 @@ firmware_version:
 
 hardware_version:
   str # Published as info/hardware-version (default: 1.2). From release 202639
-  # the status endpoint reports it as hardwareVersion if it is 1.2 or 2.0, else UNKNOWN.
+  # the status endpoint reports it as hardwareVersion if it is 1.2, 2.0 or the string the
+  # reference panels publish, else UNKNOWN.
 
 # Clone provenance (written by the clone pipeline)
 panel_source:
@@ -532,7 +554,7 @@ These endpoints match the real SPAN panel's API exactly.
 | Method | Path                     | Description                                                                               |
 | ------ | ------------------------ | ----------------------------------------------------------------------------------------- |
 | `GET`  | `/api/v2/status`         | Panel identity (`serialNumber`, `firmwareVersion`; `hardwareVersion` from release 202639) |
-| `POST` | `/api/v2/auth/register`  | Returns MQTT credentials and broker details                                               |
+| `POST` | `/api/v2/auth/register`  | Returns MQTT credentials and broker details; answers 429 past a `registration_limit`      |
 | `GET`  | `/api/v2/certificate/ca` | Self-signed CA certificate (PEM)                                                          |
 | `GET`  | `/api/v2/homie/schema`   | Homie v5 property schema                                                                  |
 

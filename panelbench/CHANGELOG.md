@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.7.0 — 2026-11-10
+
+PanelBench now ships a read-only template for each reference capture of a real SPAN panel, and a clone or an import of each one publishes what that panel
+published. The captures cover panels other than MAIN 32, a meter outside the panel, circuits that share a meter and relay, and inverters and a battery
+upstream of the panel. Use it with SPAN integration 2.2.0 or later, which supports those panels.
+
+### Added
+
+- **A read-only `ref_` template for each reference capture of a real SPAN panel**, such as `ref_MAIN_32` and `ref_MLO_48`, written at every start and run or
+  cloned like the shipped `default_` templates.
+- **A clone keeps what a panel records at commissioning**: its site and import limits, its lugs' service rating and role, and each circuit's tags, locations
+  and protections.
+- **A clone leaves unvalued what its panel leaves unvalued**, so it publishes no breaker rating or PCS priority its panel does not.
+- **A meter outside the panel is modelled and kept by a clone.**
+- **Circuits that share a meter and relay each name the circuits they share with.**
+- **Solar is published as a circuit with the `SOLAR` feeds role where the hardware publishes no inverter device.**
+- **Inverters no circuit feeds are each published as their own device** and listed on a dashboard card of their own. Their production is not yet published.
+- **A config can rate-limit registration**, answering 429 past the limit, with `Retry-After` or without it.
+
+### Changed
+
+- **Numbers are published in the panel's literal form**, and the off-grid import limit only where it is commissioned.
+- **From release 202639, each circuit's device is named after its id and the circuit's own name stays in `info/name`**, as on a SPAN panel.
+- **The status endpoint reports the hardware version string the reference panels publish as it is**, and `proximityProven: false` for hardware that offers no
+  proof of proximity.
+- **A battery a circuit feeds is cloned in the panel, fed by that circuit**, where a clone put every battery upstream.
+
+### Fixed
+
+- **A clone of a panel with a circuit that publishes an `UNKNOWN` shed priority now starts.**
+- **A clone keeps a battery that publishes no capacity, an inverter no circuit feeds, and a SPAN Drive's charge limits.**
+- **A clone of a panel with no main breaker has none**, where it was given a 200 A breaker.
+- **Registration names the broker port the simulator was started with.**
+
 ## 2.6.0 — 2026-10-08
 
 The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's. The add-on

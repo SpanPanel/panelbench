@@ -19,8 +19,10 @@ data and entity discovery — no manual URL or token configuration needed.
    panels, manage entities, clone a real panel, and run energy
    modeling
 
-A default panel configuration is included. You can also clone your
-real SPAN panel's configuration directly from the dashboard.
+A default panel configuration is included, with a read-only `ref_`
+template for each of several real SPAN panels as they published
+themselves. You can also clone your real SPAN panel's configuration
+directly from the dashboard.
 
 ## Dashboard
 
@@ -143,7 +145,7 @@ report `spanos3/r202639/03`: the battery's power reading is positive
 while discharging, the solar circuit is the locked "Commissioned PV
 System" circuit, and the status endpoint reports hardware version
 `1.2`. Read them with the SpanPanel/span integration **v2.1.2 or
-later**.
+later**, and the `ref_` templates with **v2.2.0 or later**.
 
 To emulate a panel before the upgrade to release 202639, clone a
 config from the dashboard, then in the clone's YAML name a 202633

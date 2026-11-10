@@ -9,7 +9,6 @@ inverter.
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from pathlib import Path
 
@@ -24,9 +23,9 @@ from panelbench.emitter_adapter.wire_capture import as_capture, capture_retained
 from panelbench.firmware import SPAN_RELEASE_202639
 from panelbench.hardware import status_hardware_version
 from tests._helpers import (
-    CAPTURED_MAIN_32,
     CAPTURED_MAIN_32_SERIAL,
     CURRENT_FIRMWARE,
+    captured_main_32,
     default_config,
     write_config,
 )
@@ -93,8 +92,7 @@ async def test_a_panel_naming_no_hardware_version_reports_the_captured_panels(
     """The default is the form a real panel publishes, not one PanelBench made up: the
     captured MAIN 32's `info/hardware-version`, on MQTT and, from release 202639, as
     the REST status's `hardwareVersion`."""
-    snapshot = json.loads(CAPTURED_MAIN_32.read_text(encoding="utf-8"))
-    captured = snapshot["devices"][CAPTURED_MAIN_32_SERIAL]["properties"]["info/hardware-version"]
+    captured = captured_main_32()[CAPTURED_MAIN_32_SERIAL].value("info/hardware-version")
     config = default_config()
     config.pop("hardware_version", None)
     config["firmware_version"] = CURRENT_FIRMWARE

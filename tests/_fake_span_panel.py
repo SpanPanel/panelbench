@@ -20,9 +20,9 @@ from aiohttp.test_utils import TestServer
 from panelbench import scraper
 from panelbench.scraper import BrokerRefused, PanelCredentials, ScrapedPanel, ScrapeError
 from tests._helpers import (
-    CAPTURED_MAIN_32,
     CAPTURED_MAIN_32_SERIAL,
-    discovered_from_tree_snapshot,
+    captured_main_32,
+    discovered_from_tree,
 )
 
 FAKE_CA = b"-----BEGIN CERTIFICATE-----\nfake panel ca\n-----END CERTIFICATE-----\n"
@@ -104,7 +104,7 @@ class FakeScrape:
             raise ScrapeError("connecting", f"the panel's broker did not answer {creds.username}")
         return ScrapedPanel(
             serial_number=creds.serial_number,
-            devices=discovered_from_tree_snapshot(CAPTURED_MAIN_32),
+            devices=discovered_from_tree(captured_main_32()),
             mqtts_port=creds.mqtts_port,
             ca_pem=ca_pem,
         )

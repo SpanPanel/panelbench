@@ -20,6 +20,7 @@ from panelbench.const import (
     DEFAULT_TICK_INTERVAL_S,
     MQTTS_PORT,
 )
+from panelbench.reference_templates import write_reference_templates
 
 
 class _NoisyDependencyFilter(logging.Filter):
@@ -229,6 +230,10 @@ def main(argv: list[str] | None = None) -> None:
     if not config_dir.is_dir():
         logging.error("Config directory not found: %s", config_dir)
         sys.exit(1)
+
+    # Built from the pinned emitter's reference captures at every start, as the
+    # shipped templates are refreshed, before any config is resolved from the directory.
+    write_reference_templates(config_dir)
 
     # Resolve which config(s) to load.
     # When --config is given explicitly, that panel auto-starts.
