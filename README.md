@@ -29,7 +29,8 @@ Click a simulator configuration to view it. Templates are read-only. A running s
 configs excluded).
 
 1. **Examine templates** — Load and run the included configs (`default_MAIN_40.yaml`, `default_MAIN_32.yaml` and `default_MAIN_16.yaml`) to see how circuits,
-   PV, battery, and EVSE are modeled. Pick one as a starting point for your own configuration.
+   PV, battery, and EVSE are modeled, or one of the [reference panels](#reference-panels), each a real SPAN panel as it published itself. Pick one as a
+   starting point for your own configuration.
 2. **Clone** — The **Clone** button creates an editable copy from a template, or from a panel running `r202633+` firmware; cloning a panel preserves recorder
    history per circuit.
 3. **Model** — The **Model** button on a running panel opens the what-if view; add battery, PV, or circuits and compare before/after. Edits mark equipment as
@@ -48,7 +49,8 @@ configs excluded).
 ## Home Assistant App
 
 PanelBench installs as a Home Assistant app from this repository. Images are published for `amd64` and `aarch64`, and the app is not distributed through HACS.
-It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish.
+It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish. The
+[reference panels](#reference-panels) need **v2.2.0 or later**.
 
 1. Go to **Settings > Apps** > **App Store** > three-dot menu > **Repositories**
 2. Add `https://github.com/SpanPanel/panelbench`
@@ -364,6 +366,22 @@ Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts w
 | `default_MAIN_40.yaml` | 40   | Full residential with solar, battery, 2 EVSE |
 | `default_MAIN_32.yaml` | 32   | Full residential with solar, battery, 1 EVSE |
 | `default_MAIN_16.yaml` | 16   | Minimal test: lights, outlets, HVAC, solar   |
+
+### Reference Panels
+
+At every start PanelBench also writes a read-only `ref_` template for each reference capture of a real SPAN panel that its emitter, `ebus-panel-sim`, ships.
+Each is that panel as it published itself on `spanos3/r202639/03`, with serials, ids and site details masked, and runs or clones like an included config.
+Read them with the `span-panel` integration v2.2.0 or later.
+
+| File                           | Panel                                                               |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `ref_MAIN_32.yaml`             | MAIN 32 with a battery                                              |
+| `ref_MAIN_32_UPSTREAM_PV.yaml` | MAIN 32 with two inverters and a battery upstream of the panel      |
+| `ref_MAIN_16.yaml`             | MAIN 16 with a meter outside the panel                              |
+| `ref_MAIN_40.yaml`             | MAIN 40 with a battery fed by a circuit                             |
+| `ref_MLO_24.yaml`              | MLO 24, with no main breaker and a battery fed by a circuit         |
+| `ref_MLO_48.yaml`              | MLO 48, with no main breaker and circuits sharing a meter and relay |
+| `ref_UNKNOWN_16.yaml`          | 16-space panel that publishes no model, with a meter outside it     |
 
 ### Firmware Version
 
