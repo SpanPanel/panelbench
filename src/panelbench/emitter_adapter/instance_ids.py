@@ -94,9 +94,13 @@ def mid_device_id(panel_id: str, bess: Mapping[str, object] | None) -> str:
     return f"{bess_device_id(panel_id, bess)}-mid"
 
 
-def pv_device_id(panel_id: str, pv: Mapping[str, object] | None) -> str:
-    """`<panel>-<identifier>` for PV proxied by this panel."""
-    return f"{panel_id}-{_der_identifier(pv, 'pv-1')}"
+def pv_device_id(panel_id: str, pv: Mapping[str, object] | None, number: int = 1) -> str:
+    """`<panel>-<identifier>` for PV proxied by this panel.
+
+    The identifier defaults to `pv-<number>`: the first, or the *number*-th of a
+    panel's inverters no circuit feeds, which have no circuit to tell them apart.
+    """
+    return f"{panel_id}-{_der_identifier(pv, f'pv-{number}')}"
 
 
 _NOT_ID_CHARS = re.compile(r"[^a-z0-9]+")

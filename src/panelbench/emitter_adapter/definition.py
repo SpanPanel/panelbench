@@ -22,6 +22,7 @@ from ebus_panel_sim import (
 
 from panelbench.emitter_adapter.instance_ids import bess_device_id
 from panelbench.emitter_adapter.spec_generator import build_manifest
+from panelbench.hardware import panel_variant
 
 if TYPE_CHECKING:
     from panelbench.config_types import BESSConfigYAML, PanelConfig, SimulationConfig
@@ -36,6 +37,7 @@ def build_definition(config: SimulationConfig) -> PanelDefinition:
     battery = bess_config(config["panel_config"]["serial_number"], config.get("bess") or {})
     return PanelDefinition(
         manifest=build_manifest(config),
+        variant=panel_variant(config),
         bess_configs=() if battery is None else (battery,),
         load_shedding=load_shedding_config(config["panel_config"]),
     )

@@ -70,6 +70,12 @@ class TestDirtyFlag:
         store.update_panel_config({"serial_number": "CHANGED"})
         assert store.dirty is True
 
+    def test_an_empty_main_breaker_size_is_a_panel_without_one(self) -> None:
+        store = ConfigStore()
+        store.load_from_yaml(MINIMAL_YAML)
+        store.update_panel_config({"main_size": ""})
+        assert store.get_panel_config()["main_size"] is None
+
     def test_update_simulation_params_sets_dirty(self) -> None:
         store = ConfigStore()
         store.load_from_yaml(MINIMAL_YAML)

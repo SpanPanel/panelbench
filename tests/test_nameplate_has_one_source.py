@@ -28,7 +28,7 @@ import yaml
 from panelbench.config_defaults import normalize_config
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.validation import validate_yaml_config
-from tests._helpers import default_config, pv_rating, write_config
+from tests._helpers import default_config, pv_rating, rating_literal, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -84,7 +84,7 @@ async def _assert_rated(tmp_path: Path, config: dict[str, object], watts: float)
     ``energy_profile.nameplate_capacity_w: watts`` produces."""
     published, produced = await pv_rating(write_config(tmp_path / "panel.yaml", config))
     _, expected = await pv_rating(write_config(tmp_path / "control.yaml", _panel(profile=watts)))
-    assert published == str(watts)
+    assert published == rating_literal(watts)
     assert produced == expected
 
 
@@ -220,7 +220,7 @@ async def test_a_dashboard_nameplate_edit_survives_a_reload(tmp_path: Path) -> N
 
     published, produced = await pv_rating(path)
     _, expected = await pv_rating(write_config(tmp_path / "control.yaml", _panel(profile=3800.0)))
-    assert published == "3800.0"
+    assert published == "3800"
     assert produced == expected
 
 
