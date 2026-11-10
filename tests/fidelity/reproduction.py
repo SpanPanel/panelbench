@@ -38,6 +38,15 @@ EMITTER_EXCEPTIONS: Final[dict[str, dict[str, str]]] = {
         "distribution-enclosure #1: power-flows/grid sign": _FEEDTHROUGH,
         "lugs UPSTREAM: meter/active-power sign": _FEEDTHROUGH,
     },
+    "main32_r202639-upstream-pv": {
+        "distribution-enclosure #1: power-flows/site shape": (
+            "With its PV inverters and battery upstream of the panel, the panel writes site as "
+            "an integer (4443, the negated sum of the integer grid, pv and battery flows), "
+            "where the other MAIN 32 captures on the same firmware write one decimal. One "
+            "capture does not show when the panel writes which, so the emitter's span profile "
+            "keeps one decimal."
+        ),
+    },
     "main32_r202633": {
         f"lugs UPSTREAM: connection/fed-by-device-{key}: valued only by the capture": (
             "The upstream lugs are fed by another enclosure, which a definition cannot express."

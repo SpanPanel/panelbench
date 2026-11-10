@@ -45,6 +45,7 @@ _SHIPPED_PREFIX = "default_"
 
 _TEMPLATE_NAMES: Final[Mapping[str, str]] = {
     "main32_r202639": "MAIN_32",
+    "main32_r202639-upstream-pv": "MAIN_32_UPSTREAM_PV",
     "r202639-a": "UNKNOWN_16",
     "r202639-b": "MAIN_16",
     "r202639-c": "MAIN_40",

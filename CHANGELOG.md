@@ -1,8 +1,53 @@
 # Changelog
 
-## 2.7.0
+## 2.7.0 — Reference panels on SPAN firmware release 202639
 
-- spanos3/r202639/03 batch 2: PanelBench reproduces more of this firmware's data.
+**PanelBench now ships a read-only template for each reference capture of a real SPAN panel, and a clone or an import of each one publishes what that panel
+published.** The captures cover panels other than MAIN 32, a meter outside the panel, circuits that share a meter and relay, and inverters and a battery
+upstream of the panel. Use this release with SPAN integration 2.2.0 or later, which supports those panels. The emitter is `ebus-panel-sim` 0.10.0.
+
+### Added
+
+- **A read-only `ref_` template for each reference capture the emitter ships**: `ref_MAIN_32`, `ref_MAIN_32_UPSTREAM_PV`, `ref_UNKNOWN_16`, `ref_MAIN_16`,
+  `ref_MAIN_40`, `ref_MLO_24` and `ref_MLO_48`. They are written into the config directory at every start, run and cloned like the shipped `default_`
+  templates, and kept read-only by the dashboard.
+- **A config states what a panel records at commissioning**: its site and import limits, each set of lugs' service rating and role, and each circuit's tags,
+  locations and protections. A clone keeps them.
+- **A config lists what each device declares and leaves unvalued**, in `unvalued`, `mid_unvalued` and `device_unvalued`, and a clone fills them in from its
+  panel, so it publishes no breaker rating or PCS priority its panel does not.
+- **A meter outside the panel, on no breaker space, is modelled under `outside_meters` and kept by a clone**, where a clone skipped it.
+- **Circuits that share a meter and relay each name the circuits they share with**, and a clone gives circuits on one space distinct ids that stay the same
+  from one clone to the next.
+- **Solar is published as a circuit with the `SOLAR` feeds role where the hardware publishes no inverter device**, and a clone reads such a circuit back as the
+  solar one.
+- **The `pv` section takes `inverters`, one entry for each inverter no circuit feeds.** Each is published as its own device and listed on a dashboard card of
+  its own. Their production is not yet published.
+- **A config can rate-limit registration** with `panel_config.registration_limit`: past `per_minute` registrations by one client in a minute, registration
+  answers 429, with `Retry-After` unless `retry_after` is `false`.
+- **`scripts/run-local.sh` runs several panels side by side**, each `CONFIG_NAME` with its own ports and its own mosquitto, and `scripts/rigs.sh` starts and
+  stops the panels `scripts/rigs.conf` lists.
+
+### Changed
+
+- **Numbers are published in the panel's literal form**, `info/spaces` is described as SPAN firmware describes it, and the off-grid import limit is published
+  only where it is commissioned.
+- **From release 202639, each circuit's device is named after its id and the circuit's own name stays in `info/name`**, as on a SPAN panel.
+- **The status endpoint reports the hardware version string the reference captures' panels publish as it is**, where it reported `UNKNOWN`, and reports
+  `proximityProven: false` for that hardware, which offers no proof of proximity.
+- **A battery a circuit feeds is cloned in the panel, fed by that circuit, and a battery nothing names is cloned with no connection**, where a clone put every
+  battery upstream.
+
+### Fixed
+
+- **A clone of a panel with a circuit that publishes an `UNKNOWN` shed priority now starts.**
+- **A clone keeps a battery that publishes no capacity, and its MID**, where it dropped both.
+- **A clone of a panel with no main breaker has none**, where it was given a 200 A breaker.
+- **A clone keeps an inverter no circuit feeds**, where it dropped it.
+- **A clone keeps a SPAN Drive's commissioned charge current and the user's limit.**
+- **Registration names the broker port the simulator was started with**, where it named the default port.
+- **Validation now refuses** a second meter outside the panel, an `unvalued`, `mid_unvalued` or `device_unvalued` that is not a list of paths, a shed
+  priority the emitter does not take, a commissioned-system circuit where the hardware forbids one, a malformed `inverters` entry, and a circuit that names a
+  shared circuit the panel does not have.
 
 ## 2.6.0 — SPAN firmware release 202639
 
