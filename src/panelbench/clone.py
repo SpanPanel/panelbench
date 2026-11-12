@@ -30,6 +30,7 @@ from ebus_panel_sim import EmitterError, PanelDefinition, Variant
 from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_tree
 from ebus_sdk import DiscoveredDevice
 
+from panelbench.breakers import breaker_misfit
 from panelbench.emitter_adapter import commissioning
 from panelbench.hardware import publishes_shared_breakers, relay_locks_priority, variant_for
 from panelbench.validation import validate_yaml_config
@@ -1414,6 +1415,12 @@ def _unpublishable_breakers(
 _SHARED_WITH_NODES: Final = ("meter", "switch")
 
 
+def _describe_device(devices: Mapping[str, DiscoveredDevice], device_id: str) -> str:
+    """*device_id*, with its published name where the tree holds the device."""
+    name = _get_prop(devices, device_id, "info", "name") if device_id in devices else None
+    return f"{device_id} ({name!r})" if name else device_id
+
+
 def _breaker_siblings(
     devices: Mapping[str, DiscoveredDevice], keys: Mapping[str, str]
 ) -> dict[str, list[str]]:
@@ -1427,18 +1434,39 @@ def _breaker_siblings(
     as validation requires. A clone of a panel that published a list one way, or left
     a sibling out of one, still loads. Each circuit names first the siblings it
     published, in its order, then any it left out, in id order. Only circuits the clone
-    keeps (*keys*) are named.
+    keeps (*keys*) are named: a sibling a list names that the clone has no circuit for,
+    as a partial tree or scrape may leave out, is warned of, naming both.
+
+    Raises:
+        ValueError: Circuits the lists gather into one breaker are no shape a breaker
+            takes (``breakers.breaker_misfit``). That would merge what may be two
+            breakers into one, so the clone says which instead.
     """
     published: dict[str, list[str]] = {}
     linked: dict[str, set[str]] = {node: set() for node in keys}
     for node in keys:
         named: list[str] = []
+        absent: list[str] = []
         for capability in _SHARED_WITH_NODES:
             raw = _get_prop(devices, node, capability, "shared-with-device-ids") or ""
             for peer in (p.strip() for p in raw.split(",")):
-                if peer in keys and peer != node and peer not in named:
-                    named.append(peer)
+                if not peer or peer == node:
+                    continue
+                if peer in keys:
+                    if peer not in named:
+                        named.append(peer)
+                elif peer not in absent:
+                    absent.append(peer)
         published[node] = named
+        for peer in absent:
+            _LOGGER.warning(
+                "Circuit %s (%r) names %s as sharing its breaker, but the panel's tree holds "
+                "no circuit the clone can keep for it, so %s's shared_with leaves it out",
+                _circuit_id(keys[node]),
+                _get_prop(devices, node, "info", "name"),
+                _describe_device(devices, peer),
+                _circuit_id(keys[node]),
+            )
         for peer in named:
             linked[node].add(peer)
             linked[peer].add(node)
@@ -1456,6 +1484,22 @@ def _breaker_siblings(
                 pending.extend(linked[node] - breaker)
         for node in breaker:
             breaker_of[node] = frozenset(breaker)
+
+    for members in sorted(set(breaker_of.values()), key=lambda m: sorted(keys[n] for n in m)):
+        if len(members) < 2:
+            continue
+        misfit = breaker_misfit(
+            {_circuit_id(keys[n]): frozenset(_spaces_prop(devices, n)) for n in members}
+        )
+        if misfit is not None:
+            named_circuits = ", ".join(
+                f"{_circuit_id(keys[n])} ({_get_prop(devices, n, 'info', 'name')!r})"
+                for n in sorted(members, key=lambda n: keys[n])
+            )
+            raise ValueError(
+                f"Circuits {named_circuits} name each other as one breaker, but {misfit}. "
+                "The clone does not merge what may be two breakers into one"
+            )
 
     siblings: dict[str, list[str]] = {}
     for node, members in breaker_of.items():

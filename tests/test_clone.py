@@ -848,6 +848,79 @@ class TestCircuitsSharingASpace:
         assert "variant" not in config
         validate_yaml_config(config)
 
+    def test_a_sibling_missing_from_the_tree_is_warned_naming_both(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """As an import of a partial tree or a partial scrape may leave one out. The
+        clone still loads, and the gap is said rather than hidden."""
+        devices = self._devices()
+        for capability in ("meter", "switch"):
+            devices["fff666"].update_property(
+                capability, "shared-with-device-ids", "fff777,fff999"
+            )
+
+        with caplog.at_level(logging.WARNING):
+            config = translate_scraped_panel(_make_scraped(devices))
+
+        warned = [r.getMessage() for r in caplog.records if "fff999" in r.getMessage()]
+        assert len(warned) == 1, warned
+        assert "circuit_44" in warned[0]
+        assert "'Bedroom Lights'" in warned[0]
+        circuits = {c["name"]: c for c in _circuits(config)}
+        assert circuits["Bedroom Lights"]["shared_with"] == ["circuit_44_2"]
+        validate_yaml_config(config)
+
+    def test_a_reference_panels_sibling_left_out_of_its_tree_is_warned(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        devices = discovered_from_tree(load_reference_capture("r202639-e").tree)
+        [panel] = [
+            device_id
+            for device_id, device in devices.items()
+            if (device.description or {}).get("type") == TYPE_PANEL
+        ]
+        [missing] = [
+            device_id
+            for device_id, device in devices.items()
+            if device.get_property("info", "name") == "Bedroom / Outlets"
+            and device.get_property("info", "spaces") == "44"
+        ]
+        devices.pop(missing)
+
+        with caplog.at_level(logging.WARNING):
+            config = translate_panel_tree(panel, devices)
+
+        assert any(missing in r.getMessage() for r in caplog.records)
+        validate_yaml_config(config)
+
+    @pytest.mark.parametrize(
+        ("spaces", "reason"),
+        [
+            (("44", "44", "10"), r"they list spaces \[10, 44\]"),
+            (("44", "44", "44"), "all list space 44, but a breaker space holds at most two"),
+        ],
+        ids=["across spaces apart", "three on one space"],
+    )
+    def test_circuits_named_as_one_breaker_that_cannot_be_one_are_refused(
+        self, spaces: tuple[str, str, str], reason: str
+    ) -> None:
+        """Gathering a breaker's circuits across the lists could merge two breakers into
+        one. Where the result is no shape a breaker takes, the clone says so."""
+        devices = self._devices()
+        devices["fff888"] = _circuit(
+            "fff888", "Hall Lights", spaces[2], rating="15", priority="NEVER", active_power="0.0"
+        )
+        for capability in ("meter", "switch"):
+            devices["fff777"].update_property(
+                capability, "shared-with-device-ids", "fff666,fff888"
+            )
+
+        with pytest.raises(ValueError, match=reason) as refused:
+            translate_scraped_panel(_make_scraped(devices))
+
+        assert "name each other as one breaker" in str(refused.value)
+        assert "Hall Lights" in str(refused.value)
+
     def test_a_list_published_one_way_is_cloned_both_ways(self) -> None:
         """Every circuit on a breaker names all the others, so a sibling one list names
         is on the breaker even where its own list is missing, and the clone loads."""
