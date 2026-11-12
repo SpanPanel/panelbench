@@ -51,6 +51,14 @@ _EVSE_LIMIT_PATH = "config/user-max-charge-current"
 _EVSE_LIMIT = f"/{_EVSE_LIMIT_PATH}"
 # The dashboard's rule for a shipped template; user clones beside them are local-only.
 _SHIPPED = sorted(DEFAULT_CONFIG.parent.glob("default_*.yaml"))
+# Those whose battery shows the release's meter sign. The MLO 48 tandems template has
+# none, and its SPAN Drive keeps the user limit the reference panel it is built from
+# published.
+_SHIPPED_WITH_A_BATTERY = [
+    path
+    for path in _SHIPPED
+    if (yaml.safe_load(path.read_text(encoding="utf-8")).get("bess") or {}).get("enabled")
+]
 
 
 def _naming(firmware: str | None) -> SimulationConfig:
@@ -166,7 +174,17 @@ def _evse_limits(recorder: RecordingTransport) -> dict[str, str]:
     }
 
 
-@pytest.mark.parametrize("path", _SHIPPED, ids=lambda path: path.stem)
+def test_the_shipped_configs_with_a_battery_are_the_main_ones() -> None:
+    """So the two sign tests below still cover every template they did."""
+    assert [path.stem for path in _SHIPPED_WITH_A_BATTERY] == [
+        "default_MAIN_16",
+        "default_MAIN_32",
+        "default_MAIN_32_TANDEMS",
+        "default_MAIN_40",
+    ]
+
+
+@pytest.mark.parametrize("path", _SHIPPED_WITH_A_BATTERY, ids=lambda path: path.stem)
 @pytest.mark.asyncio
 async def test_the_shipped_configs_publish_release_202639(tmp_path: Path, path: Path) -> None:
     """The templates are a SPAN panel after the upgrade, in the form SPAN publishes
@@ -198,7 +216,7 @@ async def test_the_shipped_configs_load_without_a_warning(
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
-@pytest.mark.parametrize("path", _SHIPPED, ids=lambda path: path.stem)
+@pytest.mark.parametrize("path", _SHIPPED_WITH_A_BATTERY, ids=lambda path: path.stem)
 @pytest.mark.asyncio
 async def test_a_shipped_config_named_back_to_202633_publishes_its_conventions(
     tmp_path: Path, path: Path

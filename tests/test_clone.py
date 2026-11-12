@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import yaml
+from ebus_panel_sim import load_reference_capture
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.clone import (
@@ -20,6 +21,7 @@ from panelbench.clone import (
     update_config_from_scrape,
     write_clone_config,
 )
+from panelbench.reference_templates import template_capture_names
 from panelbench.scraper import ScrapedPanel
 from panelbench.validation import validate_yaml_config
 from tests._helpers import (
@@ -779,7 +781,10 @@ class TestCircuitsSharingASpace:
     """Two circuits on one space, as circuits sharing a meter are, stay two circuits."""
 
     def _devices(self) -> dict[str, DiscoveredDevice]:
+        """A tandem on hardware that publishes one, a panel whose `info/hardware-version`
+        selects the variant publishing shared-with lists (SPAN-API-Client-Docs#21)."""
         devices = _base_devices()
+        devices[_SERIAL].update_property("info", "hardware-version", "3.0")
         devices["fff666"] = _sharing("fff666", "Bedroom Lights", "fff777")
         devices["fff777"] = _sharing("fff777", "Bedroom Outlets", "fff666")
         return devices
@@ -812,6 +817,188 @@ class TestCircuitsSharingASpace:
 
         with pytest.raises(ValueError, match="no other circuit of this panel"):
             validate_yaml_config(config)
+
+    @pytest.mark.parametrize(
+        ("hardware", "named"),
+        [
+            ("3.1", "Its hardware version '3.1' selects"),
+            ("", "It publishes no hardware version, so PanelBench reads it as"),
+        ],
+        ids=["an unknown hardware string", "no hardware version"],
+    )
+    def test_lists_on_hardware_whose_variant_cannot_publish_them_are_refused(
+        self, hardware: str, named: str
+    ) -> None:
+        """PanelBench publishes the lists only for hardware 3.0, so a panel publishing
+        them on any other string is neither guessed into that variant nor cloned with
+        its lists dropped: the clone says why."""
+        devices = self._devices()
+        devices[_SERIAL].update_property("info", "hardware-version", hardware)
+
+        with pytest.raises(
+            ValueError, match=rf"{named} the 'span' variant, which publishes no shared-with lists"
+        ) as refused:
+            translate_scraped_panel(_make_scraped(devices))
+
+        assert "circuit_44" in str(refused.value)
+        assert "circuit_44_2" in str(refused.value)
+
+    def test_on_such_hardware_a_panel_with_no_lists_clones_as_a_main_32(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "hardware-version", "3.1")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert config["hardware_version"] == "3.1"
+        assert "variant" not in config
+        validate_yaml_config(config)
+
+    def test_a_sibling_missing_from_the_tree_is_warned_naming_both(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """As an import of a partial tree or a partial scrape may leave one out. The
+        clone still loads, and the gap is said rather than hidden."""
+        devices = self._devices()
+        for capability in ("meter", "switch"):
+            devices["fff666"].update_property(
+                capability, "shared-with-device-ids", "fff777,fff999"
+            )
+
+        with caplog.at_level(logging.WARNING):
+            config = translate_scraped_panel(_make_scraped(devices))
+
+        warned = [r.getMessage() for r in caplog.records if "fff999" in r.getMessage()]
+        assert len(warned) == 1, warned
+        assert "circuit_44" in warned[0]
+        assert "'Bedroom Lights'" in warned[0]
+        circuits = {c["name"]: c for c in _circuits(config)}
+        assert circuits["Bedroom Lights"]["shared_with"] == ["circuit_44_2"]
+        validate_yaml_config(config)
+
+    def test_a_reference_panels_sibling_left_out_of_its_tree_is_warned(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        devices = discovered_from_tree(load_reference_capture("r202639-e").tree)
+        [panel] = [
+            device_id
+            for device_id, device in devices.items()
+            if (device.description or {}).get("type") == TYPE_PANEL
+        ]
+        [missing] = [
+            device_id
+            for device_id, device in devices.items()
+            if device.get_property("info", "name") == "Bedroom / Outlets"
+            and device.get_property("info", "spaces") == "44"
+        ]
+        devices.pop(missing)
+
+        with caplog.at_level(logging.WARNING):
+            config = translate_panel_tree(panel, devices)
+
+        assert any(missing in r.getMessage() for r in caplog.records)
+        validate_yaml_config(config)
+
+    @pytest.mark.parametrize(
+        ("spaces", "reason"),
+        [
+            (("44", "44", "10"), r"they list spaces \[10, 44\]"),
+            (("44", "44", "44"), "all list space 44, but a breaker space holds at most two"),
+        ],
+        ids=["across spaces apart", "three on one space"],
+    )
+    def test_circuits_named_as_one_breaker_that_cannot_be_one_are_refused(
+        self, spaces: tuple[str, str, str], reason: str
+    ) -> None:
+        """Gathering a breaker's circuits across the lists could merge two breakers into
+        one. Where the result is no shape a breaker takes, the clone says so."""
+        devices = self._devices()
+        devices["fff888"] = _circuit(
+            "fff888", "Hall Lights", spaces[2], rating="15", priority="NEVER", active_power="0.0"
+        )
+        for capability in ("meter", "switch"):
+            devices["fff777"].update_property(
+                capability, "shared-with-device-ids", "fff666,fff888"
+            )
+
+        with pytest.raises(ValueError, match=reason) as refused:
+            translate_scraped_panel(_make_scraped(devices))
+
+        assert "name each other as one breaker" in str(refused.value)
+        assert "Hall Lights" in str(refused.value)
+
+    def test_a_list_published_one_way_is_cloned_both_ways(self) -> None:
+        """Every circuit on a breaker names all the others, so a sibling one list names
+        is on the breaker even where its own list is missing, and the clone loads."""
+        devices = self._devices()
+        devices["fff777"] = _circuit(
+            "fff777", "Bedroom Outlets", "44", rating="20", priority="NEVER", active_power="0.0"
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        circuits = {c["name"]: c for c in _circuits(config)}
+        assert circuits["Bedroom Lights"]["shared_with"] == ["circuit_44_2"]
+        assert circuits["Bedroom Outlets"]["shared_with"] == ["circuit_44"]
+        validate_yaml_config(config)
+
+    def test_a_sibling_named_only_on_the_relays_list_is_cloned(self) -> None:
+        """The meter's and the relay's lists name one breaker's circuits, so either
+        names a sibling."""
+        devices = self._devices()
+        for device_id in ("fff666", "fff777"):
+            devices[device_id].update_property("meter", "shared-with-device-ids", "")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        circuits = {c["name"]: c for c in _circuits(config)}
+        assert circuits["Bedroom Lights"]["shared_with"] == ["circuit_44_2"]
+        assert circuits["Bedroom Outlets"]["shared_with"] == ["circuit_44"]
+        validate_yaml_config(config)
+
+    def test_a_tandem_quad_named_in_part_is_cloned_naming_every_sibling(self) -> None:
+        """A single-pole circuit that names only the two-pole one still shares the
+        breaker with the other single-pole one, so the clone names both."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "hardware-version", "3.0")
+        breaker = {
+            "ggg111": ("Workshop Outlets", "31", "20", "ggg333"),
+            "ggg222": ("Workshop Lights", "33", "15", "ggg333"),
+            "ggg333": ("Air Compressor", "31,33", "20", "ggg111,ggg222"),
+        }
+        for device_id, (name, spaces, rating, peers) in breaker.items():
+            circuit = _circuit(
+                device_id, name, spaces, rating=rating, priority="NEVER", active_power="0.0"
+            )
+            circuit.update_property("meter", "shared-with-device-ids", peers)
+            circuit.update_property("switch", "shared-with-device-ids", peers)
+            devices[device_id] = circuit
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        named = {c["name"]: set(c.get("shared_with", [])) for c in _circuits(config)}
+        assert named["Workshop Outlets"] == {"circuit_33", "circuit_31_2"}
+        assert named["Workshop Lights"] == {"circuit_31", "circuit_31_2"}
+        assert named["Air Compressor"] == {"circuit_31", "circuit_33"}
+        validate_yaml_config(config)
+
+
+@pytest.mark.parametrize("name", template_capture_names())
+def test_a_clone_of_each_reference_panel_loads_its_breakers_named_both_ways(name: str) -> None:
+    """Each reference capture is a real SPAN panel's published tree, so its clone must
+    pass validation, every circuit on a shared breaker naming all the others."""
+    devices = discovered_from_tree(load_reference_capture(name).tree)
+    [panel] = [
+        device_id
+        for device_id, device in devices.items()
+        if (device.description or {}).get("type") == TYPE_PANEL
+    ]
+
+    config = translate_panel_tree(panel, devices)
+
+    validate_yaml_config(config)
+    named = {c["id"]: {c["id"], *c.get("shared_with", [])} for c in _circuits(config)}
+    for circuit_id, breaker in named.items():
+        assert all(named[peer] == breaker for peer in breaker), circuit_id
 
 
 class TestAnInverterNoCircuitFeeds:

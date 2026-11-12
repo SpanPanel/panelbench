@@ -29,8 +29,8 @@ Click a simulator configuration to view it. Templates are read-only. A running s
 configs excluded).
 
 1. **Examine templates** — Load and run the included configs (`default_MAIN_40.yaml`, `default_MAIN_32.yaml` and `default_MAIN_16.yaml`) to see how circuits,
-   PV, battery, and EVSE are modeled, or one of the [reference panels](#reference-panels), each a real SPAN panel as it published itself. Pick one as a
-   starting point for your own configuration.
+   PV, battery, and EVSE are modeled, the [`_TANDEMS` ones](#tandem-and-quad-breakers) for tandem and quad breakers, or one of the
+   [reference panels](#reference-panels), each a real SPAN panel as it published itself. Pick one as a starting point for your own configuration.
 2. **Clone** — The **Clone** button creates an editable copy from a template, or from a panel running `r202633+` firmware; cloning a panel preserves recorder
    history per circuit.
 3. **Model** — The **Model** button on a running panel opens the what-if view; add battery, PV, or circuits and compare before/after. Edits mark equipment as
@@ -50,7 +50,8 @@ configs excluded).
 
 PanelBench installs as a Home Assistant app from this repository. Images are published for `amd64` and `aarch64`, and the app is not distributed through HACS.
 It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish. The
-[reference panels](#reference-panels) need **v2.2.0 or later**.
+[reference panels](#reference-panels), and `default_MLO_48_TANDEMS.yaml`, which is built from one, need **v2.2.0 or later**; its tandem-quad is drawn and judged
+correctly from **v2.2.1** (in pre-release as v2.2.1b2).
 
 1. Go to **Settings > Apps** > **App Store** > three-dot menu > **Repositories**
 2. Add `https://github.com/SpanPanel/panelbench`
@@ -223,7 +224,8 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 
 Import also accepts a panel definition file (`panel-sim-definition/1`, as `panel-sim-capture` writes one). PanelBench builds a config from the panel's makeup
 and gives every circuit a default behaviour, which you then tune as for a clone. **Export definition** writes a saved config the other way, as a panel
-definition file holding the panel's makeup without PanelBench's behaviour settings.
+definition file holding the panel's makeup without PanelBench's behaviour settings. A definition's own `variant` outranks the one its panel's `hardware_version`
+selects, so the config records it where the two differ, and a definition in a variant PanelBench does not publish is refused.
 
 ### Simulation Controls
 
@@ -361,11 +363,36 @@ Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts w
 
 ### Included Configs
 
-| File                   | Tabs | Description                                  |
-| ---------------------- | ---- | -------------------------------------------- |
-| `default_MAIN_40.yaml` | 40   | Full residential with solar, battery, 2 EVSE |
-| `default_MAIN_32.yaml` | 32   | Full residential with solar, battery, 1 EVSE |
-| `default_MAIN_16.yaml` | 16   | Minimal test: lights, outlets, HVAC, solar   |
+| File                           | Tabs | Description                                                                   |
+| ------------------------------ | ---- | ----------------------------------------------------------------------------- |
+| `default_MAIN_40.yaml`         | 40   | Full residential with solar, battery, 2 EVSE                                  |
+| `default_MAIN_32.yaml`         | 32   | Full residential with solar, battery, 1 EVSE                                  |
+| `default_MAIN_16.yaml`         | 16   | Minimal test: lights, outlets, HVAC, solar                                    |
+| `default_MAIN_32_TANDEMS.yaml` | 32   | `default_MAIN_32` with a 20-20 tandem and a 20-30 package                     |
+| `default_MLO_48_TANDEMS.yaml`  | 48   | Main-lug-only on hardware 3.0, 1 EVSE, four tandems, a quad and a tandem-quad |
+
+#### Tandem and quad breakers
+
+SPAN publishes a multi-load breaker in one of two ways, by model ([SPAN-API-Client-Docs#21](https://github.com/spanio/SPAN-API-Client-Docs/issues/21)), and the
+two `_TANDEMS` templates show one each:
+
+- **MAIN 32** publishes each breaker space as one circuit with one rating, the first of the package's, so a 20-20 tandem and a 20-30 package both publish `20`.
+  The space's one sensor reads both breakers together, and a two-pole circuit's `meter/current` is the average of its two legs. In
+  `default_MAIN_32_TANDEMS.yaml`, "Tandem 20-20" on space 31 and "Washer & Dryer 20-30" on spaces 18 and 20 are loaded past the 20 A they publish.
+- **MAIN 16, MLO 24, MAIN 40 and MLO 48** publish one circuit per protected circuit, each with its own rating, and name each other in `meter/` and
+  `switch/shared-with-device-ids`, which a circuit's `shared_with` sets. A single-pole circuit lists its own space and a two-pole circuit lists both.
+  `default_MLO_48_TANDEMS.yaml` is the reference MLO 48 with synthetic names and loads. It keeps that panel's three tandems and adds a 15-20 tandem on space 37,
+  a quad on 27 and 29, and a tandem-quad on 31 and 33.
+
+The breaker shape follows `hardware_version`, unless the config declares a `variant`, which outranks it as an imported definition's does: at `3.0`, as the
+`ref_` templates and `default_MLO_48_TANDEMS.yaml` have it, each protected circuit publishes separately, and at `1.2`, as the default MAIN templates have it,
+the panel publishes as a MAIN 32 does.
+
+PanelBench accepts circuits sharing a space only as one breaker's circuits named to each other, on hardware that publishes them so. Two circuits listing one
+space are otherwise refused, as are more than two on one space, and `shared_with` on a MAIN 32-style panel, which publishes no shared-with lists. A clone of a
+panel writes each breaker's circuits naming all the others, even where the panel listed a sibling on one side only. A live panel declares no variant, so a clone
+of one publishing those lists on hardware other than `3.0` would publish as a MAIN 32: the clone refuses it rather than guess, and warns of a sibling its tree
+leaves out. Each circuit still publishes its own reading, where a panel publishes the breaker's one combined reading on every circuit sharing it.
 
 ### Reference Panels
 
@@ -389,9 +416,11 @@ Read them with the `span-panel` integration v2.2.0 or later.
 panel emulates: the battery's power sign, whether a SPAN Drive's user charge limit is published before a user sets one, one solar device per inverter, the
 status endpoint's hardware version, and commissioned-system circuits.
 
-The included configs name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639: their solar
-circuit is the locked "Commissioned PV System" circuit, and they report hardware version `1.2`. Read them with the `span-panel` integration v2.1.2 or later;
-v2.1.1 shows the battery's Meter Power with its sign flipped.
+The included configs name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639. The MAIN
+ones' solar circuit is the locked "Commissioned PV System" circuit, and they report hardware version `1.2`. Read them with the `span-panel` integration v2.1.2
+or later; v2.1.1 shows the battery's Meter Power with its sign flipped. `default_MLO_48_TANDEMS.yaml` reports hardware version `3.0`, as the reference MLO 48
+does, and has no solar circuit; read it with v2.2.0 or later, and with v2.2.1 or later (in pre-release as v2.2.1b2) for its tandem-quad to be drawn and judged
+correctly.
 
 To emulate the firmware before that upgrade, clone a template, since templates are read-only, and in the clone's YAML under `configs/` name a 202633 release and
 remove `commissioned_system` from its solar template, which PanelBench refuses on an earlier release:

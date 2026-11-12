@@ -35,6 +35,12 @@ _VARIANT_BY_HARDWARE_VERSION: Final[Mapping[str, Variant]] = {"3.0": _EXTENDED_V
 """The emitter variant a hardware version string selects, as the emitter's capture
 reads a SPAN panel; every other string publishes ``span``."""
 
+_PUBLISHED_VARIANTS: Final[Mapping[str, Variant]] = {
+    "span": "span",
+    _EXTENDED_VARIANT: _EXTENDED_VARIANT,
+}
+"""The emitter variants PanelBench publishes, by name: those SPAN hardware publishes."""
+
 _STATUS_HARDWARE_VERSIONS: Final = frozenset({"1.2", "2.0", "3.0"})
 """Reported by the status endpoint as they are: SPAN's documented values, and the
 string the reference captures' panels publish that selects their variant."""
@@ -63,9 +69,58 @@ def variant_for(hardware_version: str) -> Variant:
     return _VARIANT_BY_HARDWARE_VERSION.get(hardware_version, "span")
 
 
+def published_variant(name: object) -> Variant:
+    """The variant *name* names, which must be one PanelBench publishes.
+
+    Raises:
+        ValueError: *name* names no such variant, as the emitter's ``reference`` one is
+            not: PanelBench emulates the variants SPAN hardware publishes.
+    """
+    variant = _PUBLISHED_VARIANTS.get(name) if isinstance(name, str) else None
+    if variant is None:
+        published = ", ".join(repr(v) for v in _PUBLISHED_VARIANTS)
+        raise ValueError(
+            f"variant {name!r} is not one PanelBench publishes: it publishes {published}"
+        )
+    return variant
+
+
 def panel_variant(config: Mapping[str, object]) -> Variant:
-    """``variant_for`` the panel *config* describes."""
+    """The variant the panel *config* describes publishes.
+
+    A ``variant`` the config declares outranks the one its hardware version selects
+    (``variant_for``), which PanelBench knows only for the strings SPAN hardware is
+    known to report. A definition import records the variant its definition declares
+    there, so a panel on another string still publishes as its definition says.
+    """
+    declared = config.get("variant")
+    if declared is not None:
+        return published_variant(declared)
     return variant_for(panel_hardware_version(config))
+
+
+def declares_variant(config: Mapping[str, object]) -> bool:
+    """Whether the panel *config* describes declares its variant, outranking its hardware."""
+    return config.get("variant") is not None
+
+
+def variant_selection(config: Mapping[str, object]) -> str:
+    """What selects the variant the panel *config* describes publishes, for a message.
+
+    A clause ending in the variant, so a message can go on with what that variant
+    publishes: a declared variant, else the hardware version, else its default.
+    """
+    if declares_variant(config):
+        return f"the config declares the {panel_variant(config)!r} variant"
+    if not config.get("hardware_version"):
+        return (
+            f"hardware_version is unset and its default {DEFAULT_HARDWARE_VERSION!r} selects "
+            f"the {panel_variant(config)!r} variant"
+        )
+    return (
+        f"hardware_version {panel_hardware_version(config)!r} selects the "
+        f"{panel_variant(config)!r} variant"
+    )
 
 
 def publishes_outside_meters(config: Mapping[str, object]) -> bool:
@@ -80,6 +135,17 @@ def publishes_pv_devices(variant: Variant) -> bool:
     an inverter carries the solar feeds role instead.
     """
     return variant != _EXTENDED_VARIANT
+
+
+def publishes_shared_breakers(variant: Variant) -> bool:
+    """Whether *variant* publishes a multi-load breaker as one circuit per protected circuit.
+
+    Under it, the circuits on one tandem or quad each publish their own rating and name
+    each other in ``meter/`` and ``switch/shared-with-device-ids``, so several circuits
+    can list one breaker space. The ``span`` variant, a MAIN 32's, publishes each space
+    as one circuit with one rating and no shared-with lists (SPAN-API-Client-Docs#21).
+    """
+    return variant == _EXTENDED_VARIANT
 
 
 def relay_locks_priority(variant: Variant) -> bool:

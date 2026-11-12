@@ -407,3 +407,6 @@ class SimulationConfig(TypedDict):
     # Identity metadata that surfaces in the panel DeviceInstance.
     firmware_version: NotRequired[str]
     hardware_version: NotRequired[str]
+    # The emitter variant the panel publishes, where it is not the one hardware_version
+    # selects: a definition import records the one its definition declares.
+    variant: NotRequired[str]

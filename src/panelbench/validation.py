@@ -9,16 +9,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
+from panelbench.breakers import breaker_misfit, crowded_spaces, crowding
 from panelbench.config_types import PVInverterYAML
 from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 from panelbench.hardware import (
-    panel_hardware_version,
+    declares_variant,
     panel_variant,
     publishes_outside_meters,
     publishes_pv_devices,
+    publishes_shared_breakers,
     relay_locks_priority,
+    variant_selection,
 )
 from panelbench.pv_rating import rating_conflicts
 from panelbench.pv_section import bound_pv_circuit_id, pv_circuit_ids
@@ -43,6 +46,8 @@ def validate_yaml_config(config_data: Any) -> None:
             raise ValueError(f"Missing required section: {section}")
 
     validate_panel_config(config_data["panel_config"])
+    # A declared variant must be one PanelBench publishes; panel_variant says which.
+    panel_variant(config_data)
     validate_circuit_templates(config_data["circuit_templates"])
     _validate_commissioned_firmware(
         panel_firmware_version(config_data), config_data["circuit_templates"]
@@ -59,7 +64,7 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_unfed_inverters(config_data)
     validate_ratings(config_data)
     validate_outside_meters(config_data)
-    validate_shared_circuits(config_data["circuits"])
+    validate_shared_circuits(config_data)
     validate_unvalued_lists(config_data)
 
     if "panel_source" in config_data:
@@ -353,9 +358,8 @@ def validate_unfed_inverters(config_data: Mapping[str, object]) -> None:
     variant = panel_variant(config_data)
     if not publishes_pv_devices(variant):
         raise ValueError(
-            f"pv.inverters are not published by the {variant!r} variant, which hardware_version "
-            f"{panel_hardware_version(config_data)!r} selects: it publishes no inverter "
-            "device, only the circuit feeding one"
+            f"pv.inverters are not published here: {variant_selection(config_data)}, which "
+            "publishes no inverter device, only the circuit feeding one"
         )
 
 
@@ -443,25 +447,120 @@ def validate_outside_meters(config_data: Mapping[str, object]) -> None:
         taken.add(meter_id)
     if meters and not publishes_outside_meters(config_data):
         raise ValueError(
-            f"outside_meters are not published by the {panel_variant(config_data)!r} variant, "
-            f"which hardware_version {panel_hardware_version(config_data)!r} selects"
+            f"outside_meters are not published here: {variant_selection(config_data)}, which "
+            "publishes no meter outside the panel"
         )
 
 
-def validate_shared_circuits(circuits: list[Mapping[str, object]]) -> None:
-    """Each circuit a circuit says it shares a meter and relay with is another circuit
-    of the panel. *circuits* has already passed validation."""
+def validate_shared_circuits(config_data: Mapping[str, object]) -> None:
+    """Circuits list one breaker space only as the circuits of one multi-load breaker.
+
+    SPAN publishes a tandem or quad in two ways (SPAN-API-Client-Docs#21). Under a
+    variant that publishes one circuit per protected circuit
+    (``publishes_shared_breakers``), each circuit on a breaker names all the others in
+    ``meter/`` and ``switch/shared-with-device-ids``, which ``shared_with`` publishes. A
+    single-pole circuit lists its own space and a two-pole one lists both. Under the
+    ``span`` variant, a MAIN 32's, each space is one circuit and none names another. So:
+
+    - each circuit ``shared_with`` names is another circuit of the panel;
+    - ``shared_with`` is refused under a variant that publishes no shared-with lists;
+    - each circuit on a breaker names all the others, so the names agree both ways;
+    - a space holds two circuits at most;
+    - a breaker's circuits sit on one space, or on one two-pole pair that one of them
+      spans, as a tandem, a quad and a tandem-quad do (``breakers``);
+    - circuits that list a common space are one breaker's circuits.
+
+    Anything else is a genuine overlap: two circuits published on one space with
+    nothing to say they share a breaker. Each refusal names the circuits and the rule,
+    and on a variant that publishes no shared-with lists, what selected it and the two
+    ways to fix the config, neither of which leads into the other refusal there.
+    *config_data*'s circuits have already passed validation.
+    """
+    circuits: list[Mapping[str, object]] = [
+        c for c in _listed(config_data.get("circuits")) if isinstance(c, dict)
+    ]
+    shared = publishes_shared_breakers(panel_variant(config_data))
     ids = {str(circuit["id"]) for circuit in circuits}
+    breakers: dict[str, frozenset[str]] = {}
     for circuit in circuits:
+        own = str(circuit["id"])
         peers = circuit.get("shared_with") or []
         if not isinstance(peers, list):
-            raise ValueError(f"Circuit {circuit['id']!r} shared_with must be a list")
+            raise ValueError(f"Circuit {own!r} shared_with must be a list")
         for peer in peers:
-            if str(peer) not in ids or str(peer) == str(circuit["id"]):
+            if str(peer) not in ids or str(peer) == own:
                 raise ValueError(
-                    f"Circuit {circuit['id']!r} shares its meter with {peer!r}, "
+                    f"Circuit {own!r} shares its meter with {peer!r}, "
                     "which is no other circuit of this panel"
                 )
+        if peers and not shared:
+            raise ValueError(
+                f"Circuit {own!r} has shared_with, but {variant_selection(config_data)}, "
+                "which publishes no shared-with lists and each breaker space as one circuit, "
+                f"as a MAIN 32 does: {_one_circuit_per_space_fix(config_data)}"
+            )
+        breakers[own] = frozenset({own, *(str(peer) for peer in peers)})
+
+    for own, breaker in breakers.items():
+        for peer in sorted(breaker - {own}):
+            if breakers[peer] != breaker:
+                raise ValueError(
+                    f"Circuit {own!r} shares a breaker with {sorted(breaker - {own})}, but "
+                    f"{peer!r} names {sorted(breakers[peer] - {peer})}: every circuit on one "
+                    "breaker names all the others in shared_with"
+                )
+
+    spaces = {
+        str(c["id"]): frozenset(t for t in _listed(c.get("tabs")) if isinstance(t, int))
+        for c in circuits
+    }
+    if shared:
+        for space, listed in crowded_spaces(spaces):
+            raise ValueError(f"Circuits {crowding(space, listed)}")
+    for breaker in sorted(set(breakers.values()), key=sorted):
+        if len(breaker) < 2:
+            continue
+        misfit = breaker_misfit({circuit: spaces[circuit] for circuit in breaker})
+        if misfit is not None:
+            raise ValueError(f"Circuits {sorted(breaker)} share one breaker, but {misfit}")
+
+    listing: dict[int, list[str]] = {}
+    for circuit_id, tabs in spaces.items():
+        for space in tabs:
+            listing.setdefault(space, []).append(circuit_id)
+    for space, listed in sorted(listing.items()):
+        for index, first in enumerate(listed):
+            for second in listed[index + 1 :]:
+                if second in breakers[first]:
+                    continue
+                if shared:
+                    raise ValueError(
+                        f"Circuits {first!r} and {second!r} both list space {space}, which "
+                        "only the circuits of one breaker do: name each other in shared_with, "
+                        "or give each its own space"
+                    )
+                raise ValueError(
+                    f"Circuits {first!r} and {second!r} both list space {space}, but "
+                    f"{variant_selection(config_data)}, which publishes each breaker space as "
+                    f"one circuit, as a MAIN 32 does: {_one_circuit_per_space_fix(config_data)}"
+                )
+
+
+def _one_circuit_per_space_fix(config_data: Mapping[str, object]) -> str:
+    """The two fixes both refusals give on a variant that publishes each breaker space as
+    one circuit. Each loads, so following one never leads into the other refusal."""
+    to_gen3 = (
+        "remove variant and set hardware_version: '3.0'"
+        if declares_variant(config_data)
+        else "set hardware_version: '3.0'"
+    )
+    return (
+        "to publish each of a tandem's or quad's circuits separately, as newer SPAN hardware "
+        f"does, {to_gen3} and name them to each other in shared_with, or start from a ref_ "
+        "template or default_MLO_48_TANDEMS; to publish the breaker as a MAIN 32 does, make it "
+        "one circuit on its space, or one two-pole circuit across its two spaces, with no "
+        "shared_with"
+    )
 
 
 def validate_unvalued_lists(config_data: Mapping[str, object]) -> None:

@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 
 _RUN_SH = Path(__file__).parent.parent / "panelbench" / "run.sh"
+_CONFIGS = Path(__file__).parent.parent / "configs"
 
 _CURRENT = "firmware_version: spanos3/r202639/03\n"
 _STALE = "panel_config:\n  serial_number: sim-40\n"
@@ -96,6 +97,27 @@ def test_user_files_are_never_touched(tmp_path: Path) -> None:
 
     assert clone.read_text() == _STALE
     assert orphan.read_text() == _STALE
+
+
+def test_every_shipped_template_is_laid_down_and_a_stale_one_refreshed(tmp_path: Path) -> None:
+    """From ``configs/``, as the add-on image ships it (``COPY configs/ configs/``): each
+    ``default_*`` file is laid down, and each one an earlier release left is refreshed."""
+    shipped = sorted(p.name for p in _CONFIGS.glob("default_*.yaml"))
+    assert {"default_MAIN_32_TANDEMS.yaml", "default_MLO_48_TANDEMS.yaml"} <= set(shipped)
+    config_dir = tmp_path / "config-panelbench"
+    config_dir.mkdir()
+
+    _seed(_CONFIGS, config_dir)
+
+    assert sorted(p.name for p in config_dir.glob("default_*.yaml")) == shipped
+    for name in shipped:
+        (config_dir / name).write_text(_STALE)
+
+    log = _seed(_CONFIGS, config_dir)
+
+    for name in shipped:
+        assert (config_dir / name).read_bytes() == (_CONFIGS / name).read_bytes()
+        assert f"Refreshed shipped template: {name}" in log
 
 
 def test_an_edited_shipped_non_template_is_kept(tmp_path: Path) -> None:

@@ -30,8 +30,9 @@ from ebus_panel_sim import EmitterError, PanelDefinition, Variant
 from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_tree
 from ebus_sdk import DiscoveredDevice
 
+from panelbench.breakers import breaker_misfit
 from panelbench.emitter_adapter import commissioning
-from panelbench.hardware import relay_locks_priority, variant_for
+from panelbench.hardware import publishes_shared_breakers, relay_locks_priority, variant_for
 from panelbench.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
@@ -183,6 +184,7 @@ def translate_panel_tree(
     devices: Mapping[str, DiscoveredDevice],
     *,
     host: str | None = None,
+    variant: Variant | None = None,
 ) -> dict[str, object]:
     """Translate a panel's device tree into a simulator config dict.
 
@@ -193,16 +195,27 @@ def translate_panel_tree(
         host: Source panel IP/hostname (stored in panel_source for refresh). What it
             takes to reach the panel there is kept in the ``PanelSecretsStore``,
             never in the config.
+        variant: The variant the panel publishes, where its source says, as a
+            definition does. It outranks the one the panel's hardware version
+            selects, and is recorded where the two differ. A live panel says none.
 
     Returns a dict matching the ``SimulationConfig`` TypedDict shape,
     ready for YAML serialisation and ``validate_yaml_config()``.
+
+    Raises:
+        ValueError: The panel publishes circuits sharing a breaker, which the variant
+            it publishes cannot (``publishes_shared_breakers``), or names as one
+            breaker circuits that cannot be one (``breakers``). Either way the clone
+            would not publish what the panel does, so there is none.
     """
     circuit_nodes = _devices_of_type(devices, panel_device_id, TYPE_CIRCUIT)
     bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
     pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
     evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
     unvalued = _unvalued_by_device(_emitter_reading(devices, panel_device_id))
-    variant = variant_for(_get_prop(devices, panel_device_id, "info", "hardware-version") or "")
+    hardware = _get_prop(devices, panel_device_id, "info", "hardware-version") or ""
+    inferred = variant_for(hardware)
+    published = inferred if variant is None else variant
 
     # Build feed cross-reference: circuit_uuid → device_type
     feed_map = _build_feed_map(devices, circuit_nodes)
@@ -255,6 +268,11 @@ def translate_panel_tree(
     outside_meters: list[dict[str, object]] = []
     used_tabs: set[int] = set()
     keys = _circuit_keys(devices, circuit_nodes)
+    siblings = _breaker_siblings(devices, keys)
+    if siblings and not publishes_shared_breakers(published):
+        raise ValueError(
+            _unpublishable_breakers(panel_device_id, hardware, published, keys, siblings)
+        )
 
     for node_uuid in sorted(circuit_nodes):
         if _meters_outside_the_panel(devices, node_uuid):
@@ -267,8 +285,9 @@ def translate_panel_tree(
             node_uuid,
             feed_map,
             unvalued.get(node_uuid, []),
-            variant,
+            published,
             keys,
+            siblings,
         )
         if result is None:
             continue
@@ -324,9 +343,10 @@ def translate_panel_tree(
 
     # Published as info/hardware-version and, from SPAN release 202639, reported by
     # the status endpoint, so a clone reports the source panel's value on both.
-    hardware = _get_prop(devices, panel_device_id, "info", "hardware-version")
     if hardware:
         config["hardware_version"] = hardware
+    if published != inferred:
+        config["variant"] = published
 
     # Build top-level BESS config (only when a battery is actually connected)
     mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
@@ -870,13 +890,14 @@ def _translate_circuit(
     unvalued: list[str],
     variant: Variant,
     keys: Mapping[str, str],
+    siblings: Mapping[str, list[str]],
 ) -> tuple[str, dict[str, object], dict[str, object], list[int]] | None:
     """Translate a single circuit node into a template and definition.
 
     *unvalued* is what the circuit declares and leaves unvalued, *variant* the panel's,
-    and *keys* every circuit's key (``_circuit_keys``). Returns (template_name,
-    template_dict, circuit_def, tabs) or None if the circuit cannot be translated
-    (missing space).
+    *keys* every circuit's key (``_circuit_keys``), and *siblings* each circuit's on its
+    tandem or quad (``_breaker_siblings``). Returns (template_name, template_dict,
+    circuit_def, tabs) or None if the circuit cannot be translated (missing space).
     """
     tabs = _spaces_prop(devices, node_uuid)
     if not tabs:
@@ -1034,7 +1055,7 @@ def _translate_circuit(
         "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
         **commissioning.config_values(commissioning.CIRCUIT, _published_by(devices, node_uuid)),
     }
-    shared = _shared_with(devices, node_uuid, keys)
+    shared = siblings.get(node_uuid)
     if shared:
         circuit_def["shared_with"] = shared
     # A rating or priority the panel publishes none of is recorded as null above.
@@ -1361,12 +1382,132 @@ def _template_name(key: str) -> str:
     return f"clone_{key}"
 
 
-def _shared_with(
-    devices: Mapping[str, DiscoveredDevice], node_uuid: str, keys: Mapping[str, str]
-) -> list[str]:
-    """The circuits sharing this circuit's meter and relay, by their ids in the clone."""
-    raw = _get_prop(devices, node_uuid, "meter", "shared-with-device-ids") or ""
-    return [_circuit_id(keys[peer]) for peer in raw.split(",") if peer in keys]
+def _unpublishable_breakers(
+    panel_device_id: str,
+    hardware: str,
+    variant: Variant,
+    keys: Mapping[str, str],
+    siblings: Mapping[str, list[str]],
+) -> str:
+    """Why a panel publishing circuits that share a breaker is not cloned under *variant*.
+
+    PanelBench publishes a breaker's circuits separately only under the variant hardware
+    3.0 selects. A panel on another string, or none, may still publish them, and the
+    clone neither guesses its variant nor drops the lists it published.
+    """
+    breakers = sorted(
+        {tuple(sorted({_circuit_id(keys[node]), *peers})) for node, peers in siblings.items()}
+    )
+    named = "; ".join(" and ".join(breaker) for breaker in breakers)
+    source = (
+        f"Its hardware version {hardware!r} selects"
+        if hardware
+        else "It publishes no hardware version, so PanelBench reads it as"
+    )
+    return (
+        f"Panel {panel_device_id!r} publishes circuits sharing a breaker ({named}). {source} "
+        f"the {variant!r} variant, which publishes no shared-with lists. PanelBench publishes "
+        "a breaker's circuits separately only for hardware version '3.0', so it will not "
+        "translate this panel's tree rather than guess its variant or drop the lists"
+    )
+
+
+_SHARED_WITH_NODES: Final = ("meter", "switch")
+
+
+def _describe_device(devices: Mapping[str, DiscoveredDevice], device_id: str) -> str:
+    """*device_id*, with its published name where the tree holds the device."""
+    name = _get_prop(devices, device_id, "info", "name") if device_id in devices else None
+    return f"{device_id} ({name!r})" if name else device_id
+
+
+def _breaker_siblings(
+    devices: Mapping[str, DiscoveredDevice], keys: Mapping[str, str]
+) -> dict[str, list[str]]:
+    """Each branch circuit's siblings on its tandem or quad, by their ids in the clone.
+
+    A panel names the circuits sharing one breaker's meter and relay in ``meter/`` and
+    ``switch/shared-with-device-ids``, and every circuit on a breaker names all the
+    others (SPAN-API-Client-Docs#21). So a circuit either list names, or that names
+    one in its own, is on that breaker. Each breaker's circuits are therefore gathered
+    across both lists in both directions, and each is written naming all the others,
+    as validation requires. A clone of a panel that published a list one way, or left
+    a sibling out of one, still loads. Each circuit names first the siblings it
+    published, in its order, then any it left out, in id order. Only circuits the clone
+    keeps (*keys*) are named: a sibling a list names that the clone has no circuit for,
+    as a partial tree or scrape may leave out, is warned of, naming both.
+
+    Raises:
+        ValueError: Circuits the lists gather into one breaker are no shape a breaker
+            takes (``breakers.breaker_misfit``). That would merge what may be two
+            breakers into one, so the clone says which instead.
+    """
+    published: dict[str, list[str]] = {}
+    linked: dict[str, set[str]] = {node: set() for node in keys}
+    for node in keys:
+        named: list[str] = []
+        absent: list[str] = []
+        for capability in _SHARED_WITH_NODES:
+            raw = _get_prop(devices, node, capability, "shared-with-device-ids") or ""
+            for peer in (p.strip() for p in raw.split(",")):
+                if not peer or peer == node:
+                    continue
+                if peer in keys:
+                    if peer not in named:
+                        named.append(peer)
+                elif peer not in absent:
+                    absent.append(peer)
+        published[node] = named
+        for peer in absent:
+            _LOGGER.warning(
+                "Circuit %s (%r) names %s as sharing its breaker, but the panel's tree holds "
+                "no circuit the clone can keep for it, so %s's shared_with leaves it out",
+                _circuit_id(keys[node]),
+                _get_prop(devices, node, "info", "name"),
+                _describe_device(devices, peer),
+                _circuit_id(keys[node]),
+            )
+        for peer in named:
+            linked[node].add(peer)
+            linked[peer].add(node)
+
+    breaker_of: dict[str, frozenset[str]] = {}
+    for start in keys:
+        if start in breaker_of:
+            continue
+        breaker: set[str] = set()
+        pending = [start]
+        while pending:
+            node = pending.pop()
+            if node not in breaker:
+                breaker.add(node)
+                pending.extend(linked[node] - breaker)
+        for node in breaker:
+            breaker_of[node] = frozenset(breaker)
+
+    for members in sorted(set(breaker_of.values()), key=lambda m: sorted(keys[n] for n in m)):
+        if len(members) < 2:
+            continue
+        misfit = breaker_misfit(
+            {_circuit_id(keys[n]): frozenset(_spaces_prop(devices, n)) for n in members}
+        )
+        if misfit is not None:
+            named_circuits = ", ".join(
+                f"{_circuit_id(keys[n])} ({_get_prop(devices, n, 'info', 'name')!r})"
+                for n in sorted(members, key=lambda n: keys[n])
+            )
+            raise ValueError(
+                f"Circuits {named_circuits} name each other as one breaker, but {misfit}. "
+                "PanelBench will not merge what may be two breakers into one"
+            )
+
+    siblings: dict[str, list[str]] = {}
+    for node, members in breaker_of.items():
+        left_out = sorted(members - {node} - set(published[node]), key=lambda p: keys[p])
+        ordered = [*published[node], *left_out]
+        if ordered:
+            siblings[node] = [_circuit_id(keys[peer]) for peer in ordered]
+    return siblings
 
 
 def _enrich_pv_template(

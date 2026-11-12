@@ -15,12 +15,14 @@ from ebus_panel_sim import (
     ManifestPhysicsView,
     PanelDefinition,
     dump_definition,
+    load_reference_capture,
 )
 from ebus_panel_sim.capture import definition_from_tree, tree_from_retained
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard.keys import APP_KEY_STORE
-from panelbench.definition_import import config_from_definition
+from panelbench.definition_export import definition_for_config_file, definition_text
+from panelbench.definition_import import config_from_definition, config_from_definition_text
 from panelbench.emitter_adapter.definition import (
     bess_config,
     bess_dispatch_yaml,
@@ -279,3 +281,71 @@ async def test_a_pre_202639_definition_with_a_commissioned_circuit_is_a_400(
 
     assert status == 400
     assert "locked only from SPAN release 202639" in body
+
+
+_MLO_48_CAPTURE = "r202639-e"
+_GEN3_STRING = "hardware-version: '3.0'"
+
+
+def _mlo_48_text(*, hardware: str | None = None, variant: str | None = None) -> str:
+    """The reference MLO 48's definition as upstream writes it, its panel's hardware
+    version and declared variant changed where given."""
+    text = definition_text(load_reference_capture(_MLO_48_CAPTURE).definition)
+    if hardware is not None:
+        assert text.count(_GEN3_STRING) == 1
+        text = text.replace(_GEN3_STRING, f"hardware-version: '{hardware}'")
+    if variant is not None:
+        assert text.count("variant: span-alpha-test-b2") == 1
+        text = text.replace("variant: span-alpha-test-b2", f"variant: {variant}")
+    return text
+
+
+class TestADeclaredVariant:
+    """A definition states its variant, and that outranks the one its panel's hardware
+    version string would select, which PanelBench knows only for '3.0'."""
+
+    def test_one_the_hardware_version_selects_too_is_not_recorded(self) -> None:
+        """So every reference panel's template is as it was."""
+        config = config_from_definition_text(_mlo_48_text())
+
+        assert "variant" not in config
+        assert config["hardware_version"] == "3.0"
+
+    @pytest.mark.asyncio
+    async def test_one_the_hardware_version_does_not_select_is_recorded_and_published(
+        self, tmp_path: Path
+    ) -> None:
+        """The MLO 48 on a hardware string PanelBench has no variant for: its tandems
+        still import, and publish their shared-with lists."""
+        config = config_from_definition_text(_mlo_48_text(hardware="3.1"))
+
+        assert config["hardware_version"] == "3.1"
+        assert config["variant"] == "span-alpha-test-b2"
+        validate_yaml_config(config)
+        retained = await capture_retained(write_config(tmp_path / "imported.yaml", config))
+        assert any(topic.endswith("/meter/shared-with-device-ids") for topic in retained)
+
+    def test_it_outranks_hardware_3_0_the_other_way(self) -> None:
+        """A panel on hardware 3.0 whose definition declares the MAIN 32 variant
+        publishes as a MAIN 32 does, with no shared-with lists to import."""
+        captured = definition_text(load_reference_capture("main32_r202639").definition)
+        text = captured.replace("hardware-version: '1.2'", "hardware-version: '3.0'")
+        assert text != captured
+
+        config = config_from_definition_text(text)
+
+        assert config["variant"] == "span"
+        validate_yaml_config(config)
+
+    @pytest.mark.asyncio
+    async def test_an_exported_config_imports_with_its_variant(self, tmp_path: Path) -> None:
+        config = config_from_definition_text(_mlo_48_text(hardware="3.1"))
+        path = write_config(tmp_path / "imported.yaml", config)
+
+        exported = definition_text(await definition_for_config_file(path))
+
+        assert config_from_definition_text(exported)["variant"] == "span-alpha-test-b2"
+
+    def test_one_panelbench_does_not_publish_is_refused(self) -> None:
+        with pytest.raises(ValueError, match=r"variant 'reference'.*'span', 'span-alpha-test-b2'"):
+            config_from_definition_text(_mlo_48_text(variant="reference"))

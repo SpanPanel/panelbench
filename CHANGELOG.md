@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Added `default_MAIN_32_TANDEMS.yaml`**, a MAIN 32 with a 20-20 tandem on space 31 and a washer-and-dryer 20-30 package on spaces 18 and 20, each published
+  as one circuit at 20 A as a MAIN 32 publishes them, and loaded past it to 31.7 A and 22.5 A.
+- **Added `default_MLO_48_TANDEMS.yaml`**, a main-lug-only MLO 48 on hardware 3.0 built from the reference MLO 48 with synthetic names and loads, with four
+  tandems, a quad and a tandem-quad whose circuits name each other in `meter/` and `switch/shared-with-device-ids`; read it with span-panel v2.2.0 or later, and
+  v2.2.1 or later for its tandem-quad.
+- **A config may declare `variant`**, which outranks the one its `hardware_version` selects, and a definition import records the variant its definition
+  declares, so a panel on hardware other than 3.0 imports as its definition says.
+
+### Changed
+
+- **Circuits may now share a breaker space only as one tandem's or quad's circuits naming each other in `shared_with`**, two to a space at most, so a config
+  that loaded before but puts two unlinked circuits on one space, more than two on one, or `shared_with` on hardware 1.2 now refuses to load, saying which
+  circuits and how to fix it.
+- **A clone of a panel writes each tandem's or quad's circuits naming all the others**, warns of a sibling its tree leaves out, and refuses a panel publishing
+  those lists on hardware other than 3.0 rather than guess its variant.
+
 ## 2.7.0 — Reference panels on SPAN firmware release 202639
 
 **PanelBench now ships a read-only template for each reference capture of a real SPAN panel, and a clone or an import of each one publishes what that panel

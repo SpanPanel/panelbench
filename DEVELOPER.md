@@ -457,7 +457,11 @@ circuits:
     # EVSE circuit: its drive's firmware (every drive: else evse.firmware_version)
     tags: [str] # Published as info/tags, as commissioned; a clone keeps its panel's
     locations: [str] # Published as info/locations, as commissioned
-    shared_with: [str] # The ids of the circuits sharing its meter and relay, as circuits on one space do
+    shared_with:
+      [str] # The other circuits on its tandem or quad, sharing its meter and relay, each naming all the others.
+      # Only where the hardware publishes one circuit per protected circuit (hardware_version 3.0): there two
+      # circuits may list one space only if they name each other, and no more than two may, while a MAIN
+      # 32-style panel refuses the key.
     unvalued: [str] # node/property paths the circuit declares and leaves unvalued
     overrides: # Override any template field but its rating, which the loader moves into the template
       typical_power: 500.0
@@ -509,7 +513,13 @@ firmware_version:
 hardware_version:
   str # Published as info/hardware-version (default: 1.2). From release 202639
   # the status endpoint reports it as hardwareVersion if it is 1.2, 2.0 or the string the
-  # reference panels publish, else UNKNOWN.
+  # reference panels publish, else UNKNOWN. It selects the emitter variant: 3.0 the one
+  # publishing each of a tandem's or quad's circuits separately, any other string a MAIN 32's.
+
+variant:
+  str # span | span-alpha-test-b2: the variant, where it is not the one hardware_version selects.
+  # It outranks hardware_version. A definition import records the one its definition declares
+  # there; any other variant, such as the emitter's reference one, is refused.
 
 # Clone provenance (written by the clone pipeline)
 panel_source:
