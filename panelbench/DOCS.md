@@ -141,11 +141,14 @@ System, light, or dark theme via the header selector.
 ## Firmware version
 
 The included configs are SPAN panels on firmware release 202639 and
-report `spanos3/r202639/03`: the battery's power reading is positive
-while discharging, the solar circuit is the locked "Commissioned PV
-System" circuit, and the status endpoint reports hardware version
-`1.2`. Read them with the SpanPanel/span integration **v2.1.2 or
-later**, and the `ref_` templates with **v2.2.0 or later**.
+report `spanos3/r202639/03`. On the MAIN ones the battery's power
+reading is positive while discharging, the solar circuit is the locked
+"Commissioned PV System" circuit, and the status endpoint reports
+hardware version `1.2`. Read them with the SpanPanel/span integration
+**v2.1.2 or later**. `default_MLO_48_TANDEMS` reports hardware version `3.0`,
+as the reference MLO 48 it is built from does; read it, and the `ref_`
+templates, with **v2.2.0 or later**. Its tandem-quad is drawn and
+judged correctly from **v2.2.1** (in pre-release as v2.2.1b2).
 
 To emulate a panel before the upgrade to release 202639, clone a
 config from the dashboard, then in the clone's YAML name a 202633

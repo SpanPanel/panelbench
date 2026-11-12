@@ -1,0 +1,1187 @@
+# A 48-space main-lug-only panel on SPAN hardware 3.0, with tandem and quad breakers.
+#
+# Built from the pinned emitter's reference MLO 48 (`r202639-e`, which PanelBench also
+# writes as `ref_MLO_48.yaml`) through PanelBench's own definition import, so it keeps
+# that panel's shape: hardware 3.0, which selects the emitter's `span-alpha-test-b2`
+# variant, its firmware release, no main breaker, its lugs, and each circuit's spaces,
+# rating, priority and commissioned facts. Its serial, site, circuit names and load
+# profiles are synthetic, and its energy registers start from PanelBench's estimate.
+#
+# Multi-load breakers. A MAIN 16, MLO 24, MAIN 40 or MLO 48 publishes one circuit per
+# protected circuit (spanio/SPAN-API-Client-Docs#21). Each circuit on a breaker
+# publishes its own `breaker/rating` and names all the others in `meter/` and
+# `switch/shared-with-device-ids`, which `shared_with` sets, so each group is wired both
+# ways. A single-pole circuit lists its own space and a two-pole one lists both:
+#
+#   space 37         15-20 tandem   Basement Outlets 20 A, Basement Lights 15 A
+#   space 44         15-15 tandem   Guest Room Lights, Guest Room Outlets
+#   space 46         20-20 tandem   Den Outlets, Den Lights
+#   space 48         15-10 tandem   Dining Room Outlets 15 A, Dining Room Lights 10 A
+#   spaces 27 + 29   quad           Mini-Split Heat Pump 2P 20 A, Well Pump 2P 30 A
+#   spaces 31 + 33   tandem-quad    Workshop Outlets 20 A on 31, Workshop Lights 15 A
+#                                   on 33, Air Compressor 2P 20 A on both
+#
+# The tandems at 44, 46 and 48 are the reference panel's own. The other three groups
+# replace five of its lights-and-outlets circuits, since it has no free space. A
+# breaker's circuits share one relay, so each group's have one relay behaviour and one
+# priority. Each circuit models its own load here; on hardware every circuit on a
+# breaker publishes that breaker's one combined reading, and once the emitter publishes
+# it so, this template needs no change.
+
+panel_config:
+  serial_number: sim-48t-tandems-001
+  total_tabs: 48
+  # Main-lug-only: no main breaker, so the panel publishes no `breaker` node.
+  main_size: null
+  latitude: 37.7
+  longitude: -122.4
+  display_name: SPAN Panel eBus Adapter
+  vendor_name: SPAN
+  model: MLO_48
+  wifi_link: true
+  ethernet_link: true
+  # The reference panel publishes no SSID, as a panel on Ethernet may not.
+  wifi_ssid: null
+  # The commissioned site this variant publishes on the panel's info node. Synthetic.
+  site:
+    name: Sim MLO 48 Tandems
+    address_lines: 100 Example Street
+    locality: Example City
+    region: CA
+  off_grid_import_limit_enablement: UNCONFIGURED
+  operator_import_limit_enablement: UNCONFIGURED
+  unvalued: [pcs/operator-import-limit]
+# SPAN release 202639, as the reference panel publishes it. Hardware 3.0 selects the
+# `span-alpha-test-b2` variant: the site, commissioning facts and shared-with lists.
+firmware_version: spanos3/r202639/03
+hardware_version: '3.0'
+
+circuit_templates:
+  clone_1:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 6000.0]
+      typical_power: 3200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 35
+    cycling_pattern:
+      on_duration: 1200
+      off_duration: 1500
+    hvac_type: heat_pump
+  clone_14:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 900.0]
+      typical_power: 450.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: SOC_THRESHOLD
+    breaker_rating: 15
+    cycling_pattern:
+      on_duration: 1200
+      off_duration: 1500
+  clone_15:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 1100.0
+      power_variation: 0.15
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.05, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.05, 6: 0.3, 7: 0.9,
+        8: 0.6, 9: 0.2, 10: 0.15, 11: 0.3, 12: 0.7, 13: 0.4, 14: 0.15, 15: 0.15, 16: 0.3,
+        17: 0.8, 18: 1.0, 19: 0.8, 20: 0.4, 21: 0.2, 22: 0.1, 23: 0.05}
+  clone_16:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 180.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_17:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 250.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.25, 6: 0.4, 7: 0.6,
+        8: 0.5, 9: 0.45, 10: 0.45, 11: 0.45, 12: 0.45, 13: 0.45, 14: 0.45, 15: 0.45, 16: 0.45,
+        17: 0.7, 18: 0.9, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.4}
+  clone_18:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_19:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 11520.0]
+      typical_power: 2400.0
+      power_variation: 0.05
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 60
+    device_type: evse
+    time_of_day_profile:
+      enabled: true
+      hour_factors: {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 0.0, 7: 0.0, 8: 0.0,
+        9: 0.0, 10: 0.0, 11: 0.0, 12: 0.0, 13: 0.0, 14: 0.0, 15: 0.0, 16: 0.0, 17: 0.0, 18: 0.0,
+        19: 0.0, 20: 0.0, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_20:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 220.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.25, 6: 0.4, 7: 0.6,
+        8: 0.5, 9: 0.45, 10: 0.45, 11: 0.45, 12: 0.45, 13: 0.45, 14: 0.45, 15: 0.45, 16: 0.45,
+        17: 0.7, 18: 0.9, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.4}
+  clone_22:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 150.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_23:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1000.0]
+      typical_power: 700.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: SOC_THRESHOLD
+    breaker_rating: 15
+    cycling_pattern:
+      on_duration: 60
+      off_duration: 1740
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.05, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.05, 6: 0.3, 7: 0.9,
+        8: 0.6, 9: 0.2, 10: 0.15, 11: 0.3, 12: 0.7, 13: 0.4, 14: 0.15, 15: 0.15, 16: 0.3,
+        17: 0.8, 18: 1.0, 19: 0.8, 20: 0.4, 21: 0.2, 22: 0.1, 23: 0.05}
+  clone_24:
+    energy_profile:
+      mode: consumer
+      power_range: [3.0, 12.0]
+      typical_power: 6.0
+      power_variation: 0.05
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+  clone_2:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 7200.0]
+      typical_power: 3600.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 40
+    cycling_pattern:
+      on_duration: 600
+      off_duration: 600
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.2,
+        8: 0.0, 9: 0.0, 10: 0.0, 11: 0.0, 12: 0.2, 13: 0.0, 14: 0.0, 15: 0.0, 16: 0.2, 17: 0.8,
+        18: 1.0, 19: 0.6, 20: 0.1, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_25:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1500.0]
+      typical_power: 1200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: SOC_THRESHOLD
+    breaker_rating: 15
+    cycling_pattern:
+      on_duration: 1200
+      off_duration: 600
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.0,
+        8: 0.0, 9: 0.0, 10: 0.0, 11: 0.0, 12: 0.0, 13: 0.0, 14: 0.0, 15: 0.0, 16: 0.0, 17: 0.0,
+        18: 0.0, 19: 0.0, 20: 1.0, 21: 0.8, 22: 0.3, 23: 0.0}
+  clone_26:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 150.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.25, 6: 0.4, 7: 0.6,
+        8: 0.5, 9: 0.45, 10: 0.45, 11: 0.45, 12: 0.45, 13: 0.45, 14: 0.45, 15: 0.45, 16: 0.45,
+        17: 0.7, 18: 0.9, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.4}
+  clone_27:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 4200.0]
+      typical_power: 1800.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: SOC_THRESHOLD
+    breaker_rating: 20
+    cycling_pattern:
+      on_duration: 1500
+      off_duration: 1200
+    hvac_type: heat_pump
+  clone_27_2:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 3000.0]
+      typical_power: 2200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: SOC_THRESHOLD
+    breaker_rating: 30
+    cycling_pattern:
+      on_duration: 240
+      off_duration: 900
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.2, 1: 0.2, 2: 0.2, 3: 0.2, 4: 0.2, 5: 0.2, 6: 0.8, 7: 1.0,
+        8: 0.7, 9: 0.2, 10: 0.2, 11: 0.2, 12: 0.2, 13: 0.2, 14: 0.2, 15: 0.2, 16: 0.2, 17: 0.2,
+        18: 0.6, 19: 0.8, 20: 1.0, 21: 0.6, 22: 0.2, 23: 0.2}
+  clone_28:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 300.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_30:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1100.0]
+      typical_power: 800.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 15
+    cycling_pattern:
+      on_duration: 120
+      off_duration: 1680
+  clone_31:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 600.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.0,
+        8: 0.0, 9: 0.0, 10: 0.6, 11: 0.8, 12: 0.0, 13: 1.0, 14: 1.0, 15: 0.8, 16: 0.5, 17: 0.0,
+        18: 0.0, 19: 0.0, 20: 0.0, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_33:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 250.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.0,
+        8: 0.0, 9: 0.0, 10: 0.6, 11: 0.8, 12: 0.0, 13: 1.0, 14: 1.0, 15: 0.8, 16: 0.5, 17: 0.0,
+        18: 0.0, 19: 0.0, 20: 0.0, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_31_2:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 4000.0]
+      typical_power: 2600.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 20
+    cycling_pattern:
+      on_duration: 300
+      off_duration: 900
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.0,
+        8: 0.0, 9: 0.0, 10: 0.6, 11: 0.8, 12: 0.0, 13: 1.0, 14: 1.0, 15: 0.8, 16: 0.5, 17: 0.0,
+        18: 0.0, 19: 0.0, 20: 0.0, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_32:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 180.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_34:
+    energy_profile:
+      mode: consumer
+      power_range: [20.0, 60.0]
+      typical_power: 35.0
+      power_variation: 0.05
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+  clone_5:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 4500.0]
+      typical_power: 550.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: SOC_THRESHOLD
+    breaker_rating: 30
+    cycling_pattern:
+      on_duration: 2400
+      off_duration: 3600
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.2, 1: 0.2, 2: 0.2, 3: 0.2, 4: 0.2, 5: 0.2, 6: 0.8, 7: 1.0,
+        8: 0.7, 9: 0.2, 10: 0.2, 11: 0.2, 12: 0.2, 13: 0.2, 14: 0.2, 15: 0.2, 16: 0.2, 17: 0.2,
+        18: 0.6, 19: 0.8, 20: 1.0, 21: 0.6, 22: 0.2, 23: 0.2}
+  clone_35:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 600.0]
+      typical_power: 250.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NICE_TO_HAVE
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.2,
+        8: 0.0, 9: 0.0, 10: 0.0, 11: 0.0, 12: 0.2, 13: 0.0, 14: 0.0, 15: 0.0, 16: 0.2, 17: 0.8,
+        18: 1.0, 19: 0.6, 20: 0.1, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_36:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 700.0]
+      typical_power: 500.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 15
+    cycling_pattern:
+      on_duration: 1800
+      off_duration: 1800
+  clone_37:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 400.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.25, 6: 0.4, 7: 0.6,
+        8: 0.5, 9: 0.45, 10: 0.45, 11: 0.45, 12: 0.45, 13: 0.45, 14: 0.45, 15: 0.45, 16: 0.45,
+        17: 0.7, 18: 0.9, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.4}
+  clone_37_2:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_38:
+    energy_profile:
+      mode: consumer
+      power_range: [50.0, 400.0]
+      typical_power: 150.0
+      power_variation: 0.2
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    cycling_pattern:
+      on_duration: 600
+      off_duration: 1800
+  clone_39:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1200.0]
+      typical_power: 400.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 10
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.02, 1: 0.02, 2: 0.02, 3: 0.02, 4: 0.02, 5: 0.02, 6: 0.5, 7: 1.0,
+        8: 0.4, 9: 0.02, 10: 0.02, 11: 0.02, 12: 0.02, 13: 0.02, 14: 0.02, 15: 0.02, 16: 0.02,
+        17: 0.02, 18: 0.02, 19: 0.02, 20: 0.02, 21: 0.4, 22: 0.3, 23: 0.02}
+  clone_40:
+    energy_profile:
+      mode: consumer
+      power_range: [40.0, 300.0]
+      typical_power: 110.0
+      power_variation: 0.2
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    cycling_pattern:
+      on_duration: 900
+      off_duration: 1800
+  clone_41:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 900.0
+      power_variation: 0.15
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.05, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.05, 6: 0.3, 7: 0.9,
+        8: 0.6, 9: 0.2, 10: 0.15, 11: 0.3, 12: 0.7, 13: 0.4, 14: 0.15, 15: 0.15, 16: 0.3,
+        17: 0.8, 18: 1.0, 19: 0.8, 20: 0.4, 21: 0.2, 22: 0.1, 23: 0.05}
+  clone_42:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 120.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_43:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 1600.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.0,
+        8: 0.0, 9: 0.0, 10: 0.0, 11: 0.0, 12: 0.0, 13: 0.0, 14: 0.0, 15: 0.0, 16: 0.0, 17: 0.0,
+        18: 0.0, 19: 0.6, 20: 1.0, 21: 0.8, 22: 0.0, 23: 0.0}
+  clone_44:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 120.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_6:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 7200.0]
+      typical_power: 5000.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 30
+    cycling_pattern:
+      on_duration: 2400
+      off_duration: 300
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.0,
+        8: 0.0, 9: 0.6, 10: 1.0, 11: 0.8, 12: 0.0, 13: 0.0, 14: 0.5, 15: 1.0, 16: 1.0, 17: 0.5,
+        18: 0.0, 19: 0.0, 20: 0.0, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_44_2:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 250.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.25, 6: 0.4, 7: 0.6,
+        8: 0.5, 9: 0.45, 10: 0.45, 11: 0.45, 12: 0.45, 13: 0.45, 14: 0.45, 15: 0.45, 16: 0.45,
+        17: 0.7, 18: 0.9, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.4}
+  clone_45:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 350.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.1, 2: 0.1, 3: 0.1, 4: 0.1, 5: 0.1, 6: 0.1, 7: 0.1,
+        8: 0.6, 9: 1.0, 10: 1.0, 11: 1.0, 12: 0.7, 13: 1.0, 14: 1.0, 15: 1.0, 16: 0.9, 17: 0.5,
+        18: 0.3, 19: 0.1, 20: 0.1, 21: 0.1, 22: 0.1, 23: 0.1}
+  clone_46:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 400.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.25, 6: 0.4, 7: 0.6,
+        8: 0.5, 9: 0.45, 10: 0.45, 11: 0.45, 12: 0.45, 13: 0.45, 14: 0.45, 15: 0.45, 16: 0.45,
+        17: 0.7, 18: 0.9, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.4}
+  clone_46_2:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 150.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_47:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 1200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: OFF_GRID
+    breaker_rating: 20
+    cycling_pattern:
+      on_duration: 600
+      off_duration: 1200
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.0,
+        8: 0.0, 9: 0.0, 10: 0.6, 11: 0.8, 12: 0.0, 13: 1.0, 14: 1.0, 15: 0.8, 16: 0.5, 17: 0.0,
+        18: 0.0, 19: 0.0, 20: 0.0, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_48:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1800.0]
+      typical_power: 200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.25, 6: 0.4, 7: 0.6,
+        8: 0.5, 9: 0.45, 10: 0.45, 11: 0.45, 12: 0.45, 13: 0.45, 14: 0.45, 15: 0.45, 16: 0.45,
+        17: 0.7, 18: 0.9, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.4}
+  clone_48_2:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1200.0]
+      typical_power: 120.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 10
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_9:
+    energy_profile:
+      mode: consumer
+      power_range: [5.0, 600.0]
+      typical_power: 150.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.2,
+        8: 0.0, 9: 0.0, 10: 0.0, 11: 0.0, 12: 0.2, 13: 0.0, 14: 0.0, 15: 0.0, 16: 0.2, 17: 0.8,
+        18: 1.0, 19: 0.6, 20: 0.1, 21: 0.0, 22: 0.0, 23: 0.0}
+  clone_10:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 200.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.1, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.1, 6: 0.3, 7: 0.5,
+        8: 0.3, 9: 0.1, 10: 0.1, 11: 0.1, 12: 0.1, 13: 0.1, 14: 0.1, 15: 0.1, 16: 0.2, 17: 0.5,
+        18: 0.8, 19: 1.0, 20: 1.0, 21: 0.9, 22: 0.6, 23: 0.3}
+  clone_11:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 1500.0]
+      typical_power: 1100.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    cycling_pattern:
+      on_duration: 180
+      off_duration: 1620
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.05, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.05, 6: 0.3, 7: 0.9,
+        8: 0.6, 9: 0.2, 10: 0.15, 11: 0.3, 12: 0.7, 13: 0.4, 14: 0.15, 15: 0.15, 16: 0.3,
+        17: 0.8, 18: 1.0, 19: 0.8, 20: 0.4, 21: 0.2, 22: 0.1, 23: 0.05}
+  clone_12:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 800.0
+      power_variation: 0.15
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.05, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.05, 6: 0.3, 7: 0.9,
+        8: 0.6, 9: 0.2, 10: 0.15, 11: 0.3, 12: 0.7, 13: 0.4, 14: 0.15, 15: 0.15, 16: 0.3,
+        17: 0.8, 18: 1.0, 19: 0.8, 20: 0.4, 21: 0.2, 22: 0.1, 23: 0.05}
+  clone_13:
+    energy_profile:
+      mode: consumer
+      power_range: [0.0, 2400.0]
+      typical_power: 500.0
+      power_variation: 0.1
+    relay_behavior: controllable
+    priority: NEVER
+    breaker_rating: 20
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers: {0: 0.02, 1: 0.02, 2: 0.02, 3: 0.02, 4: 0.02, 5: 0.02, 6: 0.5, 7: 1.0,
+        8: 0.4, 9: 0.02, 10: 0.02, 11: 0.02, 12: 0.02, 13: 0.02, 14: 0.02, 15: 0.02, 16: 0.02,
+        17: 0.02, 18: 0.02, 19: 0.02, 20: 0.02, 21: 0.4, 22: 0.3, 23: 0.02}
+circuits:
+- id: circuit_1
+  name: Heat Pump
+  template: clone_1
+  tabs: [1, 3]
+  pcs_priority: 40
+  tags: [HVAC]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+- id: circuit_14
+  name: Air Handler
+  template: clone_14
+  tabs: [14]
+  pcs_priority: 20
+  tags: [FURNACE]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_15
+  name: Kitchen Counter Outlets
+  template: clone_15
+  tabs: [15]
+  pcs_priority: 37
+  locations: [KITCHEN]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_16
+  name: Bedroom 2 Lights & Outlets
+  template: clone_16
+  tabs: [16]
+  pcs_priority: 43
+  locations: [BEDROOM]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_17
+  name: Family Room Outlets
+  template: clone_17
+  tabs: [17]
+  pcs_priority: 43
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_18
+  name: Main Bedroom Lights & Outlets
+  template: clone_18
+  tabs: [18]
+  pcs_priority: 43
+  locations: [MASTER_BEDROOM]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_19
+  name: SPAN Drive
+  template: clone_19
+  tabs: [19, 21]
+  pcs_priority: 1
+  tags: [EVSE]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+  serial_number: SIM-EVSE-48T-TANDEMS-001
+  max_current_a: 48.0
+  user_max_charge_current_a: 48
+  device_unvalued: [info/firmware-version, info/model]
+- id: circuit_20
+  name: Bedroom 3 Outlets
+  template: clone_20
+  tabs: [20]
+  pcs_priority: 37
+  locations: [BEDROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_22
+  name: Main Bath & Closet Lights
+  template: clone_22
+  tabs: [22]
+  pcs_priority: 43
+  locations: [BATHROOM]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_23
+  name: Garbage Disposal
+  template: clone_23
+  tabs: [23]
+  pcs_priority: 47
+  tags: [DISPOSAL]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_24
+  name: Smoke & CO Detectors
+  template: clone_24
+  tabs: [24]
+  pcs_priority: 51
+  tags: [SMOKE_CO_DETECTOR]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_2
+  name: Double Wall Oven
+  template: clone_2
+  tabs: [2, 4]
+  pcs_priority: 30
+  tags: [OVEN]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+- id: circuit_25
+  name: Dishwasher
+  template: clone_25
+  tabs: [25]
+  pcs_priority: 46
+  tags: [DISHWASHER]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_26
+  name: Rec Room Outlets
+  template: clone_26
+  tabs: [26]
+  pcs_priority: 37
+  locations: [BASEMENT]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+# A quad at spaces 27 and 29: two two-pole circuits, each listing both spaces.
+- id: circuit_27
+  name: Mini-Split Heat Pump
+  template: clone_27
+  tabs: [27, 29]
+  pcs_priority: 40
+  tags: [HVAC]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_27_2]
+- id: circuit_27_2
+  name: Well Pump
+  template: clone_27_2
+  tabs: [27, 29]
+  pcs_priority: 40
+  tags: [PUMP]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_27]
+- id: circuit_28
+  name: Living Room Lights & Outlets
+  template: clone_28
+  tabs: [28]
+  pcs_priority: 43
+  locations: [LIVING_ROOM]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_30
+  name: Sump Pump
+  template: clone_30
+  tabs: [30]
+  pcs_priority: 23
+  tags: [PUMP]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+# A tandem-quad at spaces 31 and 33: a single-pole circuit on each space, listing only
+# its own, and a two-pole circuit listing both. Each of the three names the other two.
+- id: circuit_31
+  name: Workshop Outlets
+  template: clone_31
+  tabs: [31]
+  pcs_priority: 32
+  locations: [BASEMENT]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_33, circuit_31_2]
+- id: circuit_33
+  name: Workshop Lights
+  template: clone_33
+  tabs: [33]
+  pcs_priority: 32
+  locations: [BASEMENT]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_31, circuit_31_2]
+- id: circuit_31_2
+  name: Air Compressor
+  template: clone_31_2
+  tabs: [31, 33]
+  pcs_priority: 32
+  tags: [MACHINERY]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_31, circuit_33]
+- id: circuit_32
+  name: Kitchen Lights
+  template: clone_32
+  tabs: [32]
+  pcs_priority: 43
+  locations: [KITCHEN]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_34
+  name: Security System
+  template: clone_34
+  tabs: [34]
+  pcs_priority: 53
+  tags: [SECURITY_SYSTEM]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_5
+  name: Heat Pump Water Heater
+  template: clone_5
+  tabs: [5, 7]
+  pcs_priority: 9
+  tags: [WATER_HEATER_HEAT_PUMP]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+- id: circuit_35
+  name: Range Hood
+  template: clone_35
+  tabs: [35]
+  pcs_priority: 44
+  tags: [HOOD]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_36
+  name: Dehumidifier
+  template: clone_36
+  tabs: [36]
+  pcs_priority: 32
+  tags: [OTHER]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+# An unequal tandem at space 37: two single-pole circuits on one space, 20 A and 15 A.
+- id: circuit_37
+  name: Basement Outlets
+  template: clone_37
+  tabs: [37]
+  pcs_priority: 43
+  locations: [BASEMENT]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_37_2]
+- id: circuit_37_2
+  name: Basement Lights
+  template: clone_37_2
+  tabs: [37]
+  pcs_priority: 43
+  locations: [BASEMENT]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_37]
+- id: circuit_38
+  name: Refrigerator
+  template: clone_38
+  tabs: [38]
+  pcs_priority: 38
+  tags: [FRIDGE]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_39
+  name: Hall Bath Outlets
+  template: clone_39
+  tabs: [39]
+  pcs_priority: 37
+  locations: [BATHROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_40
+  name: Chest Freezer
+  template: clone_40
+  tabs: [40]
+  pcs_priority: 38
+  tags: [FREEZER]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_41
+  name: Kitchen Island Outlets
+  template: clone_41
+  tabs: [41]
+  pcs_priority: 37
+  locations: [KITCHEN]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_42
+  name: Pantry Lights
+  template: clone_42
+  tabs: [42]
+  pcs_priority: 43
+  locations: [KITCHEN]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_43
+  name: Infrared Sauna
+  template: clone_43
+  tabs: [43]
+  pcs_priority: 17
+  tags: [SAUNA_HEATER]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_6
+  name: Clothes Dryer
+  template: clone_6
+  tabs: [6, 8]
+  pcs_priority: 24
+  tags: [DRYER]
+  dedicated: true
+  nominal_voltage: 240.0
+  protection_functions: OVERCURRENT
+# Spaces 44 to 48, with the reference panel's own tandems at 44, 46 and 48.
+- id: circuit_44
+  name: Guest Room Lights
+  template: clone_44
+  tabs: [44]
+  pcs_priority: 43
+  locations: [BEDROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_44_2]
+- id: circuit_44_2
+  name: Guest Room Outlets
+  template: clone_44_2
+  tabs: [44]
+  pcs_priority: 43
+  locations: [BEDROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_44]
+- id: circuit_45
+  name: Office Outlets
+  template: clone_45
+  tabs: [45]
+  pcs_priority: 37
+  locations: [OFFICE]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_46
+  name: Den Outlets
+  template: clone_46
+  tabs: [46]
+  pcs_priority: 43
+  locations: [LIVING_ROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_46_2]
+- id: circuit_46_2
+  name: Den Lights
+  template: clone_46_2
+  tabs: [46]
+  pcs_priority: 43
+  locations: [LIVING_ROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_46]
+- id: circuit_47
+  name: Garage Workshop
+  template: clone_47
+  tabs: [47]
+  pcs_priority: 5
+  tags: [MACHINERY]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_48
+  name: Dining Room Outlets
+  template: clone_48
+  tabs: [48]
+  pcs_priority: 43
+  locations: [DINING_ROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_48_2]
+- id: circuit_48_2
+  name: Dining Room Lights
+  template: clone_48_2
+  tabs: [48]
+  pcs_priority: 43
+  locations: [DINING_ROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+  shared_with: [circuit_48]
+- id: circuit_9
+  name: Gas Range
+  template: clone_9
+  tabs: [9]
+  pcs_priority: 31
+  tags: [RANGE]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_10
+  name: Breakfast Nook Lights & Outlets
+  template: clone_10
+  tabs: [10]
+  pcs_priority: 43
+  locations: [DINING_ROOM]
+  dedicated: false
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_11
+  name: Microwave
+  template: clone_11
+  tabs: [11]
+  pcs_priority: 48
+  tags: [MICROWAVE]
+  dedicated: true
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_12
+  name: Kitchen Peninsula Outlets
+  template: clone_12
+  tabs: [12]
+  pcs_priority: 37
+  locations: [KITCHEN]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+- id: circuit_13
+  name: Main Bath Outlets
+  template: clone_13
+  tabs: [13]
+  pcs_priority: 37
+  locations: [BATHROOM]
+  nominal_voltage: 120.0
+  protection_functions: OVERCURRENT
+unmapped_tabs: []
+simulation_params:
+  update_interval: 5
+  time_acceleration: 1.0
+  noise_factor: 0.02
+  enable_realistic_behaviors: true
+lugs:
+  downstream:
+    feeds_role: UNUSED
+    unvalued: [meter/active-power, meter/exported-energy, meter/imported-energy]
+  upstream:
+    service_rating_a: 200
+    overcurrent_protection_a: 200
