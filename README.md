@@ -368,7 +368,7 @@ Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts w
 | `default_MAIN_40.yaml`         | 40   | Full residential with solar, battery, 2 EVSE                                  |
 | `default_MAIN_32.yaml`         | 32   | Full residential with solar, battery, 1 EVSE                                  |
 | `default_MAIN_16.yaml`         | 16   | Minimal test: lights, outlets, HVAC, solar                                    |
-| `default_MAIN_32_TANDEMS.yaml` | 32   | `default_MAIN_32` with a 20-20 tandem and a 20-30 package                     |
+| `default_MAIN_32_TANDEMS.yaml` | 32   | `default_MAIN_32` with 20-20 and 15-20 tandems and a 20-30 package            |
 | `default_MLO_48_TANDEMS.yaml`  | 48   | Main-lug-only on hardware 3.0, 1 EVSE, four tandems, a quad and a tandem-quad |
 
 #### Tandem and quad breakers
@@ -376,9 +376,10 @@ Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts w
 SPAN publishes a multi-load breaker in one of two ways, by model ([SPAN-API-Client-Docs#21](https://github.com/spanio/SPAN-API-Client-Docs/issues/21)), and the
 two `_TANDEMS` templates show one each:
 
-- **MAIN 32** publishes each breaker space as one circuit with one rating, the first of the package's, so a 20-20 tandem and a 20-30 package both publish `20`.
-  The space's one sensor reads both breakers together, and a two-pole circuit's `meter/current` is the average of its two legs. In
-  `default_MAIN_32_TANDEMS.yaml`, "Tandem 20-20" on space 31 and "Washer & Dryer 20-30" on spaces 18 and 20 are loaded past the 20 A they publish.
+- **MAIN 32** publishes each breaker space as one circuit with one rating, the first of the package's, so a 20-20 tandem and a 20-30 package both publish `20`,
+  and a 15-20 tandem `15`. The space's one sensor reads both breakers together, and a two-pole circuit's `meter/current` is the average of its two legs. In
+  `default_MAIN_32_TANDEMS.yaml`, "Tandem 20-20" on space 31 and "Washer & Dryer 20-30" on spaces 18 and 20 are loaded past the 20 A they publish, and "Tandem
+  15-20" on space 32 past its 15 A to 24 A, well under the 35 A its two breakers carry.
 - **MAIN 16, MLO 24, MAIN 40 and MLO 48** publish one circuit per protected circuit, each with its own rating, and name each other in `meter/` and
   `switch/shared-with-device-ids`, which a circuit's `shared_with` sets. A single-pole circuit lists its own space and a two-pole circuit lists both.
   `default_MLO_48_TANDEMS.yaml` is the reference MLO 48 with synthetic names and loads. It keeps that panel's three tandems and adds a 15-20 tandem on space 37,
