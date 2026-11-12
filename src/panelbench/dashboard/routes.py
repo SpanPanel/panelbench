@@ -1545,6 +1545,8 @@ async def _rescrape_snapshots(request: web.Request) -> None:
 
     Raises:
         ScrapeError: The config has no source panel, or it could not be scraped.
+        ValueError: The panel's tree, as scraped now, is one ``translate_scraped_panel``
+            refuses, such as tandem circuits on hardware whose variant cannot publish them.
     """
     import copy
 

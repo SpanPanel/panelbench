@@ -161,3 +161,44 @@ def test_a_variant_panelbench_does_not_publish_is_refused() -> None:
 
     with pytest.raises(ValueError, match="variant 'reference' is not one PanelBench publishes"):
         validate_yaml_config(config)
+
+
+def test_an_outside_meter_on_a_declared_main_32_variant_names_the_declaration() -> None:
+    """Hardware 3.0 publishes meters outside the panel, but a declared MAIN 32 variant
+    outranks it, as an imported definition declaring that variant does, so the refusal
+    says what selected the variant rather than blaming the hardware."""
+    config = _panel(firmware=CURRENT_FIRMWARE, hardware="3.0")
+    config["variant"] = "span"
+    config["outside_meters"] = [{"id": "service_meter"}]
+
+    with pytest.raises(ValueError) as refused:
+        validate_yaml_config(config)
+
+    message = str(refused.value)
+    assert "outside_meters are not published here: the config declares the 'span' variant" in (
+        message
+    )
+    assert "selects" not in message
+
+
+def test_unfed_inverters_on_a_declared_gen3_variant_name_the_declaration() -> None:
+    """Hardware 1.2 would publish an inverter device, but the declared variant does not."""
+    config = _panel(firmware=CURRENT_FIRMWARE, hardware="1.2")
+    config["variant"] = "span-alpha-test-b2"
+    for template in config["circuit_templates"].values():
+        template.pop("commissioned_system", None)
+    pv = config.get("pv")
+    assert pv is not None
+    pv["inverters"] = [
+        {"vendor": "SolarEdge", "product_name": "SE7600H-US", "nameplate_capacity_w": 7600.0}
+    ]
+
+    with pytest.raises(ValueError) as refused:
+        validate_yaml_config(config)
+
+    message = str(refused.value)
+    assert (
+        "pv.inverters are not published here: the config declares the 'span-alpha-test-b2' "
+        "variant, which publishes no inverter device" in message
+    )
+    assert "selects" not in message

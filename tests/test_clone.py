@@ -820,7 +820,10 @@ class TestCircuitsSharingASpace:
 
     @pytest.mark.parametrize(
         ("hardware", "named"),
-        [("3.1", "hardware version '3.1' selects"), ("", "publishes no hardware version, so")],
+        [
+            ("3.1", "Its hardware version '3.1' selects"),
+            ("", "It publishes no hardware version, so PanelBench reads it as"),
+        ],
         ids=["an unknown hardware string", "no hardware version"],
     )
     def test_lists_on_hardware_whose_variant_cannot_publish_them_are_refused(
@@ -832,7 +835,9 @@ class TestCircuitsSharingASpace:
         devices = self._devices()
         devices[_SERIAL].update_property("info", "hardware-version", hardware)
 
-        with pytest.raises(ValueError, match=rf"{named} the 'span' variant") as refused:
+        with pytest.raises(
+            ValueError, match=rf"{named} the 'span' variant, which publishes no shared-with lists"
+        ) as refused:
             translate_scraped_panel(_make_scraped(devices))
 
         assert "circuit_44" in str(refused.value)

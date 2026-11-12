@@ -105,13 +105,17 @@ def declares_variant(config: Mapping[str, object]) -> bool:
 
 
 def variant_selection(config: Mapping[str, object]) -> str:
-    """What selects the variant the panel *config* describes publishes, for a message."""
+    """What selects the variant the panel *config* describes publishes, for a message.
+
+    A clause ending in the variant, so a message can go on with what that variant
+    publishes: a declared variant, else the hardware version, else its default.
+    """
     if declares_variant(config):
-        return f"the {panel_variant(config)!r} variant it declares"
+        return f"the config declares the {panel_variant(config)!r} variant"
     if not config.get("hardware_version"):
         return (
-            f"hardware_version is unset, so {DEFAULT_HARDWARE_VERSION!r}, which selects the "
-            f"{panel_variant(config)!r} variant"
+            f"hardware_version is unset and its default {DEFAULT_HARDWARE_VERSION!r} selects "
+            f"the {panel_variant(config)!r} variant"
         )
     return (
         f"hardware_version {panel_hardware_version(config)!r} selects the "

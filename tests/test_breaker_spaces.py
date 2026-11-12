@@ -242,7 +242,23 @@ class TestMain32PublishesOneCircuitPerSpace:
 
         message = _refusal(config)
 
-        assert "hardware_version is unset, so '1.2', which selects the 'span' variant" in message
+        assert (
+            "hardware_version is unset and its default '1.2' selects the 'span' variant" in message
+        )
+
+    def test_a_declared_variant_is_named_as_the_declaration_and_its_removal_advised(
+        self,
+    ) -> None:
+        """Hardware 3.0 would select the other variant, but a declared one outranks it, so
+        the refusal names the declaration and says to remove it."""
+        config = _panel(_GEN3_HARDWARE, *_TANDEM)
+        config["variant"] = "span"
+
+        message = _refusal(config)
+
+        assert "the config declares the 'span' variant, which publishes" in message
+        assert "selects" not in message
+        assert "remove variant and set hardware_version: '3.0'" in message
 
     @pytest.mark.parametrize(
         "breaker",

@@ -259,3 +259,36 @@ async def test_a_panel_the_clone_refuses_is_answered_with_why(
     assert "hardware version" in text
     assert "3.1" in text
     assert not list(tmp_path.glob("*-clone.yaml"))
+
+
+@pytest.mark.asyncio
+async def test_a_restore_whose_panel_the_clone_refuses_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restore re-reads its source panel through the clone. If the panel now publishes
+    what the clone refuses, the restore answers with the reason, worded for a restore."""
+    devices = discovered_from_tree(load_reference_capture("r202639-e").tree)
+    [panel] = [
+        device_id
+        for device_id, device in devices.items()
+        if (device.description or {}).get("type") == TYPE_PANEL
+    ]
+    devices[panel].update_property("info", "hardware-version", "3.1")
+
+    async def scrape(*_args: object, **_kwargs: object) -> ScrapedPanel:
+        return ScrapedPanel(serial_number=panel, devices=devices, mqtts_port=8883, ca_pem=b"ca")
+
+    monkeypatch.setattr(scraper, "scrape_panel", scrape)
+    config = default_config()
+    config["panel_source"] = {"origin_serial": panel, "host": "192.0.2.10"}
+    write_config(tmp_path / "panel.yaml", config)
+    async with TestClient(TestServer(_dashboard(tmp_path, config_filter="panel.yaml"))) as client:
+        restored = await client.post(
+            "/entities/living_room_lights/restore-recorder", headers=_HTMX
+        )
+        text = await restored.text()
+
+    assert restored.status == 200, text
+    assert "Restore failed" in text
+    assert "3.1" in text
+    assert "clone" not in text.split("Restore failed", 1)[1].split("<", 1)[0].lower()

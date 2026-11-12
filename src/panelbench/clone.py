@@ -1400,15 +1400,15 @@ def _unpublishable_breakers(
     )
     named = "; ".join(" and ".join(breaker) for breaker in breakers)
     source = (
-        f"its hardware version {hardware!r} selects"
+        f"Its hardware version {hardware!r} selects"
         if hardware
-        else "it publishes no hardware version, so"
+        else "It publishes no hardware version, so PanelBench reads it as"
     )
     return (
-        f"Panel {panel_device_id!r} publishes circuits sharing a breaker ({named}), but "
-        f"{source} the {variant!r} variant, which publishes no shared-with lists. PanelBench "
-        "publishes a breaker's circuits separately only for hardware version '3.0', so it "
-        "does not clone this panel rather than guess its variant or drop the lists"
+        f"Panel {panel_device_id!r} publishes circuits sharing a breaker ({named}). {source} "
+        f"the {variant!r} variant, which publishes no shared-with lists. PanelBench publishes "
+        "a breaker's circuits separately only for hardware version '3.0', so it will not "
+        "translate this panel's tree rather than guess its variant or drop the lists"
     )
 
 
@@ -1498,7 +1498,7 @@ def _breaker_siblings(
             )
             raise ValueError(
                 f"Circuits {named_circuits} name each other as one breaker, but {misfit}. "
-                "The clone does not merge what may be two breakers into one"
+                "PanelBench will not merge what may be two breakers into one"
             )
 
     siblings: dict[str, list[str]] = {}

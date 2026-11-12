@@ -384,14 +384,15 @@ two `_TANDEMS` templates show one each:
   `default_MLO_48_TANDEMS.yaml` is the reference MLO 48 with synthetic names and loads. It keeps that panel's three tandems and adds a 15-20 tandem on space 37,
   a quad on 27 and 29, and a tandem-quad on 31 and 33.
 
-The breaker shape follows `hardware_version`: at `3.0`, as the `ref_` templates and `default_MLO_48_TANDEMS.yaml` have it, each protected circuit publishes
-separately, and at `1.2`, as the default MAIN templates have it, the panel publishes as a MAIN 32 does.
+The breaker shape follows `hardware_version`, unless the config declares a `variant`, which outranks it as an imported definition's does: at `3.0`, as the
+`ref_` templates and `default_MLO_48_TANDEMS.yaml` have it, each protected circuit publishes separately, and at `1.2`, as the default MAIN templates have it,
+the panel publishes as a MAIN 32 does.
 
 PanelBench accepts circuits sharing a space only as one breaker's circuits named to each other, on hardware that publishes them so. Two circuits listing one
 space are otherwise refused, as are more than two on one space, and `shared_with` on a MAIN 32-style panel, which publishes no shared-with lists. A clone of a
-panel writes each breaker's circuits naming all the others, even where the panel listed a sibling on one side only. It refuses a panel publishing those lists on
-hardware other than `3.0`, which PanelBench cannot publish them for, and warns of a sibling its tree leaves out. Each circuit still publishes its own reading,
-where a panel publishes the breaker's one combined reading on every circuit sharing it.
+panel writes each breaker's circuits naming all the others, even where the panel listed a sibling on one side only. A live panel declares no variant, so a clone
+of one publishing those lists on hardware other than `3.0` would publish as a MAIN 32: the clone refuses it rather than guess, and warns of a sibling its tree
+leaves out. Each circuit still publishes its own reading, where a panel publishes the breaker's one combined reading on every circuit sharing it.
 
 ### Reference Panels
 

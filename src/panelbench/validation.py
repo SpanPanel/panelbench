@@ -16,7 +16,6 @@ from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 from panelbench.hardware import (
     declares_variant,
-    panel_hardware_version,
     panel_variant,
     publishes_outside_meters,
     publishes_pv_devices,
@@ -359,9 +358,8 @@ def validate_unfed_inverters(config_data: Mapping[str, object]) -> None:
     variant = panel_variant(config_data)
     if not publishes_pv_devices(variant):
         raise ValueError(
-            f"pv.inverters are not published by the {variant!r} variant, which hardware_version "
-            f"{panel_hardware_version(config_data)!r} selects: it publishes no inverter "
-            "device, only the circuit feeding one"
+            f"pv.inverters are not published here: {variant_selection(config_data)}, which "
+            "publishes no inverter device, only the circuit feeding one"
         )
 
 
@@ -449,8 +447,8 @@ def validate_outside_meters(config_data: Mapping[str, object]) -> None:
         taken.add(meter_id)
     if meters and not publishes_outside_meters(config_data):
         raise ValueError(
-            f"outside_meters are not published by the {panel_variant(config_data)!r} variant, "
-            f"which hardware_version {panel_hardware_version(config_data)!r} selects"
+            f"outside_meters are not published here: {variant_selection(config_data)}, which "
+            "publishes no meter outside the panel"
         )
 
 
