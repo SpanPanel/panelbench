@@ -19,9 +19,11 @@ from panelbench.emitter_adapter.wire_capture import capture_retained, discovered
 from panelbench.hardware import (
     DEFAULT_HARDWARE_VERSION,
     panel_hardware_version,
+    panel_variant,
     proves_proximity,
     status_hardware_version,
 )
+from panelbench.validation import validate_yaml_config
 from tests._helpers import (
     CURRENT_FIRMWARE,
     DEFAULT_CONFIG,
@@ -131,3 +133,31 @@ def test_passphrase_only_hardware_reports_its_string_and_no_proximity() -> None:
     assert status_hardware_version(config) == panel_hardware_version(config) == "3.0"
     assert proves_proximity(config) is False
     assert proves_proximity(_panel(firmware=CURRENT_FIRMWARE, hardware="1.2")) is True
+
+
+@pytest.mark.parametrize(
+    ("hardware", "declared", "published"),
+    [
+        ("3.1", "span-alpha-test-b2", "span-alpha-test-b2"),
+        ("3.0", "span", "span"),
+        ("3.0", None, "span-alpha-test-b2"),
+        ("3.1", None, "span"),
+    ],
+)
+def test_a_declared_variant_outranks_the_one_the_hardware_version_selects(
+    hardware: str, declared: str | None, published: str
+) -> None:
+    config = _panel(firmware=CURRENT_FIRMWARE, hardware=hardware)
+    if declared is not None:
+        config["variant"] = declared
+
+    assert panel_variant(config) == published
+    assert panel_hardware_version(config) == hardware, "the hardware version is still reported"
+
+
+def test_a_variant_panelbench_does_not_publish_is_refused() -> None:
+    config = _panel(firmware=CURRENT_FIRMWARE, hardware="1.2")
+    config["variant"] = "reference"
+
+    with pytest.raises(ValueError, match="variant 'reference' is not one PanelBench publishes"):
+        validate_yaml_config(config)

@@ -224,7 +224,8 @@ The dashboard runs on port 18080 and provides full control over the simulated pa
 
 Import also accepts a panel definition file (`panel-sim-definition/1`, as `panel-sim-capture` writes one). PanelBench builds a config from the panel's makeup
 and gives every circuit a default behaviour, which you then tune as for a clone. **Export definition** writes a saved config the other way, as a panel
-definition file holding the panel's makeup without PanelBench's behaviour settings.
+definition file holding the panel's makeup without PanelBench's behaviour settings. A definition's own `variant` outranks the one its panel's `hardware_version`
+selects, so the config records it where the two differ, and a definition in a variant PanelBench does not publish is refused.
 
 ### Simulation Controls
 

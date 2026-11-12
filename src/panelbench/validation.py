@@ -15,6 +15,7 @@ from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 from panelbench.hardware import (
+    declares_variant,
     panel_hardware_version,
     panel_variant,
     publishes_outside_meters,
@@ -46,6 +47,8 @@ def validate_yaml_config(config_data: Any) -> None:
             raise ValueError(f"Missing required section: {section}")
 
     validate_panel_config(config_data["panel_config"])
+    # A declared variant must be one PanelBench publishes; panel_variant says which.
+    panel_variant(config_data)
     validate_circuit_templates(config_data["circuit_templates"])
     _validate_commissioned_firmware(
         panel_firmware_version(config_data), config_data["circuit_templates"]
@@ -496,7 +499,7 @@ def validate_shared_circuits(config_data: Mapping[str, object]) -> None:
             raise ValueError(
                 f"Circuit {own!r} has shared_with, but {variant_selection(config_data)}, "
                 "which publishes no shared-with lists and each breaker space as one circuit, "
-                f"as a MAIN 32 does: {_ONE_CIRCUIT_PER_SPACE_FIX}"
+                f"as a MAIN 32 does: {_one_circuit_per_space_fix(config_data)}"
             )
         breakers[own] = frozenset({own, *(str(peer) for peer in peers)})
 
@@ -541,19 +544,25 @@ def validate_shared_circuits(config_data: Mapping[str, object]) -> None:
                 raise ValueError(
                     f"Circuits {first!r} and {second!r} both list space {space}, but "
                     f"{variant_selection(config_data)}, which publishes each breaker space as "
-                    f"one circuit, as a MAIN 32 does: {_ONE_CIRCUIT_PER_SPACE_FIX}"
+                    f"one circuit, as a MAIN 32 does: {_one_circuit_per_space_fix(config_data)}"
                 )
 
 
-_ONE_CIRCUIT_PER_SPACE_FIX: Final = (
-    "to publish each of a tandem's or quad's circuits separately, as newer SPAN hardware "
-    "does, set hardware_version: '3.0' and name them to each other in shared_with, or start "
-    "from a ref_ template or default_MLO_48_TANDEMS; to publish the breaker as a MAIN 32 "
-    "does, make it one circuit on its space, or one two-pole circuit across its two spaces, "
-    "with no shared_with"
-)
-"""Both refusals on a variant that publishes each breaker space as one circuit give the
-same two fixes. Each loads, so following one never leads into the other."""
+def _one_circuit_per_space_fix(config_data: Mapping[str, object]) -> str:
+    """The two fixes both refusals give on a variant that publishes each breaker space as
+    one circuit. Each loads, so following one never leads into the other refusal."""
+    to_gen3 = (
+        "remove variant and set hardware_version: '3.0'"
+        if declares_variant(config_data)
+        else "set hardware_version: '3.0'"
+    )
+    return (
+        "to publish each of a tandem's or quad's circuits separately, as newer SPAN hardware "
+        f"does, {to_gen3} and name them to each other in shared_with, or start from a ref_ "
+        "template or default_MLO_48_TANDEMS; to publish the breaker as a MAIN 32 does, make it "
+        "one circuit on its space, or one two-pole circuit across its two spaces, with no "
+        "shared_with"
+    )
 
 
 def validate_unvalued_lists(config_data: Mapping[str, object]) -> None:

@@ -818,6 +818,36 @@ class TestCircuitsSharingASpace:
         with pytest.raises(ValueError, match="no other circuit of this panel"):
             validate_yaml_config(config)
 
+    @pytest.mark.parametrize(
+        ("hardware", "named"),
+        [("3.1", "hardware version '3.1' selects"), ("", "publishes no hardware version, so")],
+        ids=["an unknown hardware string", "no hardware version"],
+    )
+    def test_lists_on_hardware_whose_variant_cannot_publish_them_are_refused(
+        self, hardware: str, named: str
+    ) -> None:
+        """PanelBench publishes the lists only for hardware 3.0, so a panel publishing
+        them on any other string is neither guessed into that variant nor cloned with
+        its lists dropped: the clone says why."""
+        devices = self._devices()
+        devices[_SERIAL].update_property("info", "hardware-version", hardware)
+
+        with pytest.raises(ValueError, match=rf"{named} the 'span' variant") as refused:
+            translate_scraped_panel(_make_scraped(devices))
+
+        assert "circuit_44" in str(refused.value)
+        assert "circuit_44_2" in str(refused.value)
+
+    def test_on_such_hardware_a_panel_with_no_lists_clones_as_a_main_32(self) -> None:
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "hardware-version", "3.1")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert config["hardware_version"] == "3.1"
+        assert "variant" not in config
+        validate_yaml_config(config)
+
     def test_a_list_published_one_way_is_cloned_both_ways(self) -> None:
         """Every circuit on a breaker names all the others, so a sibling one list names
         is on the breaker even where its own list is missing, and the clone loads."""

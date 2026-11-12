@@ -513,7 +513,13 @@ firmware_version:
 hardware_version:
   str # Published as info/hardware-version (default: 1.2). From release 202639
   # the status endpoint reports it as hardwareVersion if it is 1.2, 2.0 or the string the
-  # reference panels publish, else UNKNOWN.
+  # reference panels publish, else UNKNOWN. It selects the emitter variant: 3.0 the one
+  # publishing each of a tandem's or quad's circuits separately, any other string a MAIN 32's.
+
+variant:
+  str # span | span-alpha-test-b2: the variant, where it is not the one hardware_version selects.
+  # It outranks hardware_version. A definition import records the one its definition declares
+  # there; any other variant, such as the emitter's reference one, is refused.
 
 # Clone provenance (written by the clone pipeline)
 panel_source:

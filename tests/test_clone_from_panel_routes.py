@@ -15,13 +15,21 @@ import pytest
 import yaml
 from aiohttp import FormData, web
 from aiohttp.test_utils import TestClient, TestServer
+from ebus_panel_sim import load_reference_capture
 
+from panelbench import scraper
+from panelbench.clone import TYPE_PANEL
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.history_generator import SyntheticHistoryGenerator
 from panelbench.panel_secrets import PanelSecretsStore
-from panelbench.scraper import registered_client_name
+from panelbench.scraper import ScrapedPanel, registered_client_name
 from tests._fake_span_panel import FakeSpanPanel, install_fake_scrape, running
-from tests._helpers import CAPTURED_MAIN_32_SERIAL, default_config, write_config
+from tests._helpers import (
+    CAPTURED_MAIN_32_SERIAL,
+    default_config,
+    discovered_from_tree,
+    write_config,
+)
 
 _HTMX = {"HX-Request": "true"}
 _PASSPHRASE = "example-passphrase-7731"
@@ -222,3 +230,32 @@ async def test_a_restore_that_cannot_reach_the_panel_says_so(tmp_path: Path) -> 
 
     assert "Restore failed" in html
     assert "[registering]" in html
+
+
+@pytest.mark.asyncio
+async def test_a_panel_the_clone_refuses_is_answered_with_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reference MLO 48 on a hardware string PanelBench has no variant for: its
+    tandems' lists cannot be published, so the form says so and nothing is written."""
+    devices = discovered_from_tree(load_reference_capture("r202639-e").tree)
+    [panel] = [
+        device_id
+        for device_id, device in devices.items()
+        if (device.description or {}).get("type") == TYPE_PANEL
+    ]
+    devices[panel].update_property("info", "hardware-version", "3.1")
+
+    async def scrape(*_args: object, **_kwargs: object) -> ScrapedPanel:
+        return ScrapedPanel(serial_number=panel, devices=devices, mqtts_port=8883, ca_pem=b"ca")
+
+    monkeypatch.setattr(scraper, "scrape_panel", scrape)
+    async with TestClient(TestServer(_dashboard(tmp_path))) as client:
+        answer = await client.post("/clone-from-panel", data={"host": "192.0.2.10"}, headers=_HTMX)
+        text = await answer.text()
+
+    assert answer.status == 200, text
+    assert "Clone refused" in text
+    assert "hardware version" in text
+    assert "3.1" in text
+    assert not list(tmp_path.glob("*-clone.yaml"))

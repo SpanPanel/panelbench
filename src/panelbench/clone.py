@@ -31,7 +31,7 @@ from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_t
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.emitter_adapter import commissioning
-from panelbench.hardware import relay_locks_priority, variant_for
+from panelbench.hardware import publishes_shared_breakers, relay_locks_priority, variant_for
 from panelbench.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
@@ -183,6 +183,7 @@ def translate_panel_tree(
     devices: Mapping[str, DiscoveredDevice],
     *,
     host: str | None = None,
+    variant: Variant | None = None,
 ) -> dict[str, object]:
     """Translate a panel's device tree into a simulator config dict.
 
@@ -193,16 +194,27 @@ def translate_panel_tree(
         host: Source panel IP/hostname (stored in panel_source for refresh). What it
             takes to reach the panel there is kept in the ``PanelSecretsStore``,
             never in the config.
+        variant: The variant the panel publishes, where its source says, as a
+            definition does. It outranks the one the panel's hardware version
+            selects, and is recorded where the two differ. A live panel says none.
 
     Returns a dict matching the ``SimulationConfig`` TypedDict shape,
     ready for YAML serialisation and ``validate_yaml_config()``.
+
+    Raises:
+        ValueError: The panel publishes circuits sharing a breaker, which the variant
+            it publishes cannot (``publishes_shared_breakers``), or names as one
+            breaker circuits that cannot be one (``breakers``). Either way the clone
+            would not publish what the panel does, so there is none.
     """
     circuit_nodes = _devices_of_type(devices, panel_device_id, TYPE_CIRCUIT)
     bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
     pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
     evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
     unvalued = _unvalued_by_device(_emitter_reading(devices, panel_device_id))
-    variant = variant_for(_get_prop(devices, panel_device_id, "info", "hardware-version") or "")
+    hardware = _get_prop(devices, panel_device_id, "info", "hardware-version") or ""
+    inferred = variant_for(hardware)
+    published = inferred if variant is None else variant
 
     # Build feed cross-reference: circuit_uuid → device_type
     feed_map = _build_feed_map(devices, circuit_nodes)
@@ -256,6 +268,10 @@ def translate_panel_tree(
     used_tabs: set[int] = set()
     keys = _circuit_keys(devices, circuit_nodes)
     siblings = _breaker_siblings(devices, keys)
+    if siblings and not publishes_shared_breakers(published):
+        raise ValueError(
+            _unpublishable_breakers(panel_device_id, hardware, published, keys, siblings)
+        )
 
     for node_uuid in sorted(circuit_nodes):
         if _meters_outside_the_panel(devices, node_uuid):
@@ -268,7 +284,7 @@ def translate_panel_tree(
             node_uuid,
             feed_map,
             unvalued.get(node_uuid, []),
-            variant,
+            published,
             keys,
             siblings,
         )
@@ -326,9 +342,10 @@ def translate_panel_tree(
 
     # Published as info/hardware-version and, from SPAN release 202639, reported by
     # the status endpoint, so a clone reports the source panel's value on both.
-    hardware = _get_prop(devices, panel_device_id, "info", "hardware-version")
     if hardware:
         config["hardware_version"] = hardware
+    if published != inferred:
+        config["variant"] = published
 
     # Build top-level BESS config (only when a battery is actually connected)
     mid_nodes = _devices_of_type(devices, panel_device_id, TYPE_MID)
@@ -1362,6 +1379,36 @@ def _circuit_id(key: str) -> str:
 def _template_name(key: str) -> str:
     """The clone's template for the circuit whose key is *key*."""
     return f"clone_{key}"
+
+
+def _unpublishable_breakers(
+    panel_device_id: str,
+    hardware: str,
+    variant: Variant,
+    keys: Mapping[str, str],
+    siblings: Mapping[str, list[str]],
+) -> str:
+    """Why a panel publishing circuits that share a breaker is not cloned under *variant*.
+
+    PanelBench publishes a breaker's circuits separately only under the variant hardware
+    3.0 selects. A panel on another string, or none, may still publish them, and the
+    clone neither guesses its variant nor drops the lists it published.
+    """
+    breakers = sorted(
+        {tuple(sorted({_circuit_id(keys[node]), *peers})) for node, peers in siblings.items()}
+    )
+    named = "; ".join(" and ".join(breaker) for breaker in breakers)
+    source = (
+        f"its hardware version {hardware!r} selects"
+        if hardware
+        else "it publishes no hardware version, so"
+    )
+    return (
+        f"Panel {panel_device_id!r} publishes circuits sharing a breaker ({named}), but "
+        f"{source} the {variant!r} variant, which publishes no shared-with lists. PanelBench "
+        "publishes a breaker's circuits separately only for hardware version '3.0', so it "
+        "does not clone this panel rather than guess its variant or drop the lists"
+    )
 
 
 _SHARED_WITH_NODES: Final = ("meter", "switch")

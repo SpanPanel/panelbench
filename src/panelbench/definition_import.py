@@ -27,6 +27,7 @@ from ebus_panel_sim import (
 from panelbench.clone import translate_panel_tree
 from panelbench.emitter_adapter.definition import bess_dispatch_yaml, load_shedding_yaml
 from panelbench.emitter_adapter.wire_capture import RecordingTransport, discovered_devices
+from panelbench.hardware import published_variant
 
 _SCHEMA_PREFIX = "panel-sim-definition/"
 
@@ -55,7 +56,17 @@ def config_from_definition_text(text: str) -> dict[str, object]:
 
 
 def config_from_definition(definition: PanelDefinition) -> dict[str, object]:
-    """A PanelBench config for the panel *definition* describes."""
+    """A PanelBench config for the panel *definition* describes.
+
+    The variant the definition declares outranks the one its panel's hardware version
+    selects, and the config records it where the two differ, so a panel on a hardware
+    string PanelBench has no variant for still publishes as its definition says. A
+    variant PanelBench does not publish is refused rather than published as another.
+    """
+    try:
+        variant = published_variant(definition.variant)
+    except ValueError as exc:
+        raise ValueError(f"The definition cannot be imported: {exc}") from exc
     panels = definition.manifest.of_class("panel")
     if len(panels) != 1:
         raise ValueError(f"a panel definition needs exactly one panel device, found {len(panels)}")
@@ -72,7 +83,9 @@ def config_from_definition(definition: PanelDefinition) -> dict[str, object]:
             raise ValueError(
                 f"the definition's battery config {battery.instance_id!r} names no bess device"
             )
-    config = translate_panel_tree(panels[0].instance_id, discovered_devices(_render(definition)))
+    config = translate_panel_tree(
+        panels[0].instance_id, discovered_devices(_render(definition)), variant=variant
+    )
     _overlay_emitter_options(config, definition)
     return config
 

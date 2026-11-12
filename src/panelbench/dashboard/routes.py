@@ -1534,6 +1534,8 @@ async def _restore_recorder(request: web.Request, entity_id: str) -> str | None:
         await _rescrape_snapshots(request)
     except ScrapeError as exc:
         return f"Restore failed: [{exc.phase}] {exc}"
+    except ValueError as exc:
+        return f"Restore failed: {exc}"
     store.restore_recorder(entity_id)
     return None
 
@@ -2496,7 +2498,16 @@ async def handle_clone_from_panel(request: web.Request) -> web.Response:
             ),
         )
 
-    config = translate_scraped_panel(scraped, host=host)
+    try:
+        config = translate_scraped_panel(scraped, host=host)
+    except ValueError as exc:
+        # A panel whose clone would not publish what it does, such as one publishing
+        # tandem circuits on hardware whose variant cannot: said, not a server error.
+        return _render(
+            "partials/clone_panel.html",
+            request,
+            _clone_panel_context(request, clone_error=f"Clone refused: {exc}", clone_host=host),
+        )
 
     ctx = _ctx(request)
 
