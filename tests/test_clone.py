@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import yaml
+from ebus_panel_sim import load_reference_capture
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.clone import (
@@ -20,6 +21,7 @@ from panelbench.clone import (
     update_config_from_scrape,
     write_clone_config,
 )
+from panelbench.reference_templates import template_capture_names
 from panelbench.scraper import ScrapedPanel
 from panelbench.validation import validate_yaml_config
 from tests._helpers import (
@@ -815,6 +817,80 @@ class TestCircuitsSharingASpace:
 
         with pytest.raises(ValueError, match="no other circuit of this panel"):
             validate_yaml_config(config)
+
+    def test_a_list_published_one_way_is_cloned_both_ways(self) -> None:
+        """Every circuit on a breaker names all the others, so a sibling one list names
+        is on the breaker even where its own list is missing, and the clone loads."""
+        devices = self._devices()
+        devices["fff777"] = _circuit(
+            "fff777", "Bedroom Outlets", "44", rating="20", priority="NEVER", active_power="0.0"
+        )
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        circuits = {c["name"]: c for c in _circuits(config)}
+        assert circuits["Bedroom Lights"]["shared_with"] == ["circuit_44_2"]
+        assert circuits["Bedroom Outlets"]["shared_with"] == ["circuit_44"]
+        validate_yaml_config(config)
+
+    def test_a_sibling_named_only_on_the_relays_list_is_cloned(self) -> None:
+        """The meter's and the relay's lists name one breaker's circuits, so either
+        names a sibling."""
+        devices = self._devices()
+        for device_id in ("fff666", "fff777"):
+            devices[device_id].update_property("meter", "shared-with-device-ids", "")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        circuits = {c["name"]: c for c in _circuits(config)}
+        assert circuits["Bedroom Lights"]["shared_with"] == ["circuit_44_2"]
+        assert circuits["Bedroom Outlets"]["shared_with"] == ["circuit_44"]
+        validate_yaml_config(config)
+
+    def test_a_tandem_quad_named_in_part_is_cloned_naming_every_sibling(self) -> None:
+        """A single-pole circuit that names only the two-pole one still shares the
+        breaker with the other single-pole one, so the clone names both."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "hardware-version", "3.0")
+        breaker = {
+            "ggg111": ("Workshop Outlets", "31", "20", "ggg333"),
+            "ggg222": ("Workshop Lights", "33", "15", "ggg333"),
+            "ggg333": ("Air Compressor", "31,33", "20", "ggg111,ggg222"),
+        }
+        for device_id, (name, spaces, rating, peers) in breaker.items():
+            circuit = _circuit(
+                device_id, name, spaces, rating=rating, priority="NEVER", active_power="0.0"
+            )
+            circuit.update_property("meter", "shared-with-device-ids", peers)
+            circuit.update_property("switch", "shared-with-device-ids", peers)
+            devices[device_id] = circuit
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        named = {c["name"]: set(c.get("shared_with", [])) for c in _circuits(config)}
+        assert named["Workshop Outlets"] == {"circuit_33", "circuit_31_2"}
+        assert named["Workshop Lights"] == {"circuit_31", "circuit_31_2"}
+        assert named["Air Compressor"] == {"circuit_31", "circuit_33"}
+        validate_yaml_config(config)
+
+
+@pytest.mark.parametrize("name", template_capture_names())
+def test_a_clone_of_each_reference_panel_loads_its_breakers_named_both_ways(name: str) -> None:
+    """Each reference capture is a real SPAN panel's published tree, so its clone must
+    pass validation, every circuit on a shared breaker naming all the others."""
+    devices = discovered_from_tree(load_reference_capture(name).tree)
+    [panel] = [
+        device_id
+        for device_id, device in devices.items()
+        if (device.description or {}).get("type") == TYPE_PANEL
+    ]
+
+    config = translate_panel_tree(panel, devices)
+
+    validate_yaml_config(config)
+    named = {c["id"]: {c["id"], *c.get("shared_with", [])} for c in _circuits(config)}
+    for circuit_id, breaker in named.items():
+        assert all(named[peer] == breaker for peer in breaker), circuit_id
 
 
 class TestAnInverterNoCircuitFeeds:

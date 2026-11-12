@@ -255,6 +255,7 @@ def translate_panel_tree(
     outside_meters: list[dict[str, object]] = []
     used_tabs: set[int] = set()
     keys = _circuit_keys(devices, circuit_nodes)
+    siblings = _breaker_siblings(devices, keys)
 
     for node_uuid in sorted(circuit_nodes):
         if _meters_outside_the_panel(devices, node_uuid):
@@ -269,6 +270,7 @@ def translate_panel_tree(
             unvalued.get(node_uuid, []),
             variant,
             keys,
+            siblings,
         )
         if result is None:
             continue
@@ -870,13 +872,14 @@ def _translate_circuit(
     unvalued: list[str],
     variant: Variant,
     keys: Mapping[str, str],
+    siblings: Mapping[str, list[str]],
 ) -> tuple[str, dict[str, object], dict[str, object], list[int]] | None:
     """Translate a single circuit node into a template and definition.
 
     *unvalued* is what the circuit declares and leaves unvalued, *variant* the panel's,
-    and *keys* every circuit's key (``_circuit_keys``). Returns (template_name,
-    template_dict, circuit_def, tabs) or None if the circuit cannot be translated
-    (missing space).
+    *keys* every circuit's key (``_circuit_keys``), and *siblings* each circuit's on its
+    tandem or quad (``_breaker_siblings``). Returns (template_name, template_dict,
+    circuit_def, tabs) or None if the circuit cannot be translated (missing space).
     """
     tabs = _spaces_prop(devices, node_uuid)
     if not tabs:
@@ -1034,7 +1037,7 @@ def _translate_circuit(
         "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
         **commissioning.config_values(commissioning.CIRCUIT, _published_by(devices, node_uuid)),
     }
-    shared = _shared_with(devices, node_uuid, keys)
+    shared = siblings.get(node_uuid)
     if shared:
         circuit_def["shared_with"] = shared
     # A rating or priority the panel publishes none of is recorded as null above.
@@ -1361,12 +1364,59 @@ def _template_name(key: str) -> str:
     return f"clone_{key}"
 
 
-def _shared_with(
-    devices: Mapping[str, DiscoveredDevice], node_uuid: str, keys: Mapping[str, str]
-) -> list[str]:
-    """The circuits sharing this circuit's meter and relay, by their ids in the clone."""
-    raw = _get_prop(devices, node_uuid, "meter", "shared-with-device-ids") or ""
-    return [_circuit_id(keys[peer]) for peer in raw.split(",") if peer in keys]
+_SHARED_WITH_NODES: Final = ("meter", "switch")
+
+
+def _breaker_siblings(
+    devices: Mapping[str, DiscoveredDevice], keys: Mapping[str, str]
+) -> dict[str, list[str]]:
+    """Each branch circuit's siblings on its tandem or quad, by their ids in the clone.
+
+    A panel names the circuits sharing one breaker's meter and relay in ``meter/`` and
+    ``switch/shared-with-device-ids``, and every circuit on a breaker names all the
+    others (SPAN-API-Client-Docs#21). So a circuit either list names, or that names
+    one in its own, is on that breaker. Each breaker's circuits are therefore gathered
+    across both lists in both directions, and each is written naming all the others,
+    as validation requires. A clone of a panel that published a list one way, or left
+    a sibling out of one, still loads. Each circuit names first the siblings it
+    published, in its order, then any it left out, in id order. Only circuits the clone
+    keeps (*keys*) are named.
+    """
+    published: dict[str, list[str]] = {}
+    linked: dict[str, set[str]] = {node: set() for node in keys}
+    for node in keys:
+        named: list[str] = []
+        for capability in _SHARED_WITH_NODES:
+            raw = _get_prop(devices, node, capability, "shared-with-device-ids") or ""
+            for peer in (p.strip() for p in raw.split(",")):
+                if peer in keys and peer != node and peer not in named:
+                    named.append(peer)
+        published[node] = named
+        for peer in named:
+            linked[node].add(peer)
+            linked[peer].add(node)
+
+    breaker_of: dict[str, frozenset[str]] = {}
+    for start in keys:
+        if start in breaker_of:
+            continue
+        breaker: set[str] = set()
+        pending = [start]
+        while pending:
+            node = pending.pop()
+            if node not in breaker:
+                breaker.add(node)
+                pending.extend(linked[node] - breaker)
+        for node in breaker:
+            breaker_of[node] = frozenset(breaker)
+
+    siblings: dict[str, list[str]] = {}
+    for node, members in breaker_of.items():
+        left_out = sorted(members - {node} - set(published[node]), key=lambda p: keys[p])
+        ordered = [*published[node], *left_out]
+        if ordered:
+            siblings[node] = [_circuit_id(keys[peer]) for peer in ordered]
+    return siblings
 
 
 def _enrich_pv_template(
