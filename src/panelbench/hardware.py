@@ -68,6 +68,19 @@ def panel_variant(config: Mapping[str, object]) -> Variant:
     return variant_for(panel_hardware_version(config))
 
 
+def variant_selection(config: Mapping[str, object]) -> str:
+    """What selects the variant the panel *config* describes publishes, for a message."""
+    if not config.get("hardware_version"):
+        return (
+            f"hardware_version is unset, so {DEFAULT_HARDWARE_VERSION!r}, which selects the "
+            f"{panel_variant(config)!r} variant"
+        )
+    return (
+        f"hardware_version {panel_hardware_version(config)!r} selects the "
+        f"{panel_variant(config)!r} variant"
+    )
+
+
 def publishes_outside_meters(config: Mapping[str, object]) -> bool:
     """Whether the panel *config* describes can publish a meter outside the panel."""
     return panel_variant(config) == _EXTENDED_VARIANT

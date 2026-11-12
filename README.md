@@ -387,9 +387,9 @@ The breaker shape follows `hardware_version`: at `3.0`, as the `ref_` templates 
 separately, and at `1.2`, as the default MAIN templates have it, the panel publishes as a MAIN 32 does.
 
 PanelBench accepts circuits sharing a space only as one breaker's circuits named to each other, on hardware that publishes them so. Two circuits listing one
-space are otherwise refused, as is `shared_with` on a MAIN 32-style panel, which publishes no shared-with lists. A clone of a panel writes each breaker's
-circuits naming all the others, even where the panel listed a sibling on one side only. Each circuit still publishes its own reading, where a panel publishes
-the breaker's one combined reading on every circuit sharing it.
+space are otherwise refused, as are more than two on one space, and `shared_with` on a MAIN 32-style panel, which publishes no shared-with lists. A clone of a
+panel writes each breaker's circuits naming all the others, even where the panel listed a sibling on one side only. Each circuit still publishes its own
+reading, where a panel publishes the breaker's one combined reading on every circuit sharing it.
 
 ### Reference Panels
 

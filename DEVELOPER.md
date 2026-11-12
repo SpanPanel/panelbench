@@ -460,7 +460,8 @@ circuits:
     shared_with:
       [str] # The other circuits on its tandem or quad, sharing its meter and relay, each naming all the others.
       # Only where the hardware publishes one circuit per protected circuit (hardware_version 3.0): there two
-      # circuits may list one space only if they name each other, and a MAIN 32-style panel refuses the key.
+      # circuits may list one space only if they name each other, and no more than two may, while a MAIN
+      # 32-style panel refuses the key.
     unvalued: [str] # node/property paths the circuit declares and leaves unvalued
     overrides: # Override any template field but its rating, which the loader moves into the template
       typical_power: 500.0
