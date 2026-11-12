@@ -6,8 +6,9 @@ SPAN describes both ways on spanio/SPAN-API-Client-Docs#21:
   of the package's, so a 20-20 tandem and a 20-30 package both publish ``20``. The
   space's one sensor reads both breakers together, and a two-pole circuit's
   ``meter/current`` is the average of its two legs. ``default_MAIN_32_TANDEMS.yaml``
-  holds a 20-20 tandem and a 20-30 package across two spaces, each loaded past the
-  20 A it publishes, as a consumer judging the reading against that rating would see it.
+  holds a 20-20 tandem, a 15-20 tandem published at 15 A, and a 20-30 package across
+  two spaces, each loaded past the rating it publishes, as a consumer judging the
+  reading against that rating would see it.
 - A **MAIN 16, MLO 24, MAIN 40 or MLO 48** publishes one circuit per protected
   circuit, each with its own rating, naming its siblings in ``meter/`` and
   ``switch/shared-with-device-ids``. ``default_MLO_48_TANDEMS.yaml`` is the pinned
@@ -200,7 +201,12 @@ class TestMain32Tandems:
         """Its one reading passes the 15 A the circuit publishes, 24.0 A steady at its
         peak, so judged against 15 A it raises false over-current alerts. Judged against
         both breakers, 35 A, it stays normal: neither each tick's jitter nor the power
-        range's ceiling reaches it."""
+        range's ceiling reaches it.
+
+        It is past 15 A in exactly four hours, 07, 08, 21 and 22, on every tick: each
+        such hour's multiplier keeps it above 15 A at the jitter's lowest, and every
+        other hour's keeps it under 15 A at the jitter's highest. Bounded from the
+        multipliers and the jitter fraction, not sampled."""
         config = _load(_MAIN_32)
         template = config["circuit_templates"][_circuit(config, self._UNEQUAL_TANDEM)["template"]]
         day = await _day_of_power(_MAIN_32, self._UNEQUAL_TANDEM)
@@ -212,8 +218,18 @@ class TestMain32Tandems:
             0.15,
         )
 
+        peak = template["energy_profile"]["typical_power"]
+        multipliers = template["time_of_day_profile"]["hourly_multipliers"]
+        over = {7, 8, 21, 22}
+
         assert max(amps) == pytest.approx(24.0, abs=0.05)
-        assert len(hours_past) >= 3, sorted(hours_past)
+        assert hours_past == over
+        for hour in range(24):
+            steady = peak * float(multipliers[hour]) / _LINE_V
+            if hour in over:
+                assert steady * (1 - jitter) > 15, (hour, steady * (1 - jitter))
+            else:
+                assert steady * (1 + jitter) < 15, (hour, steady * (1 + jitter))
         assert max(amps) * (1 + jitter) < 35
         assert template["energy_profile"]["power_range"][1] / _LINE_V < 35
 

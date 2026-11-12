@@ -590,7 +590,7 @@ circuit_templates:
         5: 0.02
         6: 0.45
         7: 1.0  # morning: wall heater, hair dryer, lights and fan
-        8: 0.7
+        8: 0.72
         9: 0.15
         10: 0.05
         11: 0.05
@@ -604,7 +604,7 @@ circuit_templates:
         19: 0.3
         20: 0.4
         21: 0.75  # evening: heater and outlets
-        22: 0.65
+        22: 0.72
         23: 0.1
 
   # Heat pump with seasonal efficiency
