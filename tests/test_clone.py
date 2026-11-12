@@ -779,7 +779,10 @@ class TestCircuitsSharingASpace:
     """Two circuits on one space, as circuits sharing a meter are, stay two circuits."""
 
     def _devices(self) -> dict[str, DiscoveredDevice]:
+        """A tandem on hardware that publishes one, a panel whose `info/hardware-version`
+        selects the variant publishing shared-with lists (SPAN-API-Client-Docs#21)."""
         devices = _base_devices()
+        devices[_SERIAL].update_property("info", "hardware-version", "3.0")
         devices["fff666"] = _sharing("fff666", "Bedroom Lights", "fff777")
         devices["fff777"] = _sharing("fff777", "Bedroom Outlets", "fff666")
         return devices

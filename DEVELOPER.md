@@ -457,7 +457,10 @@ circuits:
     # EVSE circuit: its drive's firmware (every drive: else evse.firmware_version)
     tags: [str] # Published as info/tags, as commissioned; a clone keeps its panel's
     locations: [str] # Published as info/locations, as commissioned
-    shared_with: [str] # The ids of the circuits sharing its meter and relay, as circuits on one space do
+    shared_with:
+      [str] # The other circuits on its tandem or quad, sharing its meter and relay, each naming all the others.
+      # Only where the hardware publishes one circuit per protected circuit (hardware_version 3.0): there two
+      # circuits may list one space only if they name each other, and a MAIN 32-style panel refuses the key.
     unvalued: [str] # node/property paths the circuit declares and leaves unvalued
     overrides: # Override any template field but its rating, which the loader moves into the template
       typical_power: 500.0

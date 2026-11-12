@@ -82,6 +82,17 @@ def publishes_pv_devices(variant: Variant) -> bool:
     return variant != _EXTENDED_VARIANT
 
 
+def publishes_shared_breakers(variant: Variant) -> bool:
+    """Whether *variant* publishes a multi-load breaker as one circuit per protected circuit.
+
+    Under it, the circuits on one tandem or quad each publish their own rating and name
+    each other in ``meter/`` and ``switch/shared-with-device-ids``, so several circuits
+    can list one breaker space. The ``span`` variant, a MAIN 32's, publishes each space
+    as one circuit with one rating and no shared-with lists (SPAN-API-Client-Docs#21).
+    """
+    return variant == _EXTENDED_VARIANT
+
+
 def relay_locks_priority(variant: Variant) -> bool:
     """Whether a circuit's locked relay also locks its shed priority under *variant*.
 
