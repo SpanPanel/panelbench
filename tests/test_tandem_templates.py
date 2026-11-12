@@ -133,6 +133,7 @@ class TestMain32Tandems:
     """One circuit per breaker space, at the package's first rating."""
 
     _TANDEM = "tandem_20_20"
+    _UNEQUAL_TANDEM = "tandem_15_20"
     _PACKAGE = "washer_dryer"
 
     def test_it_publishes_no_shared_with_lists(self) -> None:
@@ -148,6 +149,20 @@ class TestMain32Tandems:
         assert tandem["name"] == "Tandem 20-20"
         assert len(tandem["tabs"]) == 1
         assert _rating(config, tandem) == 20
+
+    def test_the_unequal_tandem_is_one_single_space_circuit_at_its_first_rating(
+        self,
+    ) -> None:
+        """A 15-20 tandem publishes the first of its package's ratings, 15, never 20 or
+        their sum, as a 20-30 publishes 20 (spanio/SPAN-API-Client-Docs#21). So a
+        consumer asking for the other breaker's rating learns from this one which of
+        the two the panel publishes."""
+        config = _load(_MAIN_32)
+        tandem = _circuit(config, self._UNEQUAL_TANDEM)
+
+        assert tandem["name"] == "Tandem 15-20"
+        assert len(tandem["tabs"]) == 1
+        assert _rating(config, tandem) == 15
 
     def test_the_package_is_one_two_pole_circuit_at_its_first_rating(self) -> None:
         config = _load(_MAIN_32)
@@ -179,6 +194,30 @@ class TestMain32Tandems:
         assert len(hours_past) >= 4, sorted(hours_past)
 
     @pytest.mark.asyncio
+    async def test_the_unequal_tandems_reading_passes_its_first_rating_but_not_both(
+        self,
+    ) -> None:
+        """Its one reading passes the 15 A the circuit publishes, 24.0 A steady at its
+        peak, so judged against 15 A it raises false over-current alerts. Judged against
+        both breakers, 35 A, it stays normal: neither each tick's jitter nor the power
+        range's ceiling reaches it."""
+        config = _load(_MAIN_32)
+        template = config["circuit_templates"][_circuit(config, self._UNEQUAL_TANDEM)["template"]]
+        day = await _day_of_power(_MAIN_32, self._UNEQUAL_TANDEM)
+        amps = [watts / _LINE_V for _, watts in day]
+        hours_past = {hour for hour, watts in day if watts / _LINE_V > 15}
+        jitter = min(
+            template["energy_profile"]["power_variation"]
+            + config["simulation_params"]["noise_factor"],
+            0.15,
+        )
+
+        assert max(amps) == pytest.approx(24.0, abs=0.05)
+        assert len(hours_past) >= 3, sorted(hours_past)
+        assert max(amps) * (1 + jitter) < 35
+        assert template["energy_profile"]["power_range"][1] / _LINE_V < 35
+
+    @pytest.mark.asyncio
     async def test_the_packages_average_current_passes_its_rating_on_dryer_cycles(
         self,
     ) -> None:
@@ -192,13 +231,17 @@ class TestMain32Tandems:
         assert min(average) == 0.0, "idle outside laundry hours"
 
     @pytest.mark.parametrize(
-        ("circuit_id", "volts", "busy"),
-        [(_TANDEM, _LINE_V, "18:00:00"), (_PACKAGE, 2 * _LINE_V, "15:00:00")],
-        ids=["tandem at dinner", "package on laundry day"],
+        ("circuit_id", "volts", "busy", "rating"),
+        [
+            (_TANDEM, _LINE_V, "18:00:00", "20"),
+            (_UNEQUAL_TANDEM, _LINE_V, "07:00:00", "15"),
+            (_PACKAGE, 2 * _LINE_V, "15:00:00", "20"),
+        ],
+        ids=["tandem at dinner", "unequal tandem in the morning", "package on laundry day"],
     )
     @pytest.mark.asyncio
     async def test_each_publishes_one_circuit_one_rating_and_a_current_from_its_power(
-        self, tmp_path: Path, circuit_id: str, volts: float, busy: str
+        self, tmp_path: Path, circuit_id: str, volts: float, busy: str, rating: str
     ) -> None:
         """``meter/current`` is the power over the circuit's voltage, which on a two-pole
         circuit is the average of its legs, as a MAIN 32 publishes it. Taken at an hour
@@ -212,7 +255,7 @@ class TestMain32Tandems:
             return retained[f"ebus/5/{uuid}/{path}"].decode()
 
         assert value("info/spaces") == ",".join(str(t) for t in circuit["tabs"])
-        assert value("breaker/rating") == "20"
+        assert value("breaker/rating") == rating
         assert value("breaker/poles") == str(len(circuit["tabs"]))
         assert not [t for t in retained if t.startswith(f"ebus/5/{uuid}/") and "shared-with" in t]
         power = abs(float(value("meter/active-power")))
