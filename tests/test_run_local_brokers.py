@@ -1,8 +1,9 @@
 """Each BROKER_PORT run by ``scripts/run-local.sh`` is a broker of its own.
 
-A real panel carries its own broker. Panels sharing one hand every subscriber all
-of their retained trees at once, and a large tree beside its neighbours overruns
-the per-client queue that a broker of its own never reaches.
+Each broker carries every panel run on its port, as the add-on's carries every
+panel it runs. One subscription to ``ebus/5/#`` is then handed all of their
+retained trees at once, so the broker lifts mosquitto's per-client queue limit:
+the default of 1000 queued messages drops the excess over a real network.
 
 The broker setup and status functions are extracted from the shipped script and
 executed, rather than restated here, so the test follows the script if it drifts.
@@ -76,6 +77,15 @@ def test_each_broker_port_gets_its_own_config_and_pid_file(tmp_path: Path) -> No
         assert f"listener {port}\n" in config
         assert f"pid_file {tmp_path}/.local/pids/mosquitto-{port}.pid\n" in config
         assert f"password_file {tmp_path}/.local/mosquitto-{port}/passwd\n" in config
+
+
+def test_each_broker_lifts_the_per_client_queue_limit(tmp_path: Path) -> None:
+    for port in (28881, 28882):
+        _run(tmp_path, "setup_mosquitto", port)
+        config = (tmp_path / ".local" / f"mosquitto-{port}" / "mosquitto.conf").read_text()
+
+        limits = [line for line in config.splitlines() if line.startswith("max_queued_messages")]
+        assert limits == ["max_queued_messages 0"], f"broker on {port}"
 
 
 def test_status_lists_every_running_broker(tmp_path: Path) -> None:
