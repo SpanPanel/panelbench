@@ -1,18 +1,21 @@
-# A MAIN 32 with a tandem and a package, as a MAIN 32 publishes multi-load breakers.
+# A MAIN 32 with two tandems and a package, as a MAIN 32 publishes multi-load breakers.
 #
 # default_MAIN_32.yaml with its laundry laid out for the purpose. A MAIN 32 publishes
 # each breaker space as one circuit with one rating, the first of the package's, and a
 # package across two spaces as one two-pole circuit whose `meter/current` is the average
 # of its two legs. It publishes no per-breaker ratings and no shared-with lists
-# (spanio/SPAN-API-Client-Docs#21). So nothing on the wire tells these two circuits
-# from a single-pole and a two-pole breaker, and each is loaded past the 20 A it
-# publishes, as a consumer judging the reading against that rating would see it:
+# (spanio/SPAN-API-Client-Docs#21). So nothing on the wire tells these circuits from
+# single-pole and two-pole breakers, and each is loaded past the rating it publishes,
+# as a consumer judging the reading against that rating would see it:
 #
 #   space 31         "Tandem 20-20"           one circuit at 20 A, peaking at 31.7 A
+#   space 32         "Tandem 15-20"           one circuit at 15 A, peaking at 24.0 A
 #   spaces 18 + 20   "Washer & Dryer 20-30"   one two-pole circuit at 20 A, averaging 22.5 A
 #
-# Those are the steady peaks; each tick's jitter of up to 12% takes the tandem to
-# 27.9-35.5 A, and the package to 25 A at most, where its power range stops it.
+# Those are the steady peaks; each tick's jitter of up to 12% takes the 20-20 to
+# 27.9-35.5 A, the 15-20 to 21.1-26.9 A, and the package to 25 A at most, where its
+# power range stops it. The 15-20 publishes its first rating, 15, so a consumer asking
+# for a tandem's other breaker can tell which of the two the panel publishes.
 #
 # Everything else is default_MAIN_32's, under a serial and battery of its own, so both
 # can run on one broker.
@@ -560,6 +563,50 @@ circuit_templates:
         22: 0.05
         23: 0.03
 
+  # A 15-20 tandem: a 15 A and a 20 A breaker in one space, on a bathroom's lights, fan
+  # and heater and on its outlets. A MAIN 32 publishes the first of the package's
+  # ratings, 15, as it publishes 20 for a 20-30 (spanio/SPAN-API-Client-Docs#21), and
+  # the space's one sensor reads both breakers together. In the morning that one reading
+  # runs past 15 A, to 24.0 A steady and 21.1-26.9 A with each tick's jitter: an
+  # over-current against the 15 A it publishes, and normal against the 35 A the two
+  # breakers carry together.
+  tandem_15_20:
+    energy_profile:
+      mode: "consumer"
+      power_range: [0.0, 3360.0]  # ceiling: 28 A at 120 V, above the jitter's reach
+      typical_power: 2880.0
+      power_variation: 0.1
+    relay_behavior: "controllable"
+    priority: "NEVER"
+    breaker_rating: 15
+    time_of_day_profile:
+      enabled: true
+      hourly_multipliers:
+        0: 0.02
+        1: 0.02
+        2: 0.02
+        3: 0.02
+        4: 0.02
+        5: 0.02
+        6: 0.45
+        7: 1.0  # morning: wall heater, hair dryer, lights and fan
+        8: 0.72
+        9: 0.15
+        10: 0.05
+        11: 0.05
+        12: 0.05
+        13: 0.05
+        14: 0.05
+        15: 0.05
+        16: 0.05
+        17: 0.05
+        18: 0.15
+        19: 0.3
+        20: 0.4
+        21: 0.75  # evening: heater and outlets
+        22: 0.72
+        23: 0.1
+
   # Heat pump with seasonal efficiency
   heat_pump:
     energy_profile:
@@ -735,7 +782,14 @@ circuits:
     template: "tandem_20_20"
     tabs: [31]
 
-unmapped_tabs: [17, 32]
+  # A bathroom on a 15-20 tandem in one space, which a MAIN 32 publishes as one circuit
+  # at its first rating, 15 (spanio/SPAN-API-Client-Docs#21).
+  - id: "tandem_15_20"
+    name: "Tandem 15-20"
+    template: "tandem_15_20"
+    tabs: [32]
+
+unmapped_tabs: [17]
 
 # Global simulation parameters
 simulation_params:

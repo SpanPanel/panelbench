@@ -4,8 +4,9 @@
 
 ### Added
 
-- **Added `default_MAIN_32_TANDEMS.yaml`**, a MAIN 32 with a 20-20 tandem on space 31 and a washer-and-dryer 20-30 package on spaces 18 and 20, each published
-  as one circuit at 20 A as a MAIN 32 publishes them, and loaded past it to 31.7 A and 22.5 A.
+- **Added `default_MAIN_32_TANDEMS.yaml`**, a MAIN 32 with a 20-20 tandem on space 31, a 15-20 tandem on space 32 and a washer-and-dryer 20-30 package on spaces
+  18 and 20, each published as one circuit at the first of its ratings, 20 A, 15 A and 20 A, as a MAIN 32 publishes them, and loaded past it to 31.7 A, 24.0 A
+  and 22.5 A.
 - **Added `default_MLO_48_TANDEMS.yaml`**, a main-lug-only MLO 48 on hardware 3.0 built from the reference MLO 48 with synthetic names and loads, with four
   tandems, a quad and a tandem-quad whose circuits name each other in `meter/` and `switch/shared-with-device-ids`; read it with span-panel v2.2.0 or later, and
   v2.2.1 or later for its tandem-quad.
