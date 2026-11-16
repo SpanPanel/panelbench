@@ -51,7 +51,7 @@ configs excluded).
 PanelBench installs as a Home Assistant app from this repository. Images are published for `amd64` and `aarch64`, and the app is not distributed through HACS.
 It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish. The
 [reference panels](#reference-panels), and `default_MLO_48_TANDEMS.yaml`, which is built from one, need **v2.2.0 or later**; its tandem-quad is drawn and judged
-correctly from **v2.2.1** (in pre-release as v2.2.1b2).
+correctly from **v2.3.0**.
 
 1. Go to **Settings > Apps** > **App Store** > three-dot menu > **Repositories**
 2. Add `https://github.com/SpanPanel/panelbench`
@@ -420,8 +420,7 @@ status endpoint's hardware version, and commissioned-system circuits.
 The included configs name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639. The MAIN
 ones' solar circuit is the locked "Commissioned PV System" circuit, and they report hardware version `1.2`. Read them with the `span-panel` integration v2.1.2
 or later; v2.1.1 shows the battery's Meter Power with its sign flipped. `default_MLO_48_TANDEMS.yaml` reports hardware version `3.0`, as the reference MLO 48
-does, and has no solar circuit; read it with v2.2.0 or later, and with v2.2.1 or later (in pre-release as v2.2.1b2) for its tandem-quad to be drawn and judged
-correctly.
+does, and has no solar circuit; read it with v2.2.0 or later, and with v2.3.0 or later for its tandem-quad to be drawn and judged correctly.
 
 To emulate the firmware before that upgrade, clone a template, since templates are read-only, and in the clone's YAML under `configs/` name a 202633 release and
 remove `commissioned_system` from its solar template, which PanelBench refuses on an earlier release:

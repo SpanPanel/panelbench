@@ -20,8 +20,7 @@ Requires the SpanPanel/span integration **v2.1.2 or later**, which
 reads the SPAN firmware release 202639 the included configs publish.
 The `ref_` templates of real SPAN panels, and the included
 `default_MLO_48_TANDEMS` built from one, need **v2.2.0 or later**.
-Its tandem-quad is drawn and judged correctly from **v2.2.1** (in
-pre-release as v2.2.1b2).
+Its tandem-quad is drawn and judged correctly from **v2.3.0**.
 
 Visit [SPAN PanelBench](https://github.com/SpanPanel/panelbench)
 page for more details.
