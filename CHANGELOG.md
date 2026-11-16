@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 2.8.0 — Tandem and quad breakers, and several panels on one broker
+
+**Two new templates model panels with tandem and quad breakers, circuits may share a breaker space only as one such breaker's, and several panels on one broker
+now reach Home Assistant intact.**
 
 ### Added
 
@@ -9,7 +12,7 @@
   and 22.5 A.
 - **Added `default_MLO_48_TANDEMS.yaml`**, a main-lug-only MLO 48 on hardware 3.0 built from the reference MLO 48 with synthetic names and loads, with four
   tandems, a quad and a tandem-quad whose circuits name each other in `meter/` and `switch/shared-with-device-ids`; read it with span-panel v2.2.0 or later, and
-  v2.2.1 or later for its tandem-quad.
+  v2.3.0 or later for its tandem-quad.
 - **A config may declare `variant`**, which outranks the one its `hardware_version` selects, and a definition import records the variant its definition
   declares, so a panel on hardware other than 3.0 imports as its definition says.
 

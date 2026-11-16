@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.8.0 — 2026-11-15
+
+Two new templates model panels with tandem and quad breakers, circuits may share a breaker space only as one such breaker's, and several panels on one broker
+now reach Home Assistant intact.
+
+### Added
+
+- **`default_MAIN_32_TANDEMS`, a MAIN 32 with a 20-20 tandem, a 15-20 tandem and a 20-30 package across two spaces**, each published as one circuit at the first
+  of its ratings, as a MAIN 32 publishes them.
+- **`default_MLO_48_TANDEMS`, a main-lug-only MLO 48 with four tandems, a quad and a tandem-quad whose circuits name each other**; read it with SPAN
+  integration 2.2.0 or later, and 2.3.0 or later for its tandem-quad.
+- **A config may declare `variant`**, which outranks the one its hardware version selects.
+
+### Changed
+
+- **Circuits may share a breaker space only as one tandem's or quad's circuits naming each other**, two to a space at most, so a config that loaded before may
+  now refuse to load, saying which circuits and how to fix it.
+- **A clone of a panel writes each tandem's or quad's circuits naming all the others**, and warns of a sibling its tree leaves out.
+
+### Fixed
+
+- **Several panels on one broker now reach Home Assistant intact**, where the broker dropped part of their state and left a panel unable to finish setup.
+
 ## 2.7.0 — 2026-11-10
 
 PanelBench now ships a read-only template for each reference capture of a real SPAN panel, and a clone or an import of each one publishes what that panel
