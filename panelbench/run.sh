@@ -147,6 +147,11 @@ password_file /app/mosquitto/passwd
 
 persistence false
 
+# One subscription to ebus/5/# receives every panel's retained tree at once.
+# Mosquitto's default of 1000 queued messages per client drops the excess over
+# a real network, so the limit is lifted.
+max_queued_messages 0
+
 log_dest stdout
 log_type warning
 log_type error

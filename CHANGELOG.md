@@ -21,6 +21,11 @@
 - **A clone of a panel writes each tandem's or quad's circuits naming all the others**, warns of a sibling its tree leaves out, and refuses a panel publishing
   those lists on hardware other than 3.0 rather than guess its variant.
 
+### Fixed
+
+- **Several panels on one broker now reach Home Assistant intact**, where the broker dropped part of their combined state when the integration subscribed over
+  a network and left a panel unable to finish setup.
+
 ## 2.7.0 — Reference panels on SPAN firmware release 202639
 
 **PanelBench now ships a read-only template for each reference capture of a real SPAN panel, and a clone or an import of each one publishes what that panel

@@ -30,7 +30,7 @@ Environment variables:
   CONFIG_DIR        Config directory (default: ./configs)
   CONFIG_NAME       Specific config file to load (e.g., default_MAIN_16.yaml). Each
                     CONFIG_NAME runs as its own simulator, so several run side by
-                    side given their own HTTP_PORT, DASHBOARD_PORT and BROKER_PORT.
+                    side given their own HTTP_PORT and DASHBOARD_PORT and one broker.
   UV_NO_SYNC        Set to 1 to run in the current .venv as it is, without syncing it
                     to the lockfile: keeps an editable emitter installed there.
   TICK_INTERVAL     Simulation tick interval in seconds (default: 1.0)
@@ -65,10 +65,10 @@ fi
 HTTP_PORT="${HTTP_PORT:-8081}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-18080}"
 BROKER_PORT="${BROKER_PORT:-18883}"
-# One broker per BROKER_PORT, as a real panel carries its own. Panels sharing a
-# broker would hand every subscriber all of their retained trees at once, and a
-# large tree plus its neighbours overruns the per-client queue that a broker of
-# its own never reaches. Side-by-side panels each take a distinct BROKER_PORT.
+# One broker per BROKER_PORT. It carries every panel run on that port, as the
+# add-on's broker carries every panel it runs, with mosquitto's per-client queue
+# limit lifted (setup_mosquitto) so their combined retained trees reach each
+# subscriber.
 MOSQUITTO_DIR="${REPO_DIR}/.local/mosquitto-${BROKER_PORT}"
 MOSQUITTO_PID_FILE="${PID_DIR}/mosquitto-${BROKER_PORT}.pid"
 
@@ -145,6 +145,11 @@ allow_anonymous false
 password_file ${MOSQUITTO_DIR}/passwd
 
 persistence false
+
+# One subscription to ebus/5/# receives every panel's retained tree at once.
+# Mosquitto's default of 1000 queued messages per client drops the excess over
+# a real network, so the limit is lifted.
+max_queued_messages 0
 
 log_dest stdout
 log_type warning
