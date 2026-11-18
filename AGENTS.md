@@ -33,6 +33,28 @@ scattered inline logic and must not be eroded.
 
 **Test discipline:** Tests drive BESS behavior through `BESSConfig` (charge_mode, charge_hours, discharge_hours), not by injecting state into `PowerInputs`.
 
+## Topology Comes From What a Panel Publishes, Never From a Reading
+
+A panel's structure is decided from what its tree publishes: its devices, their `connection` records, their roles, and which properties the panel publishes at
+all. A power, current or energy value is a reading. It seeds accumulators, fills ticks and history, and computes flows. It never decides structure. A clone or
+import of a panel captured at night must describe the same panel as one captured at noon.
+
+**Rules:**
+
+- Which device carries which flow, which circuit is solar or a battery's breaker, whether an inverter or battery is hybrid, and where a DER sits relative to the
+  lugs are decided from the tree's structure. `clone.py` does this today:
+  - a circuit's energy mode comes from what it feeds (`_device_role_to_mode`);
+  - a commissioned system comes from `connection/feeds-device-type` (`_commissioned_system`);
+  - a battery's position comes from which circuit or lugs name it.
+- A threshold on a reading ("at least 1 W", "producing", "drawing") never gates such a decision. A few watts at night are real production, and a standby draw
+  is real too. A sign or a magnitude at the captured instant says nothing about what the hardware is.
+- Whether a property is published is structure; its value is a reading. A `0.0` the panel publishes is not an unpublished property.
+- A device's `info` nameplate values (a rating, a model, a hardware version) describe what it is and do not vary with the instant of capture, so they are
+  structure, not readings.
+- Booking a tick's flows by a reading's sign, as the emitter's `span` variant books every producing circuit as solar, computes a flow. It is allowed, because
+  it decides nothing that persists.
+- Where the tree does not say, the config says so explicitly (a default the clone notes), rather than guessing from a reading.
+
 ## eBus / Homie Questions: Check the Specification First
 
 This repository is an eBus **publisher**. Any question about what it must put on the wire — topic layout, capability nodes, property names, enum domains,
