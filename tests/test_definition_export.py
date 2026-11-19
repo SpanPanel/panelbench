@@ -13,14 +13,14 @@ from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.definition_export import definition_for_config_file, definition_text
 from panelbench.definition_import import config_from_definition_text
 from panelbench.emitter_adapter.definition import build_definition
-from tests._helpers import default_config, write_config
+from tests._helpers import panel_config, write_config
 
 pytestmark = pytest.mark.asyncio
 
 
 def _with_serial(tmp_path: Path, serial: str) -> Path:
-    """The default panel saved under *serial*."""
-    config = default_config()
+    """The working panel saved under *serial*."""
+    config = panel_config()
     config["panel_config"]["serial_number"] = serial
     return write_config(tmp_path / "panel.yaml", config)
 
@@ -57,7 +57,7 @@ def _dashboard(cfg_dir: Path, config_filter: str | None) -> web.Application:
 def client_app(tmp_path: Path) -> web.Application:
     cfg_dir = tmp_path / "cfg"
     cfg_dir.mkdir()
-    write_config(cfg_dir / "panel.yaml", default_config())
+    write_config(cfg_dir / "panel.yaml", panel_config())
     return _dashboard(cfg_dir, "panel.yaml")
 
 
@@ -77,8 +77,8 @@ async def test_unsaved_edits_are_a_conflict(client_app: web.Application) -> None
 
 
 def _upload(kind: str, serial: str) -> FormData:
-    """The default panel under *serial*, as a config or as a definition upload."""
-    config = default_config()
+    """The working panel under *serial*, as a config or as a definition upload."""
+    config = panel_config()
     config["panel_config"]["serial_number"] = serial
     if kind == "config":
         text = yaml.safe_dump(dict(config), sort_keys=False)

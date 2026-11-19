@@ -154,9 +154,11 @@ upgrade of a panel with a second inverter, also make that circuit a commissioned
 
 The second inverter's circuit is a 240 V two-pole circuit, two tabs on opposite legs, as the "Commissioned PV System" circuit is: a grid-tied inverter in a US
 panel, whether a string inverter or a set of microinverters, sits on a two-pole breaker. A clone of your panel already holds it, as a two-pole circuit modelled
-as a load, so pick that circuit. A clone of a template has no second inverter, so add its circuit to both configs on two free spaces on opposite legs, such as
-`24` and `26`, with the same `id` and `tabs` in both, a two-pole `breaker_rating` such as `20`, and a load's template in the first config; take the two spaces
-out of `unmapped_tabs`. PanelBench warns when a solar circuit sits on one tab. Then, in the second config:
+as a load, so pick that circuit. A clone of a template has no second inverter, so add its circuit to both configs on two free spaces on opposite legs, one above
+the other, with the same `id` and `tabs` in both, a two-pole `breaker_rating` such as `20`, and a load's template in the first config, such as `outlets`; take
+the two spaces out of `unmapped_tabs`. Where a template has no two such spaces free, remove a two-pole circuit from both configs and use its spaces:
+`ref_MAIN_32_TANDEMS` has only `17` free, so remove its `heat_pump_backup`, on `24` and `26`. PanelBench warns when a solar circuit sits on one tab. Then, in
+the second config:
 
 - Name the circuit as its inverter's, for example `Solar Inverter 2`, rather than leaving a load's name.
 - Give it a commissioned PV template: copy the "Commissioned PV System" circuit's template as this config has it, locked, under a new name. Release 202639

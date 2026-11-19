@@ -24,14 +24,14 @@ from panelbench.validation import validate_yaml_config
 from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    default_config,
     name_firmware,
+    panel_config,
     source_and_clone,
 )
 
 from .test_pv_inverters import _pv_info
 
-_SERIAL = default_config()["panel_config"]["serial_number"]
+_SERIAL = panel_config()["panel_config"]["serial_number"]
 _FIRMWARE = "sim-pv/v0.1.0"
 
 
@@ -51,11 +51,13 @@ def _inverter(vendor: str, model: str, rating: float, **more: str) -> PVInverter
 
 
 def _unfed_panel(*inverters: PVInverterYAML, firmware: str = CURRENT_FIRMWARE) -> SimulationConfig:
-    """The default panel with no PV circuit, its inverters the section's `inverters`."""
-    config = default_config()
+    """The working panel with no PV circuit, its inverters the section's `inverters`."""
+    config = panel_config()
     name_firmware(config, firmware)
-    solar = [c for c in config["circuits"] if c["template"] == "solar"]
-    config["circuits"] = [c for c in config["circuits"] if c["template"] != "solar"]
+    templates = config["circuit_templates"]
+    pv_templates = {name for name, t in templates.items() if t.get("device_type") == "pv"}
+    solar = [c for c in config["circuits"] if c["template"] in pv_templates]
+    config["circuits"] = [c for c in config["circuits"] if c["template"] not in pv_templates]
     config["unmapped_tabs"] = sorted(
         [*config["unmapped_tabs"], *(tab for c in solar for tab in c["tabs"])]
     )
@@ -130,7 +132,10 @@ def test_a_listed_inverter_serial_names_its_device() -> None:
 
 def test_a_listed_inverter_beside_a_pv_circuit_is_numbered_after_it() -> None:
     """The section's own keys describe the inverter its PV circuit feeds, as before."""
-    config = default_config()
+    config = panel_config()
+    # The template's section only names its circuit's inverter, so it states no
+    # `enabled`, which a listed inverter needs to be published.
+    _section(config)["enabled"] = True
     _section(config)["inverters"] = [_inverter("Fronius", "Primo 7.6", 7600.0)]
     validate_yaml_config(config)
 
@@ -204,7 +209,7 @@ def test_two_listed_inverters_may_not_share_an_identifier() -> None:
 
 
 def test_a_listed_inverter_may_not_share_the_fed_inverter_identifier() -> None:
-    config = default_config()
+    config = panel_config()
     _section(config)["serial_number"] = "7E1A-01"
     _section(config)["inverters"] = [
         _inverter("Fronius", "Primo 7.6", 7600.0, serial_number="7E1A-01")

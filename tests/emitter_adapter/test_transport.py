@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import pathlib
 
 import pytest
 import yaml
@@ -18,8 +17,7 @@ from panelbench.emitter_adapter.transport import (
     MessageCallback,
     TransportBacklogFull,
 )
-
-_CONFIG = pathlib.Path(__file__).resolve().parents[2] / "configs" / "default_MAIN_40.yaml"
+from tests._helpers import PANEL_CONFIG
 
 
 class Recorder:
@@ -92,7 +90,7 @@ async def test_a_real_emitter_starts_and_stops_without_touching_our_client() -> 
     recorder = Recorder()
     transport = _transport(recorder)
     transport.start()
-    manifest = build_manifest(yaml.safe_load(_CONFIG.read_text()))
+    manifest = build_manifest(yaml.safe_load(PANEL_CONFIG.read_text()))
 
     emitter = Emitter(manifest, SetterRegistry(), mqttc=transport)
     emitter.start()

@@ -9,18 +9,16 @@ state flap between lost and ready.
 from __future__ import annotations
 
 import asyncio
-import pathlib
 from typing import TYPE_CHECKING
 
 import pytest
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.panel import PanelInstance
+from tests._helpers import PANEL_CONFIG
 
 if TYPE_CHECKING:
     from tests.emitter_adapter._fake_aiomqtt import FakeBroker
-
-_CONFIG = pathlib.Path(__file__).resolve().parents[2] / "configs" / "default_MAIN_40.yaml"
 
 
 @pytest.mark.asyncio
@@ -31,7 +29,7 @@ async def test_a_panel_whose_first_tick_fails_closes_its_link(
         raise RuntimeError("the emitter refused the tick")
 
     monkeypatch.setattr(emitter_runtime, "publish_tick", refuse)
-    panel = PanelInstance(_CONFIG)
+    panel = PanelInstance(PANEL_CONFIG)
 
     with pytest.raises(RuntimeError, match="refused the tick"):
         await panel.start()

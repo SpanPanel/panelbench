@@ -11,14 +11,14 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
-from tests._helpers import default_config, write_config
+from tests._helpers import panel_config, write_config
 
 _TEMPLATE = "ref_MAIN_32.yaml"
 
 
 def _app(tmp_path: Path) -> web.Application:
     """The dashboard viewing a ``ref_*`` template."""
-    write_config(tmp_path / _TEMPLATE, default_config())
+    write_config(tmp_path / _TEMPLATE, panel_config())
     return create_dashboard_app(
         DashboardContext(
             config_dir=tmp_path,

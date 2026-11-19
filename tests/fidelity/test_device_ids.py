@@ -24,7 +24,7 @@ the axis that decides whether a user's history survives.
 
 Device ids are a per-producer pattern check, not a pairwise one, so the two rows
 need not describe the same panel. The ``panelbench`` row is PanelBench's own
-config, ``configs/default_MAIN_40.yaml``; the ``reference`` row is upstream's
+config, ``configs/ref_MAIN_32_TANDEMS.yaml``; the ``reference`` row is upstream's
 shipped example, published by upstream. They cannot be paired in the example
 cell either: PanelBench's import runs the example as a clone, which serves its
 own panel serial and ids its circuits by uuid. Both producers id a PV inverter

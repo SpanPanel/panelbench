@@ -15,8 +15,8 @@ equality against this file — assert structure and let the values be
 representative. That is why it is a separate artifact from `golden_tree.json`,
 whose report *is* compared exactly.
 
-    uv run scripts/capture-wire.py                       # default 40-space panel
-    uv run scripts/capture-wire.py --config configs/default_MAIN_16.yaml
+    uv run scripts/capture-wire.py                       # the MAIN 32 the tests run
+    uv run scripts/capture-wire.py --config configs/ref_MLO_48_TANDEMS.yaml
     uv run scripts/capture-wire.py -o /tmp/wire.json
 """
 
@@ -31,7 +31,7 @@ import sys
 from panelbench.emitter_adapter.wire_capture import capture
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
-_DEFAULT_CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
+_PANEL_CONFIG = _REPO / "configs" / "ref_MAIN_32_TANDEMS.yaml"
 _DEFAULT_OUTPUT = _REPO / "tests" / "conformance" / "fixtures" / "golden_wire.json"
 
 
@@ -39,7 +39,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--config", type=pathlib.Path, default=_DEFAULT_CONFIG)
+    parser.add_argument("--config", type=pathlib.Path, default=_PANEL_CONFIG)
     parser.add_argument("-o", "--output", type=pathlib.Path, default=_DEFAULT_OUTPUT)
     args = parser.parse_args()
 

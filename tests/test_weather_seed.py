@@ -14,13 +14,11 @@ import hashlib
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 from panelbench.solar import weather_seed
+from tests._helpers import PANEL_CONFIG
 
-_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "default_MAIN_40.yaml"
-
-# Noon in the default config's timezone (America/Los_Angeles) on 2024-07-01, so the
+# Noon in the panel config's timezone (America/Los_Angeles) on 2024-07-01, so the
 # sun is up and the weather factor is what decides the output.
 _SUMMER_NOON = 1719860400.0
 
@@ -46,7 +44,7 @@ print(repr(engine._apply_solar_day_night_cycle(1000.0, {_SUMMER_NOON})))
 
 def _simulate_in_a_fresh_process(hash_seed: str) -> str:
     result = subprocess.run(
-        [sys.executable, "-c", _PROBE, str(_CONFIG)],
+        [sys.executable, "-c", _PROBE, str(PANEL_CONFIG)],
         env={**os.environ, "PYTHONHASHSEED": hash_seed},
         capture_output=True,
         text=True,

@@ -29,7 +29,7 @@ from ebus_panel_sim import TickInputs, load_reference_capture
 
 from panelbench.hardware import publishes_shared_breakers, variant_for
 from panelbench.validation import validate_yaml_config
-from tests._helpers import default_config
+from tests._helpers import panel_config
 from tests.fidelity.comparator import publish_reference
 
 _MAIN_32_HARDWARE = "1.2"
@@ -291,14 +291,14 @@ class TestMain32PublishesOneCircuitPerSpace:
         validate_yaml_config(_panel(_MAIN_32_HARDWARE, _circuit("washer_dryer", [18, 20])))
 
 
-def test_a_tandem_added_to_a_clone_of_the_main_40_template_says_how_to_fix_it() -> None:
-    """The case a user meets first: a clone of ``default_MAIN_40`` (hardware 1.2), with
-    a circuit copied onto a space it already holds as a tandem's other half.
+def test_a_tandem_added_to_a_clone_of_a_main_32_template_says_how_to_fix_it() -> None:
+    """The case a user meets first: a clone of ``ref_MAIN_32_TANDEMS`` (hardware 1.2),
+    with a circuit copied onto a space it already holds as a tandem's other half.
 
     The refusal names the hardware and both fixes. Taking hardware 3.0 then meets only
     the variant's own commissioned-system refusal, whose advice loads.
     """
-    config = default_config()
+    config = panel_config()
     [first, *_] = [c for c in config["circuits"] if len(c.get("tabs", [])) == 1]
     half = copy.deepcopy(first)
     half["id"] = f"{first['id']}_2"

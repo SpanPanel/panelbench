@@ -26,7 +26,7 @@ from tests._helpers import (
     CAPTURED_MAIN_32_SERIAL,
     CURRENT_FIRMWARE,
     captured_main_32,
-    default_config,
+    panel_config,
     write_config,
 )
 
@@ -93,7 +93,7 @@ async def test_a_panel_naming_no_hardware_version_reports_the_captured_panels(
     captured MAIN 32's `info/hardware-version`, on MQTT and, from release 202639, as
     the REST status's `hardwareVersion`."""
     captured = captured_main_32()[CAPTURED_MAIN_32_SERIAL].value("info/hardware-version")
-    config = default_config()
+    config = panel_config()
     config.pop("hardware_version", None)
     config["firmware_version"] = CURRENT_FIRMWARE
     serial = config["panel_config"]["serial_number"]

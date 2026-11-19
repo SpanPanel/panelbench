@@ -35,25 +35,24 @@ from panelbench.firmware import (
 from tests._helpers import (
     CONFIGS,
     CURRENT_FIRMWARE,
-    DEFAULT_CONFIG,
     EARLIER_FIRMWARE,
     SHIPPED_TEMPLATES,
-    default_config,
     discharging_bess_meter,
     name_firmware,
     night_panel,
+    panel_config,
     write_config,
 )
 
 if TYPE_CHECKING:
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
-_SERIAL = default_config()["panel_config"]["serial_number"]
+_SERIAL = panel_config()["panel_config"]["serial_number"]
 _EVSE_LIMIT_PATH = "config/user-max-charge-current"
 _EVSE_LIMIT = f"/{_EVSE_LIMIT_PATH}"
 # The dashboard's rule for a shipped template; user clones beside them are local-only.
 _SHIPPED = sorted(
-    [*DEFAULT_CONFIG.parent.glob("default_*.yaml"), *(CONFIGS / n for n in SHIPPED_TEMPLATES)],
+    [*CONFIGS.glob("default_*.yaml"), *(CONFIGS / n for n in SHIPPED_TEMPLATES)],
     key=lambda path: path.name,
 )
 # Those whose battery shows the release's meter sign. The MLO 48 tandems template has
@@ -67,8 +66,8 @@ _SHIPPED_WITH_A_BATTERY = [
 
 
 def _naming(firmware: str | None) -> SimulationConfig:
-    """The default panel naming *firmware*, or naming none."""
-    config = default_config()
+    """The working panel naming *firmware*, or naming none."""
+    config = panel_config()
     config.pop("firmware_version", None)
     if firmware is not None:
         name_firmware(config, firmware)
@@ -81,7 +80,7 @@ def test_an_unset_firmware_is_the_package_version() -> None:
 
 def test_an_unquoted_yaml_firmware_reads_as_a_string() -> None:
     """YAML reads `firmware_version: 202639` as an int; every surface needs the string."""
-    config = default_config()
+    config = panel_config()
     config.update(yaml.safe_load("firmware_version: 202639\n"))
 
     assert panel_firmware_version(config) == "202639"
@@ -161,7 +160,7 @@ async def test_a_clone_of_an_earlier_panel_keeps_its_conventions(tmp_path: Path)
     republished = await capture_retained(write_config(tmp_path / "clone.yaml", cloned))
 
     limits = [t for t in republished if t.endswith(_EVSE_LIMIT)]
-    assert len(limits) == 2, "both cloned SPAN Drives keep an r202633 panel's preset limit"
+    assert len(limits) == 1, "the cloned SPAN Drive keeps an r202633 panel's preset limit"
 
 
 def _shipped(path: Path) -> SimulationConfig:

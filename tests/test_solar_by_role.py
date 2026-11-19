@@ -16,7 +16,7 @@ from panelbench.clone import TYPE_PV, translate_panel_tree
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.wire_capture import discovered_devices, recorded_panel
-from tests._helpers import default_config, write_config
+from tests._helpers import panel_config, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,7 +36,7 @@ def _at_noon_on_solar_role_hardware() -> SimulationConfig:
     That variant has no commissioned-system circuits, so the template's lock comes
     off the solar circuit, which keeps its locked relay at priority NEVER.
     """
-    config = default_config()
+    config = panel_config()
     config["hardware_version"] = "3.0"
     for template in config["circuit_templates"].values():
         template.pop("commissioned_system", None)

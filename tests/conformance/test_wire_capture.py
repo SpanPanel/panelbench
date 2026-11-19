@@ -26,12 +26,11 @@ import pathlib
 import pytest
 
 from panelbench.emitter_adapter.wire_capture import as_capture, capture
+from tests._helpers import PANEL_CONFIG
 
-_REPO = pathlib.Path(__file__).resolve().parent.parent.parent
 _FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 _WIRE = _FIXTURES / "golden_wire.json"
 _TREE = _FIXTURES / "golden_tree.json"
-_CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
 
 
 def _committed() -> dict[str, dict[str, str]]:
@@ -81,7 +80,7 @@ def test_devices_carry_property_values_and_not_only_declarations() -> None:
 
     assert not empty, f"devices declared properties but published no values: {empty}"
     assert sum(len(keys) for keys in valued.values()) > 100, (
-        "implausibly few property values for a 40-space panel"
+        "implausibly few property values for a 32-space panel"
     )
 
 
@@ -117,7 +116,7 @@ async def _fresh_retained() -> dict[str, bytes]:
     then re-flattens, because comparing at the topic level is what makes the
     "same shape" assertion above precise.
     """
-    fresh = await capture(_CONFIG)
+    fresh = await capture(PANEL_CONFIG)
     return {
         f"ebus/5/{device}/{key}": value.encode()
         for device, body in fresh.items()

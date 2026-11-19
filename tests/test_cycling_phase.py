@@ -17,7 +17,7 @@ import pytest
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.wire_capture import recorded_panel
-from tests._helpers import default_config, published, write_config
+from tests._helpers import panel_config, published, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -62,7 +62,7 @@ async def _reading(
 ) -> float:
     """The cycling load's power after one tick at simulated *at*, the run having begun at
     *real_start* on the real clock."""
-    config = default_config()
+    config = panel_config()
     circuit_id = _cycling(config)
     config["simulation_params"]["use_simulation_time"] = True
     config["simulation_params"]["simulation_start_time"] = at.isoformat()
@@ -136,7 +136,7 @@ async def test_the_model_view_reads_a_cycling_load_on_for_exactly_its_on_duratio
     """``modelled_circuit_power``, the Model view's path, adds no noise, so it pins the
     boundary: on from the start of each 2700 s cycle of simulated time, off from
     2400 s in, at any moment the model asks about."""
-    config = default_config()
+    config = panel_config()
     circuit_id = _cycling(config)
     runtime, _ = await recorded_panel(write_config(tmp_path / "panel.yaml", config))
     cycle_start = _AFTERNOON.timestamp() - 900

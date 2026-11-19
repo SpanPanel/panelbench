@@ -43,9 +43,7 @@ from panelbench.conformance import (
     load_catalogs,
 )
 from panelbench.emitter_adapter.wire_capture import capture
-
-_REPO = pathlib.Path(__file__).resolve().parent.parent.parent
-_CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
+from tests._helpers import PANEL_CONFIG
 
 MULTI_VALUED = frozenset({"energy.ebus.capability.breaker::protection-functions"})
 """Enum properties whose payload is a *set* of members rather than one member.
@@ -130,7 +128,7 @@ def _enum_values(
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def published() -> list[EnumValue]:
-    return _enum_values(await capture(_CONFIG), load_catalogs(emitter_catalogs()))
+    return _enum_values(await capture(PANEL_CONFIG), load_catalogs(emitter_catalogs()))
 
 
 @pytest.mark.asyncio(loop_scope="module")

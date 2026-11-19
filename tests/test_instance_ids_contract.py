@@ -36,14 +36,14 @@ def test_the_derivation_matches_the_simulators() -> None:
 def test_two_panels_sharing_a_circuit_id_get_different_device_ids() -> None:
     """The bug this scoping exists to prevent, stated as an assertion.
 
-    `default_MAIN_32.yaml` and `default_MAIN_40.yaml` both define a circuit whose
-    `id` is `solar_inverter`. Run together in one add-on they share a broker, so
-    two equal device ids means two panels writing the same `ebus/5/<uuid>/...`
-    topics and a consumer reading each circuit's meters as the two loads
-    alternating.
+    The MAIN 32 and MAIN 40 templates PanelBench shipped both defined a circuit whose
+    `id` is `solar_inverter`, as `ref_MAIN_32_TANDEMS.yaml` does. Run together in one
+    add-on they share a broker, so two equal device ids means two panels writing the
+    same `ebus/5/<uuid>/...` topics and a consumer reading each circuit's meters as
+    the two loads alternating.
 
-    Asserted on the shipped configs' own serials rather than on the pinned pair
-    above, because those are the two panels that actually collided.
+    Asserted on those templates' own serials rather than on the pinned pair above,
+    because those are the two panels that actually collided.
     """
     assert stable_circuit_uuid("sim-32t-001", "solar_inverter") != stable_circuit_uuid(
         "sim-40t-001",

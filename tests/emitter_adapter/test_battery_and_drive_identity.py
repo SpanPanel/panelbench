@@ -19,7 +19,7 @@ import pytest
 
 from panelbench.clone import TYPE_BESS, TYPE_EVSE
 from panelbench.emitter_adapter.spec_generator import build_manifest
-from tests._helpers import default_config, source_and_clone
+from tests._helpers import SECOND_DRIVE, add_second_drive, panel_config, source_and_clone
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from panelbench.config_types import CircuitDefinitionExtended, SimulationConfig
 
 _GARAGE = "SPAN Drive - Garage"
-_DRIVEWAY = "SPAN Drive - Driveway"
+_DRIVEWAY = SECOND_DRIVE
 
 _IDENTITY = ("vendor-name", "model", "part-number", "serial-number", "firmware-version")
 
@@ -53,6 +53,13 @@ def _circuit(config: SimulationConfig, name: str) -> CircuitDefinitionExtended:
     return circuit
 
 
+def _two_drives() -> SimulationConfig:
+    """The working panel with a second drive beside its own, so each drive is told apart."""
+    config = panel_config()
+    add_second_drive(config)
+    return config
+
+
 def _manifest_firmware(config: SimulationConfig) -> dict[str, str]:
     """Each drive's manifest `firmware-version`, by its name."""
     return {
@@ -63,7 +70,7 @@ def _manifest_firmware(config: SimulationConfig) -> dict[str, str]:
 
 @pytest.mark.asyncio
 async def test_a_clone_republishes_the_battery_identity(tmp_path: Path) -> None:
-    config = default_config()
+    config = panel_config()
     bess = config.get("bess")
     assert bess is not None
     # Not PanelBench's own default, so an agreement cannot be a coincidence.
@@ -82,7 +89,7 @@ async def test_a_clone_republishes_the_battery_identity(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_a_clone_republishes_each_drive_firmware(tmp_path: Path) -> None:
-    config = default_config()
+    config = _two_drives()
     _circuit(config, _GARAGE)["firmware_version"] = "drive/v1.0.0"
     _circuit(config, _DRIVEWAY)["firmware_version"] = "drive/v2.0.0"
 
@@ -94,7 +101,7 @@ async def test_a_clone_republishes_each_drive_firmware(tmp_path: Path) -> None:
 
 
 def test_a_drive_circuit_firmware_wins_over_the_evse_section() -> None:
-    config = default_config()
+    config = _two_drives()
     config["evse"] = {"firmware_version": "evse/v5.0.0"}
     _circuit(config, _GARAGE)["firmware_version"] = "drive/v1.0.0"
 
@@ -102,8 +109,8 @@ def test_a_drive_circuit_firmware_wins_over_the_evse_section() -> None:
 
 
 def test_a_drive_with_no_firmware_anywhere_publishes_the_default() -> None:
-    config = default_config()
-    assert not config.get("evse"), "the shipped default names no evse section"
+    config = _two_drives()
+    assert not config.get("evse"), "the template names no evse section"
 
     assert _manifest_firmware(config) == {_GARAGE: "sim/v0.1.0", _DRIVEWAY: "sim/v0.1.0"}
 
@@ -119,7 +126,7 @@ async def test_a_clone_keeps_each_drive_serial_on_its_own_drive(
     circuits swaps which drive holds the unsuffixed one. The clone must follow the
     drive rather than re-derive from its own circuit order, which sorts by device id.
     """
-    config = default_config()
+    config = _two_drives()
     if reverse:
         config["circuits"].reverse()
 

@@ -1,7 +1,7 @@
 """What the tests that run a panel through the emitter share.
 
-A panel here is the shipped default config, optionally modified and written to a
-temporary file, then started by `wire_capture.recorded_panel`. That goes through
+A panel here is `PANEL_CONFIG`, optionally modified and written to a temporary
+file, then started by `wire_capture.recorded_panel`. That goes through
 the assembly a real panel does, so what the recorder holds is what a consumer
 would replay from the broker.
 """
@@ -39,7 +39,9 @@ if TYPE_CHECKING:
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
 CONFIGS: Final = Path(__file__).resolve().parents[1] / "configs"
-DEFAULT_CONFIG: Final = CONFIGS / "default_MAIN_40.yaml"
+# The working panel the tests run: a tracked template with modelled loads, PV, a
+# battery and a SPAN Drive, so every power flow has something to carry.
+PANEL_CONFIG: Final = CONFIGS / "ref_MAIN_32_TANDEMS.yaml"
 
 # The hand-written ``ref_`` templates, tracked in git beside the ones generated at start.
 SHIPPED_TEMPLATES: Final = ("ref_MAIN_32_TANDEMS.yaml", "ref_MLO_48_TANDEMS.yaml")
@@ -58,10 +60,48 @@ CURRENT_FIRMWARE: Final = "spanos2/r202639/01"
 NOON: Final = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("America/Los_Angeles")).timestamp()
 
 
-def default_config() -> SimulationConfig:
-    """A fresh copy of the shipped default config, to modify and then write."""
-    config: SimulationConfig = yaml.safe_load(DEFAULT_CONFIG.read_text(encoding="utf-8"))
+def panel_config() -> SimulationConfig:
+    """A fresh copy of `PANEL_CONFIG`, to modify and then write."""
+    config: SimulationConfig = yaml.safe_load(PANEL_CONFIG.read_text(encoding="utf-8"))
     return config
+
+
+# `PANEL_CONFIG` has one free space. A test that needs two takes out this two-pole
+# circuit, whose load no test reads, as the README's rehearsal frees them.
+_FREED_CIRCUIT: Final = "heat_pump_backup"
+
+# The second SPAN Drive a test of several drives adds beside the panel's one.
+SECOND_DRIVE: Final = "SPAN Drive - Driveway"
+
+
+def free_two_spaces(config: SimulationConfig) -> list[int]:
+    """Free two of *config*'s spaces, one above the other, and return them.
+
+    The circuit on them comes out and they join ``unmapped_tabs``, so *config* is
+    the same panel with two more spaces free.
+    """
+    [circuit] = [c for c in config["circuits"] if c["id"] == _FREED_CIRCUIT]
+    config["circuits"].remove(circuit)
+    spaces = list(circuit["tabs"])
+    config["unmapped_tabs"] = sorted([*config["unmapped_tabs"], *spaces])
+    return spaces
+
+
+def add_second_drive(config: SimulationConfig) -> None:
+    """Give *config* a second SPAN Drive, `SECOND_DRIVE`, after its own.
+
+    On the drive template the first uses, on two spaces `free_two_spaces` frees.
+    """
+    spaces = free_two_spaces(config)
+    config["circuits"].append(
+        {
+            "id": "span_drive_driveway",
+            "name": SECOND_DRIVE,
+            "template": "span_drive",
+            "tabs": spaces,
+        }
+    )
+    config["unmapped_tabs"] = [t for t in config["unmapped_tabs"] if t not in spaces]
 
 
 def name_firmware(config: SimulationConfig, firmware: str) -> None:
@@ -185,12 +225,13 @@ def discovered_from_tree(tree: Tree) -> dict[str, DiscoveredDevice]:
 
 
 REHEARSAL_ORIGINAL_INVERTER: Final = "solar_inverter"
-# The README's "Rehearsing a SPAN firmware upgrade", on a copy of the MAIN 40
-# template: shared by the test that follows the README and the fidelity round trip,
-# so both read one recipe. The second inverter's circuit is the one "A second
-# inverter" adds to a clone of a template: two-pole, on two free spaces.
+# The README's "Rehearsing a SPAN firmware upgrade", on a copy of `PANEL_CONFIG`:
+# shared by the test that follows the README and the fidelity round trip, so both
+# read one recipe. The second inverter's circuit is the one "A second inverter" adds
+# to a clone of a template: two-pole, on two spaces it frees, on the load template
+# it names.
 REHEARSAL_ADDED_INVERTER: Final = "solar_inverter_2"
-_REHEARSAL_ADDED_TABS: Final = (24, 26)
+_REHEARSAL_LOAD_TEMPLATE: Final = "outlets"
 
 
 def rehearsal_before(second: str | None = None) -> SimulationConfig:
@@ -198,9 +239,9 @@ def rehearsal_before(second: str | None = None) -> SimulationConfig:
     "Commissioned PV System" circuit's template unlocked as that release has it.
 
     With *second* `REHEARSAL_ADDED_INVERTER`, the second inverter's two-pole circuit is
-    added too, as a load, on two free spaces taken out of `unmapped_tabs`.
+    added too, as a load, on two spaces freed for it and taken out of `unmapped_tabs`.
     """
-    config = default_config()
+    config = panel_config()
     name_firmware(config, "spanos3/r202633/02")
     [circuit] = [c for c in config["circuits"] if c["id"] == REHEARSAL_ORIGINAL_INVERTER]
     assert circuit["name"] == "Commissioned PV System"
@@ -208,20 +249,17 @@ def rehearsal_before(second: str | None = None) -> SimulationConfig:
     solar["relay_behavior"] = "controllable"
     solar["priority"] = "OFF_GRID"
     if second == REHEARSAL_ADDED_INVERTER:
-        templates = config["circuit_templates"]
-        templates[REHEARSAL_ADDED_INVERTER] = copy.deepcopy(templates["new_circuit_tpl"])
+        spaces = free_two_spaces(config)
         config["circuits"].append(
             {
                 "id": REHEARSAL_ADDED_INVERTER,
                 "name": "Solar Inverter 2",
-                "template": REHEARSAL_ADDED_INVERTER,
-                "tabs": list(_REHEARSAL_ADDED_TABS),
+                "template": _REHEARSAL_LOAD_TEMPLATE,
+                "tabs": spaces,
                 "breaker_rating": 20,
             }
         )
-        config["unmapped_tabs"] = [
-            t for t in config["unmapped_tabs"] if t not in _REHEARSAL_ADDED_TABS
-        ]
+        config["unmapped_tabs"] = [t for t in config["unmapped_tabs"] if t not in spaces]
     return config
 
 

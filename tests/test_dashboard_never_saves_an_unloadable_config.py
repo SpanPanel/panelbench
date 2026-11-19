@@ -24,8 +24,9 @@ from panelbench.validation import validate_yaml_config
 from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    default_config,
+    free_two_spaces,
     name_firmware,
+    panel_config,
     write_config,
 )
 
@@ -37,18 +38,19 @@ _SHIPPED = Path(__file__).resolve().parents[1] / "configs"
 
 
 def _with_inverters(firmware: str, *extra: str, feed: str | None) -> SimulationConfig:
-    """The default panel at *firmware*, with a PV circuit for each of *extra* beside
-    its own, and `pv.feed` set to *feed*."""
-    config = default_config()
+    """The working panel at *firmware*, with a PV circuit for each of *extra* beside
+    its own, each on one of two spaces freed for them, and `pv.feed` set to *feed*."""
+    config = panel_config()
     name_firmware(config, firmware)
     templates = config["circuit_templates"]
-    free = list(config["unmapped_tabs"])
+    free = free_two_spaces(config)
     for circuit_id in extra:
-        templates[circuit_id] = copy.deepcopy(templates["solar"])
+        space = free.pop(0)
+        templates[circuit_id] = copy.deepcopy(templates["solar_production"])
         config["circuits"].append(
-            {"id": circuit_id, "name": circuit_id, "template": circuit_id, "tabs": [free.pop(0)]}
+            {"id": circuit_id, "name": circuit_id, "template": circuit_id, "tabs": [space]}
         )
-    config["unmapped_tabs"] = free
+        config["unmapped_tabs"].remove(space)
     pv = config.get("pv")
     assert pv is not None
     if feed is None:
@@ -117,7 +119,7 @@ async def test_a_delete_that_leaves_an_unloadable_config_is_refused(tmp_path: Pa
 @pytest.mark.asyncio
 async def test_deleting_the_last_circuit_is_refused(tmp_path: Path) -> None:
     """A panel needs at least one circuit, so the delete is refused, not a later save."""
-    config = default_config()
+    config = panel_config()
     config["circuits"] = [c for c in config["circuits"] if c["id"] == "solar_inverter"]
     app = _app(tmp_path, config)
 
@@ -137,7 +139,7 @@ async def test_a_save_still_refuses_a_config_the_panel_would_not_load(
 ) -> None:
     """Every edit is validated as it is made, so this is a guard for a store changed
     some other way: the save answers 422 and writes nothing."""
-    app = _app(tmp_path, default_config())
+    app = _app(tmp_path, panel_config())
     before = (tmp_path / _FILE).read_text(encoding="utf-8")
 
     def refuse(_config: object) -> None:
@@ -196,7 +198,7 @@ async def test_moving_the_editor_to_another_config_clears_the_load_error(
 @pytest.mark.asyncio
 async def test_cloning_an_unloadable_config_is_refused_with_the_reason(tmp_path: Path) -> None:
     write_config(tmp_path / "broken.yaml", _unloadable())
-    app = _app(tmp_path, default_config())
+    app = _app(tmp_path, panel_config())
 
     async with TestClient(TestServer(app)) as client:
         cloned = await client.post(
@@ -210,7 +212,7 @@ async def test_cloning_an_unloadable_config_is_refused_with_the_reason(tmp_path:
 
 
 def _unloadable() -> SimulationConfig:
-    config = default_config()
+    config = panel_config()
     pv = config.get("pv")
     assert pv is not None
     pv["feed"] = "no_such_circuit"
@@ -221,7 +223,7 @@ def _lifecycle_app(tmp_path: Path, calls: list[tuple[str, str]]) -> web.Applicat
     """The dashboard editing a good config, beside an unloadable `broken.yaml`, with
     each panel action recorded in *calls*."""
     write_config(tmp_path / "broken.yaml", _unloadable())
-    write_config(tmp_path / _FILE, default_config())
+    write_config(tmp_path / _FILE, panel_config())
     return create_dashboard_app(
         DashboardContext(
             config_dir=tmp_path,
@@ -281,7 +283,7 @@ async def test_a_loadable_config_is_started_or_restarted_and_opened(
 ) -> None:
     calls: list[tuple[str, str]] = []
     app = _lifecycle_app(tmp_path, calls)
-    write_config(tmp_path / "good.yaml", default_config())
+    write_config(tmp_path / "good.yaml", panel_config())
 
     async with TestClient(TestServer(app)) as client:
         answered = await client.post(f"/{verb}-panel", data={"filename": "good.yaml"})

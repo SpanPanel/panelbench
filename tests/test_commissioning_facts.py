@@ -18,7 +18,7 @@ from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.wire_capture import capture_retained, discovered_devices
 from panelbench.validation import validate_yaml_config
-from tests._helpers import default_config, write_config
+from tests._helpers import panel_config, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,7 +56,7 @@ def _commissioned() -> SimulationConfig:
     The variant publishes no PV device and has no commissioned-system circuits, so the
     template's solar circuits and their locks come off.
     """
-    config = default_config()
+    config = panel_config()
     config["hardware_version"] = _HARDWARE
     config.pop("pv", None)
     templates = config["circuit_templates"]
@@ -124,7 +124,7 @@ async def test_a_meter_outside_the_panel_is_a_circuit_device_with_a_meter_alone(
 
 
 def test_a_fact_the_config_leaves_out_is_not_published() -> None:
-    config = default_config()
+    config = panel_config()
 
     [panel] = [i for i in build_manifest(config).instances if i.entity_class == "panel"]
 
@@ -135,7 +135,7 @@ def test_a_fact_the_config_leaves_out_is_not_published() -> None:
 def test_a_rating_or_priority_recorded_as_absent_is_left_unvalued() -> None:
     """A null rating or pcs priority says the panel publishes none, so none is published,
     whether or not the circuit also lists it."""
-    config = default_config()
+    config = panel_config()
     circuit = config["circuits"][0]
     circuit["pcs_priority"] = None
     config["circuit_templates"][circuit["template"]]["breaker_rating"] = None

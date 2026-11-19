@@ -25,20 +25,20 @@ from panelbench.hardware import (
 )
 from panelbench.validation import validate_yaml_config
 from tests._helpers import (
+    CONFIGS,
     CURRENT_FIRMWARE,
-    DEFAULT_CONFIG,
     EARLIER_FIRMWARE,
-    default_config,
     name_firmware,
+    panel_config,
     write_config,
 )
 
-_SERIAL = default_config()["panel_config"]["serial_number"]
+_SERIAL = panel_config()["panel_config"]["serial_number"]
 
 
 def _panel(*, firmware: str, hardware: str | None) -> SimulationConfig:
-    """The default panel at *firmware*, with *hardware* as its hardware version or none."""
-    config = default_config()
+    """The working panel at *firmware*, with *hardware* as its hardware version or none."""
+    config = panel_config()
     name_firmware(config, firmware)
     config.pop("hardware_version", None)
     if hardware is not None:
@@ -66,7 +66,7 @@ def test_every_shipped_template_reports_a_documented_hardware_version(model: str
     """Stated in the template, and reported over MQTT and, on the release 202639 the
     template names, over REST, the same value on both."""
     shipped: SimulationConfig = yaml.safe_load(
-        DEFAULT_CONFIG.with_name(f"default_{model}.yaml").read_text(encoding="utf-8")
+        (CONFIGS / f"default_{model}.yaml").read_text(encoding="utf-8")
     )
 
     assert shipped.get("hardware_version") == "1.2"

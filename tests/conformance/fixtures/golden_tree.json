@@ -1,9 +1,9 @@
 {
-  "09a79266163d540c862d5efbe8ef67d3": {
+  "00fb2f0dd7ea5ee5836d302c08acb08f": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Office Outlets",
+    "name": "00fb2f0dd7ea5ee5836d302c08acb08f",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -49,7 +49,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -128,16 +128,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353858
+    "version": 1795049360249
   },
-  "0c941ad4041050cc830e740ddddb2f23": {
+  "0728d0ad81785b818b013fc2a28eab07": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Electric Oven/Range",
+    "name": "0728d0ad81785b818b013fc2a28eab07",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -183,7 +183,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -262,16 +262,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353861
+    "version": 1795049360247
   },
-  "14c507fcbb5f539ba40b60b5e5655a72": {
+  "20094baf8dd7580d94f17fd20d644652": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Laundry Room Outlets",
+    "name": "20094baf8dd7580d94f17fd20d644652",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -317,7 +317,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -396,16 +396,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353859
+    "version": 1795049360247
   },
-  "17e98544c51a59d98331dd263df2abe1": {
+  "25570001eace5bb2bcfc60cd1331349f": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Guest Room Outlets",
+    "name": "25570001eace5bb2bcfc60cd1331349f",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -451,7 +451,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -530,16 +530,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353859
+    "version": 1795049360247
   },
-  "3feb088e635f50bcad1ad38c9e79f82c": {
+  "3c407963718551c4bced6fe05b0e8f6a": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Water Heater",
+    "name": "3c407963718551c4bced6fe05b0e8f6a",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -585,7 +585,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -664,16 +664,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353861
+    "version": 1795049360246
   },
-  "51ab52ca7e085204bd300a35731c1501": {
+  "3d6749e5e77553a9ba6b4fb3b3727994": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Refrigerator",
+    "name": "3d6749e5e77553a9ba6b4fb3b3727994",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -719,7 +719,141 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
+          }
+        },
+        "type": "energy.ebus.capability.info"
+      },
+      "load-shed": {
+        "name": "load-shed",
+        "properties": {
+          "priority": {
+            "datatype": "enum",
+            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
+            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
+            "settable": true
+          }
+        },
+        "type": "energy.ebus.capability.load-shed"
+      },
+      "meter": {
+        "name": "meter",
+        "properties": {
+          "active-power": {
+            "datatype": "float",
+            "name": "Measured active power",
+            "unit": "W"
+          },
+          "current": {
+            "datatype": "float",
+            "name": "Measured current",
+            "unit": "A"
+          },
+          "exported-energy": {
+            "datatype": "float",
+            "name": "Measured energy exported",
+            "unit": "Wh"
+          },
+          "imported-energy": {
+            "datatype": "float",
+            "name": "Measured energy imported",
+            "unit": "Wh"
+          }
+        },
+        "type": "energy.ebus.capability.meter"
+      },
+      "pcs": {
+        "name": "pcs",
+        "properties": {
+          "managed": {
+            "datatype": "boolean",
+            "name": "Is circuit managed by PCS?"
+          },
+          "priority": {
+            "datatype": "integer",
+            "name": "Circuit PCS priority ranking"
+          }
+        },
+        "type": "energy.ebus.capability.pcs"
+      },
+      "switch": {
+        "name": "switch",
+        "properties": {
+          "relay": {
+            "datatype": "enum",
+            "format": "UNKNOWN,OPEN,CLOSED",
+            "name": "Circuit relay state",
+            "settable": true
+          },
+          "relay-controllable": {
+            "datatype": "boolean",
+            "name": "Can the circuit's relay be commanded by the user?"
+          },
+          "relay-requester": {
+            "datatype": "enum",
+            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
+            "name": "Actor requesting the relay state"
+          }
+        },
+        "type": "energy.ebus.capability.switch"
+      }
+    },
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
+    "type": "energy.ebus.device.circuit",
+    "version": 1795049360247
+  },
+  "40a4bf17de315e5689c146f808417af6": {
+    "children": [],
+    "extensions": [],
+    "homie": "5.0",
+    "name": "40a4bf17de315e5689c146f808417af6",
+    "nodes": {
+      "breaker": {
+        "name": "breaker",
+        "properties": {
+          "poles": {
+            "datatype": "integer",
+            "format": "1:4:1",
+            "name": "Number of breaker poles"
+          },
+          "rating": {
+            "datatype": "integer",
+            "name": "Circuit breaker rating",
+            "unit": "A"
+          }
+        },
+        "type": "energy.ebus.capability.breaker"
+      },
+      "connection": {
+        "name": "connection",
+        "properties": {
+          "feeds-device-id": {
+            "datatype": "string",
+            "name": "Homie device-id of the downstream device fed by this circuit"
+          },
+          "feeds-device-status": {
+            "datatype": "enum",
+            "format": "OK,LOST,DEGRADED",
+            "name": "Panel's view of comm health to the downstream device"
+          },
+          "feeds-device-type": {
+            "datatype": "string",
+            "name": "Homie $type of the downstream device"
+          }
+        },
+        "type": "energy.ebus.capability.connection"
+      },
+      "info": {
+        "name": "info",
+        "properties": {
+          "name": {
+            "datatype": "string",
+            "name": "Circuit name"
+          },
+          "spaces": {
+            "datatype": "string",
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -797,16 +931,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353859
+    "version": 1795049360249
   },
-  "5239be04f4725708a6f37d750fd5b4ae": {
+  "46ceb38c55135bea810540fab49f9eac": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Garage Outlets",
+    "name": "46ceb38c55135bea810540fab49f9eac",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -852,7 +986,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -931,16 +1065,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353859
+    "version": 1795049360247
   },
-  "68213a7c393f54918706bf62a3b92047": {
+  "5603c0663da35164bd43db1788880e81": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Bathroom Lights",
+    "name": "5603c0663da35164bd43db1788880e81",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -986,7 +1120,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -1065,16 +1199,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353857
+    "version": 1795049360248
   },
-  "72b4343c886e5c98bca64a131b6003ce": {
+  "65844d8650c750159ddae2be402d0721": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Bedroom Lights",
+    "name": "65844d8650c750159ddae2be402d0721",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -1120,7 +1254,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -1199,16 +1333,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353857
+    "version": 1795049360248
   },
-  "768f5f7afac95b09a32fa6b8ece84041": {
+  "7126d8651ec4537492769cbeb592430a": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Dishwasher",
+    "name": "7126d8651ec4537492769cbeb592430a",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -1254,7 +1388,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -1333,16 +1467,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353859
+    "version": 1795049360248
   },
-  "780a20adb8045467aa6ae9c66d3fd7f0": {
+  "7893856c3f155514be80cb5c29033f7f": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Microwave",
+    "name": "7893856c3f155514be80cb5c29033f7f",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -1388,7 +1522,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -1467,16 +1601,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353860
+    "version": 1795049360250
   },
-  "93294e528d045baa9190721acfb243d3": {
+  "8567f64d5fb656fb95dce73ba924dd88": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Main HVAC",
+    "name": "8567f64d5fb656fb95dce73ba924dd88",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -1522,7 +1656,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -1601,16 +1735,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353861
+    "version": 1795049360249
   },
-  "9a67992e4e735d8a81340adb44120c11": {
+  "893d25ee4ed1515c988c9c57c3d4f426": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Heat Pump",
+    "name": "893d25ee4ed1515c988c9c57c3d4f426",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -1656,7 +1790,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -1735,16 +1869,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353861
+    "version": 1795049360250
   },
-  "9c22d40aa8f25a82bf22e62aa1891c4b": {
+  "89d1b3d0bf5e570bb8dfe5fc691492ec": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "SPAN Drive - Garage",
+    "name": "89d1b3d0bf5e570bb8dfe5fc691492ec",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -1790,7 +1924,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -1869,16 +2003,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353861
+    "version": 1795049360250
   },
-  "a83191fcac585bda9d6fe05ca79b8a4f": {
+  "934628c2e4a853a298d6da154038a9a0": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "SPAN Drive - Driveway",
+    "name": "934628c2e4a853a298d6da154038a9a0",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -1924,7 +2058,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2003,16 +2137,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353862
+    "version": 1795049360250
   },
-  "bb8914a16ba2543a82a88c22e461943e": {
+  "935b2aba072555fc90dc6eb99e9aac78": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Living Room Lights",
+    "name": "935b2aba072555fc90dc6eb99e9aac78",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2058,7 +2192,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2137,16 +2271,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353857
+    "version": 1795049360246
   },
-  "bc07adcee8ff5945a29c618a54bef7e6": {
+  "a001b3774c8656ad8cf6821ef108ba36": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Garbage Disposal",
+    "name": "a001b3774c8656ad8cf6821ef108ba36",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2192,7 +2326,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2271,16 +2405,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353860
+    "version": 1795049360247
   },
-  "be820f5432c353e8b60329b6ee8e2a9b": {
+  "a69bf4aecd78576a9be838bdc851f6ae": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Living Room Outlets",
+    "name": "a69bf4aecd78576a9be838bdc851f6ae",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2326,7 +2460,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2405,16 +2539,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353858
+    "version": 1795049360250
   },
-  "be87c32bda4f5cd9abbf6d3995ae28c0": {
+  "b90d7630390e5c5a94486131467b4cea": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Solar Inverter",
+    "name": "b90d7630390e5c5a94486131467b4cea",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2460,7 +2594,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2473,6 +2607,139 @@
             "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
             "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
             "settable": true
+          }
+        },
+        "type": "energy.ebus.capability.load-shed"
+      },
+      "meter": {
+        "name": "meter",
+        "properties": {
+          "active-power": {
+            "datatype": "float",
+            "name": "Measured active power",
+            "unit": "W"
+          },
+          "current": {
+            "datatype": "float",
+            "name": "Measured current",
+            "unit": "A"
+          },
+          "exported-energy": {
+            "datatype": "float",
+            "name": "Measured energy exported",
+            "unit": "Wh"
+          },
+          "imported-energy": {
+            "datatype": "float",
+            "name": "Measured energy imported",
+            "unit": "Wh"
+          }
+        },
+        "type": "energy.ebus.capability.meter"
+      },
+      "pcs": {
+        "name": "pcs",
+        "properties": {
+          "managed": {
+            "datatype": "boolean",
+            "name": "Is circuit managed by PCS?"
+          },
+          "priority": {
+            "datatype": "integer",
+            "name": "Circuit PCS priority ranking"
+          }
+        },
+        "type": "energy.ebus.capability.pcs"
+      },
+      "switch": {
+        "name": "switch",
+        "properties": {
+          "relay": {
+            "datatype": "enum",
+            "format": "UNKNOWN,OPEN,CLOSED",
+            "name": "Circuit relay state",
+            "settable": true
+          },
+          "relay-controllable": {
+            "datatype": "boolean",
+            "name": "Can the circuit's relay be commanded by the user?"
+          },
+          "relay-requester": {
+            "datatype": "enum",
+            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
+            "name": "Actor requesting the relay state"
+          }
+        },
+        "type": "energy.ebus.capability.switch"
+      }
+    },
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
+    "type": "energy.ebus.device.circuit",
+    "version": 1795049360249
+  },
+  "bef2b02a583856c29c13a3e9d7469f8f": {
+    "children": [],
+    "extensions": [],
+    "homie": "5.0",
+    "name": "bef2b02a583856c29c13a3e9d7469f8f",
+    "nodes": {
+      "breaker": {
+        "name": "breaker",
+        "properties": {
+          "poles": {
+            "datatype": "integer",
+            "format": "1:4:1",
+            "name": "Number of breaker poles"
+          },
+          "rating": {
+            "datatype": "integer",
+            "name": "Circuit breaker rating",
+            "unit": "A"
+          }
+        },
+        "type": "energy.ebus.capability.breaker"
+      },
+      "connection": {
+        "name": "connection",
+        "properties": {
+          "feeds-device-id": {
+            "datatype": "string",
+            "name": "Homie device-id of the downstream device fed by this circuit"
+          },
+          "feeds-device-status": {
+            "datatype": "enum",
+            "format": "OK,LOST,DEGRADED",
+            "name": "Panel's view of comm health to the downstream device"
+          },
+          "feeds-device-type": {
+            "datatype": "string",
+            "name": "Homie $type of the downstream device"
+          }
+        },
+        "type": "energy.ebus.capability.connection"
+      },
+      "info": {
+        "name": "info",
+        "properties": {
+          "name": {
+            "datatype": "string",
+            "name": "Circuit name"
+          },
+          "spaces": {
+            "datatype": "string",
+            "name": "Physical panel position(s) the circuit occupies"
+          }
+        },
+        "type": "energy.ebus.capability.info"
+      },
+      "load-shed": {
+        "name": "load-shed",
+        "properties": {
+          "priority": {
+            "datatype": "enum",
+            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
+            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)"
           }
         },
         "type": "energy.ebus.capability.load-shed"
@@ -2538,16 +2805,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353862
+    "version": 1795049360250
   },
-  "c48878d21ad9590882e5c369f23a9a4e": {
+  "cd1c0542b919572081bb6a840fe26c36": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Pool Pump",
+    "name": "cd1c0542b919572081bb6a840fe26c36",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2593,7 +2860,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2672,16 +2939,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353860
+    "version": 1795049360248
   },
-  "cafc279d283d567280deb2fce6be8438": {
+  "d37f5a4dea0b5fc68c3c62be4415b84e": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Master Bedroom Outlets",
+    "name": "d37f5a4dea0b5fc68c3c62be4415b84e",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2727,7 +2994,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2806,16 +3073,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353858
+    "version": 1795049360249
   },
-  "d163b097bbfb5cf1af4420f396c76e2d": {
+  "d7738e1cb53f57da87e5fe331a8a31c1": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Kitchen Outlets (Counter)",
+    "name": "d7738e1cb53f57da87e5fe331a8a31c1",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2861,7 +3128,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -2940,16 +3207,16 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353858
+    "version": 1795049360249
   },
-  "d6e020a36d315281b4cac1cfd10f0cce": {
+  "e5ce77edfb4c5e2bb750a59ff90e8f8c": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Chest Freezer",
+    "name": "e5ce77edfb4c5e2bb750a59ff90e8f8c",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -2995,140 +3262,7 @@
           },
           "spaces": {
             "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "load-shed": {
-        "name": "load-shed",
-        "properties": {
-          "priority": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
-            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
-            "settable": true
-          }
-        },
-        "type": "energy.ebus.capability.load-shed"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "active-power": {
-            "datatype": "float",
-            "name": "Measured active power",
-            "unit": "W"
-          },
-          "current": {
-            "datatype": "float",
-            "name": "Measured current",
-            "unit": "A"
-          },
-          "exported-energy": {
-            "datatype": "float",
-            "name": "Measured energy exported",
-            "unit": "Wh"
-          },
-          "imported-energy": {
-            "datatype": "float",
-            "name": "Measured energy imported",
-            "unit": "Wh"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "pcs": {
-        "name": "pcs",
-        "properties": {
-          "managed": {
-            "datatype": "boolean",
-            "name": "Is circuit managed by PCS?"
-          },
-          "priority": {
-            "datatype": "integer",
-            "name": "Circuit PCS priority ranking"
-          }
-        },
-        "type": "energy.ebus.capability.pcs"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "relay": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OPEN,CLOSED",
-            "name": "Circuit relay state"
-          },
-          "relay-controllable": {
-            "datatype": "boolean",
-            "name": "Can the circuit's relay be commanded by the user?"
-          },
-          "relay-requester": {
-            "datatype": "enum",
-            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
-            "name": "Actor requesting the relay state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.circuit",
-    "version": 1791330353860
-  },
-  "db9deedb6ba7580397507c1dac4d4da4": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "Exterior Lights",
-    "nodes": {
-      "breaker": {
-        "name": "breaker",
-        "properties": {
-          "poles": {
-            "datatype": "integer",
-            "format": "1:4:1",
-            "name": "Number of breaker poles"
-          },
-          "rating": {
-            "datatype": "integer",
-            "name": "Circuit breaker rating",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.breaker"
-      },
-      "connection": {
-        "name": "connection",
-        "properties": {
-          "feeds-device-id": {
-            "datatype": "string",
-            "name": "Homie device-id of the downstream device fed by this circuit"
-          },
-          "feeds-device-status": {
-            "datatype": "enum",
-            "format": "OK,LOST,DEGRADED",
-            "name": "Panel's view of comm health to the downstream device"
-          },
-          "feeds-device-type": {
-            "datatype": "string",
-            "name": "Homie $type of the downstream device"
-          }
-        },
-        "type": "energy.ebus.capability.connection"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "name": {
-            "datatype": "string",
-            "name": "Circuit name"
-          },
-          "spaces": {
-            "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
+            "name": "Physical panel position(s) the circuit occupies"
           }
         },
         "type": "energy.ebus.capability.info"
@@ -3207,857 +3341,47 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.circuit",
-    "version": 1791330353857
+    "version": 1795049360248
   },
-  "ddab4e77c47d577192911fd8db925a27": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "kitchen Lights",
-    "nodes": {
-      "breaker": {
-        "name": "breaker",
-        "properties": {
-          "poles": {
-            "datatype": "integer",
-            "format": "1:4:1",
-            "name": "Number of breaker poles"
-          },
-          "rating": {
-            "datatype": "integer",
-            "name": "Circuit breaker rating",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.breaker"
-      },
-      "connection": {
-        "name": "connection",
-        "properties": {
-          "feeds-device-id": {
-            "datatype": "string",
-            "name": "Homie device-id of the downstream device fed by this circuit"
-          },
-          "feeds-device-status": {
-            "datatype": "enum",
-            "format": "OK,LOST,DEGRADED",
-            "name": "Panel's view of comm health to the downstream device"
-          },
-          "feeds-device-type": {
-            "datatype": "string",
-            "name": "Homie $type of the downstream device"
-          }
-        },
-        "type": "energy.ebus.capability.connection"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "name": {
-            "datatype": "string",
-            "name": "Circuit name"
-          },
-          "spaces": {
-            "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "load-shed": {
-        "name": "load-shed",
-        "properties": {
-          "priority": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
-            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
-            "settable": true
-          }
-        },
-        "type": "energy.ebus.capability.load-shed"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "active-power": {
-            "datatype": "float",
-            "name": "Measured active power",
-            "unit": "W"
-          },
-          "current": {
-            "datatype": "float",
-            "name": "Measured current",
-            "unit": "A"
-          },
-          "exported-energy": {
-            "datatype": "float",
-            "name": "Measured energy exported",
-            "unit": "Wh"
-          },
-          "imported-energy": {
-            "datatype": "float",
-            "name": "Measured energy imported",
-            "unit": "Wh"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "pcs": {
-        "name": "pcs",
-        "properties": {
-          "managed": {
-            "datatype": "boolean",
-            "name": "Is circuit managed by PCS?"
-          },
-          "priority": {
-            "datatype": "integer",
-            "name": "Circuit PCS priority ranking"
-          }
-        },
-        "type": "energy.ebus.capability.pcs"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "relay": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OPEN,CLOSED",
-            "name": "Circuit relay state",
-            "settable": true
-          },
-          "relay-controllable": {
-            "datatype": "boolean",
-            "name": "Can the circuit's relay be commanded by the user?"
-          },
-          "relay-requester": {
-            "datatype": "enum",
-            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
-            "name": "Actor requesting the relay state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.circuit",
-    "version": 1791330353862
-  },
-  "df5d74733e435d53be69ee9edbbda675": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "Kitchen Outlets (Island)",
-    "nodes": {
-      "breaker": {
-        "name": "breaker",
-        "properties": {
-          "poles": {
-            "datatype": "integer",
-            "format": "1:4:1",
-            "name": "Number of breaker poles"
-          },
-          "rating": {
-            "datatype": "integer",
-            "name": "Circuit breaker rating",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.breaker"
-      },
-      "connection": {
-        "name": "connection",
-        "properties": {
-          "feeds-device-id": {
-            "datatype": "string",
-            "name": "Homie device-id of the downstream device fed by this circuit"
-          },
-          "feeds-device-status": {
-            "datatype": "enum",
-            "format": "OK,LOST,DEGRADED",
-            "name": "Panel's view of comm health to the downstream device"
-          },
-          "feeds-device-type": {
-            "datatype": "string",
-            "name": "Homie $type of the downstream device"
-          }
-        },
-        "type": "energy.ebus.capability.connection"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "name": {
-            "datatype": "string",
-            "name": "Circuit name"
-          },
-          "spaces": {
-            "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "load-shed": {
-        "name": "load-shed",
-        "properties": {
-          "priority": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
-            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
-            "settable": true
-          }
-        },
-        "type": "energy.ebus.capability.load-shed"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "active-power": {
-            "datatype": "float",
-            "name": "Measured active power",
-            "unit": "W"
-          },
-          "current": {
-            "datatype": "float",
-            "name": "Measured current",
-            "unit": "A"
-          },
-          "exported-energy": {
-            "datatype": "float",
-            "name": "Measured energy exported",
-            "unit": "Wh"
-          },
-          "imported-energy": {
-            "datatype": "float",
-            "name": "Measured energy imported",
-            "unit": "Wh"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "pcs": {
-        "name": "pcs",
-        "properties": {
-          "managed": {
-            "datatype": "boolean",
-            "name": "Is circuit managed by PCS?"
-          },
-          "priority": {
-            "datatype": "integer",
-            "name": "Circuit PCS priority ranking"
-          }
-        },
-        "type": "energy.ebus.capability.pcs"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "relay": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OPEN,CLOSED",
-            "name": "Circuit relay state",
-            "settable": true
-          },
-          "relay-controllable": {
-            "datatype": "boolean",
-            "name": "Can the circuit's relay be commanded by the user?"
-          },
-          "relay-requester": {
-            "datatype": "enum",
-            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
-            "name": "Actor requesting the relay state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.circuit",
-    "version": 1791330353858
-  },
-  "e87d68b509855856a61570c7a7d95c07": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "Washing Machine",
-    "nodes": {
-      "breaker": {
-        "name": "breaker",
-        "properties": {
-          "poles": {
-            "datatype": "integer",
-            "format": "1:4:1",
-            "name": "Number of breaker poles"
-          },
-          "rating": {
-            "datatype": "integer",
-            "name": "Circuit breaker rating",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.breaker"
-      },
-      "connection": {
-        "name": "connection",
-        "properties": {
-          "feeds-device-id": {
-            "datatype": "string",
-            "name": "Homie device-id of the downstream device fed by this circuit"
-          },
-          "feeds-device-status": {
-            "datatype": "enum",
-            "format": "OK,LOST,DEGRADED",
-            "name": "Panel's view of comm health to the downstream device"
-          },
-          "feeds-device-type": {
-            "datatype": "string",
-            "name": "Homie $type of the downstream device"
-          }
-        },
-        "type": "energy.ebus.capability.connection"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "name": {
-            "datatype": "string",
-            "name": "Circuit name"
-          },
-          "spaces": {
-            "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "load-shed": {
-        "name": "load-shed",
-        "properties": {
-          "priority": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
-            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
-            "settable": true
-          }
-        },
-        "type": "energy.ebus.capability.load-shed"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "active-power": {
-            "datatype": "float",
-            "name": "Measured active power",
-            "unit": "W"
-          },
-          "current": {
-            "datatype": "float",
-            "name": "Measured current",
-            "unit": "A"
-          },
-          "exported-energy": {
-            "datatype": "float",
-            "name": "Measured energy exported",
-            "unit": "Wh"
-          },
-          "imported-energy": {
-            "datatype": "float",
-            "name": "Measured energy imported",
-            "unit": "Wh"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "pcs": {
-        "name": "pcs",
-        "properties": {
-          "managed": {
-            "datatype": "boolean",
-            "name": "Is circuit managed by PCS?"
-          },
-          "priority": {
-            "datatype": "integer",
-            "name": "Circuit PCS priority ranking"
-          }
-        },
-        "type": "energy.ebus.capability.pcs"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "relay": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OPEN,CLOSED",
-            "name": "Circuit relay state",
-            "settable": true
-          },
-          "relay-controllable": {
-            "datatype": "boolean",
-            "name": "Can the circuit's relay be commanded by the user?"
-          },
-          "relay-requester": {
-            "datatype": "enum",
-            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
-            "name": "Actor requesting the relay state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.circuit",
-    "version": 1791330353859
-  },
-  "e8d326d2b88e50a88e4fa3f04ed93608": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "Electric Dryer",
-    "nodes": {
-      "breaker": {
-        "name": "breaker",
-        "properties": {
-          "poles": {
-            "datatype": "integer",
-            "format": "1:4:1",
-            "name": "Number of breaker poles"
-          },
-          "rating": {
-            "datatype": "integer",
-            "name": "Circuit breaker rating",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.breaker"
-      },
-      "connection": {
-        "name": "connection",
-        "properties": {
-          "feeds-device-id": {
-            "datatype": "string",
-            "name": "Homie device-id of the downstream device fed by this circuit"
-          },
-          "feeds-device-status": {
-            "datatype": "enum",
-            "format": "OK,LOST,DEGRADED",
-            "name": "Panel's view of comm health to the downstream device"
-          },
-          "feeds-device-type": {
-            "datatype": "string",
-            "name": "Homie $type of the downstream device"
-          }
-        },
-        "type": "energy.ebus.capability.connection"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "name": {
-            "datatype": "string",
-            "name": "Circuit name"
-          },
-          "spaces": {
-            "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "load-shed": {
-        "name": "load-shed",
-        "properties": {
-          "priority": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
-            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
-            "settable": true
-          }
-        },
-        "type": "energy.ebus.capability.load-shed"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "active-power": {
-            "datatype": "float",
-            "name": "Measured active power",
-            "unit": "W"
-          },
-          "current": {
-            "datatype": "float",
-            "name": "Measured current",
-            "unit": "A"
-          },
-          "exported-energy": {
-            "datatype": "float",
-            "name": "Measured energy exported",
-            "unit": "Wh"
-          },
-          "imported-energy": {
-            "datatype": "float",
-            "name": "Measured energy imported",
-            "unit": "Wh"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "pcs": {
-        "name": "pcs",
-        "properties": {
-          "managed": {
-            "datatype": "boolean",
-            "name": "Is circuit managed by PCS?"
-          },
-          "priority": {
-            "datatype": "integer",
-            "name": "Circuit PCS priority ranking"
-          }
-        },
-        "type": "energy.ebus.capability.pcs"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "relay": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OPEN,CLOSED",
-            "name": "Circuit relay state",
-            "settable": true
-          },
-          "relay-controllable": {
-            "datatype": "boolean",
-            "name": "Can the circuit's relay be commanded by the user?"
-          },
-          "relay-requester": {
-            "datatype": "enum",
-            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
-            "name": "Actor requesting the relay state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.circuit",
-    "version": 1791330353861
-  },
-  "f482dc963f2654de922bfd1a40d30ee0": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "Smoke Detectors",
-    "nodes": {
-      "breaker": {
-        "name": "breaker",
-        "properties": {
-          "poles": {
-            "datatype": "integer",
-            "format": "1:4:1",
-            "name": "Number of breaker poles"
-          },
-          "rating": {
-            "datatype": "integer",
-            "name": "Circuit breaker rating",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.breaker"
-      },
-      "connection": {
-        "name": "connection",
-        "properties": {
-          "feeds-device-id": {
-            "datatype": "string",
-            "name": "Homie device-id of the downstream device fed by this circuit"
-          },
-          "feeds-device-status": {
-            "datatype": "enum",
-            "format": "OK,LOST,DEGRADED",
-            "name": "Panel's view of comm health to the downstream device"
-          },
-          "feeds-device-type": {
-            "datatype": "string",
-            "name": "Homie $type of the downstream device"
-          }
-        },
-        "type": "energy.ebus.capability.connection"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "name": {
-            "datatype": "string",
-            "name": "Circuit name"
-          },
-          "spaces": {
-            "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "load-shed": {
-        "name": "load-shed",
-        "properties": {
-          "priority": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
-            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
-            "settable": true
-          }
-        },
-        "type": "energy.ebus.capability.load-shed"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "active-power": {
-            "datatype": "float",
-            "name": "Measured active power",
-            "unit": "W"
-          },
-          "current": {
-            "datatype": "float",
-            "name": "Measured current",
-            "unit": "A"
-          },
-          "exported-energy": {
-            "datatype": "float",
-            "name": "Measured energy exported",
-            "unit": "Wh"
-          },
-          "imported-energy": {
-            "datatype": "float",
-            "name": "Measured energy imported",
-            "unit": "Wh"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "pcs": {
-        "name": "pcs",
-        "properties": {
-          "managed": {
-            "datatype": "boolean",
-            "name": "Is circuit managed by PCS?"
-          },
-          "priority": {
-            "datatype": "integer",
-            "name": "Circuit PCS priority ranking"
-          }
-        },
-        "type": "energy.ebus.capability.pcs"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "relay": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OPEN,CLOSED",
-            "name": "Circuit relay state",
-            "settable": true
-          },
-          "relay-controllable": {
-            "datatype": "boolean",
-            "name": "Can the circuit's relay be commanded by the user?"
-          },
-          "relay-requester": {
-            "datatype": "enum",
-            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
-            "name": "Actor requesting the relay state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.circuit",
-    "version": 1791330353860
-  },
-  "f58f82be999a59d6b795c45cbde9ea63": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "Master Bedroom Lights",
-    "nodes": {
-      "breaker": {
-        "name": "breaker",
-        "properties": {
-          "poles": {
-            "datatype": "integer",
-            "format": "1:4:1",
-            "name": "Number of breaker poles"
-          },
-          "rating": {
-            "datatype": "integer",
-            "name": "Circuit breaker rating",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.breaker"
-      },
-      "connection": {
-        "name": "connection",
-        "properties": {
-          "feeds-device-id": {
-            "datatype": "string",
-            "name": "Homie device-id of the downstream device fed by this circuit"
-          },
-          "feeds-device-status": {
-            "datatype": "enum",
-            "format": "OK,LOST,DEGRADED",
-            "name": "Panel's view of comm health to the downstream device"
-          },
-          "feeds-device-type": {
-            "datatype": "string",
-            "name": "Homie $type of the downstream device"
-          }
-        },
-        "type": "energy.ebus.capability.connection"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "name": {
-            "datatype": "string",
-            "name": "Circuit name"
-          },
-          "spaces": {
-            "datatype": "string",
-            "name": "Circuit breaker space number(s) within the load center (comma-separated for multi-pole)"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "load-shed": {
-        "name": "load-shed",
-        "properties": {
-          "priority": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OFF_GRID,SOC_THRESHOLD,NEVER",
-            "name": "Configured priority of circuit shedding when off-grid (dominant-power-source != GRID)",
-            "settable": true
-          }
-        },
-        "type": "energy.ebus.capability.load-shed"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "active-power": {
-            "datatype": "float",
-            "name": "Measured active power",
-            "unit": "W"
-          },
-          "current": {
-            "datatype": "float",
-            "name": "Measured current",
-            "unit": "A"
-          },
-          "exported-energy": {
-            "datatype": "float",
-            "name": "Measured energy exported",
-            "unit": "Wh"
-          },
-          "imported-energy": {
-            "datatype": "float",
-            "name": "Measured energy imported",
-            "unit": "Wh"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "pcs": {
-        "name": "pcs",
-        "properties": {
-          "managed": {
-            "datatype": "boolean",
-            "name": "Is circuit managed by PCS?"
-          },
-          "priority": {
-            "datatype": "integer",
-            "name": "Circuit PCS priority ranking"
-          }
-        },
-        "type": "energy.ebus.capability.pcs"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "relay": {
-            "datatype": "enum",
-            "format": "UNKNOWN,OPEN,CLOSED",
-            "name": "Circuit relay state",
-            "settable": true
-          },
-          "relay-controllable": {
-            "datatype": "boolean",
-            "name": "Can the circuit's relay be commanded by the user?"
-          },
-          "relay-requester": {
-            "datatype": "enum",
-            "format": "UNKNOWN,NONE,LOAD_SHED,USER,PCS,CONFIGURATION,FAULT",
-            "name": "Actor requesting the relay state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.circuit",
-    "version": 1791330353857
-  },
-  "sim-40t-001": {
+  "sim-32t-tandems-001": {
     "children": [
-      "sim-40t-001-SIM-BESS-40T-001",
-      "f58f82be999a59d6b795c45cbde9ea63",
-      "bb8914a16ba2543a82a88c22e461943e",
-      "72b4343c886e5c98bca64a131b6003ce",
-      "68213a7c393f54918706bf62a3b92047",
-      "db9deedb6ba7580397507c1dac4d4da4",
-      "cafc279d283d567280deb2fce6be8438",
-      "be820f5432c353e8b60329b6ee8e2a9b",
-      "d163b097bbfb5cf1af4420f396c76e2d",
-      "df5d74733e435d53be69ee9edbbda675",
-      "09a79266163d540c862d5efbe8ef67d3",
-      "5239be04f4725708a6f37d750fd5b4ae",
-      "14c507fcbb5f539ba40b60b5e5655a72",
-      "17e98544c51a59d98331dd263df2abe1",
-      "51ab52ca7e085204bd300a35731c1501",
-      "768f5f7afac95b09a32fa6b8ece84041",
-      "e87d68b509855856a61570c7a7d95c07",
-      "780a20adb8045467aa6ae9c66d3fd7f0",
-      "d6e020a36d315281b4cac1cfd10f0cce",
-      "bc07adcee8ff5945a29c618a54bef7e6",
-      "c48878d21ad9590882e5c369f23a9a4e",
-      "f482dc963f2654de922bfd1a40d30ee0",
-      "e8d326d2b88e50a88e4fa3f04ed93608",
-      "93294e528d045baa9190721acfb243d3",
-      "9a67992e4e735d8a81340adb44120c11",
-      "0c941ad4041050cc830e740ddddb2f23",
-      "3feb088e635f50bcad1ad38c9e79f82c",
-      "9c22d40aa8f25a82bf22e62aa1891c4b",
-      "a83191fcac585bda9d6fe05ca79b8a4f",
-      "be87c32bda4f5cd9abbf6d3995ae28c0",
-      "ddab4e77c47d577192911fd8db925a27",
-      "sim-40t-001-sim-evse-sim-40t-001",
-      "sim-40t-001-sim-evse-sim-40t-001-2",
-      "sim-40t-001-lugs-up",
-      "sim-40t-001-lugs-dn",
-      "sim-40t-001-pv-1"
+      "sim-32t-tandems-001-SIM-BESS-32T-TANDEMS-001",
+      "935b2aba072555fc90dc6eb99e9aac78",
+      "3c407963718551c4bced6fe05b0e8f6a",
+      "46ceb38c55135bea810540fab49f9eac",
+      "20094baf8dd7580d94f17fd20d644652",
+      "25570001eace5bb2bcfc60cd1331349f",
+      "3d6749e5e77553a9ba6b4fb3b3727994",
+      "0728d0ad81785b818b013fc2a28eab07",
+      "a001b3774c8656ad8cf6821ef108ba36",
+      "7126d8651ec4537492769cbeb592430a",
+      "e5ce77edfb4c5e2bb750a59ff90e8f8c",
+      "5603c0663da35164bd43db1788880e81",
+      "65844d8650c750159ddae2be402d0721",
+      "cd1c0542b919572081bb6a840fe26c36",
+      "d37f5a4dea0b5fc68c3c62be4415b84e",
+      "40a4bf17de315e5689c146f808417af6",
+      "8567f64d5fb656fb95dce73ba924dd88",
+      "d7738e1cb53f57da87e5fe331a8a31c1",
+      "b90d7630390e5c5a94486131467b4cea",
+      "00fb2f0dd7ea5ee5836d302c08acb08f",
+      "7893856c3f155514be80cb5c29033f7f",
+      "a69bf4aecd78576a9be838bdc851f6ae",
+      "89d1b3d0bf5e570bb8dfe5fc691492ec",
+      "bef2b02a583856c29c13a3e9d7469f8f",
+      "893d25ee4ed1515c988c9c57c3d4f426",
+      "934628c2e4a853a298d6da154038a9a0",
+      "sim-32t-tandems-001-sim-evse-sim-32t-tandems-001",
+      "sim-32t-tandems-001-lugs-up",
+      "sim-32t-tandems-001-lugs-dn",
+      "sim-32t-tandems-001-pv-1"
     ],
     "extensions": [],
     "homie": "5.0",
-    "name": "Span Panel",
+    "name": "SPAN Panel eBus Adapter",
     "nodes": {
       "breaker": {
         "name": "breaker",
@@ -4320,15 +3644,15 @@
       }
     },
     "type": "energy.ebus.device.distribution-enclosure",
-    "version": 1791330353863
+    "version": 1795049360251
   },
-  "sim-40t-001-SIM-BESS-40T-001": {
+  "sim-32t-tandems-001-SIM-BESS-32T-TANDEMS-001": {
     "children": [
-      "sim-40t-001-SIM-BESS-40T-001-mid"
+      "sim-32t-tandems-001-SIM-BESS-32T-TANDEMS-001-mid"
     ],
     "extensions": [],
     "homie": "5.0",
-    "name": "Battery",
+    "name": "sim-32t-tandems-001-SIM-BESS-32T-TANDEMS-001",
     "nodes": {
       "info": {
         "name": "info",
@@ -4400,16 +3724,16 @@
         "type": "energy.ebus.capability.status"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.bess",
-    "version": 1791330353863
+    "version": 1795049360251
   },
-  "sim-40t-001-SIM-BESS-40T-001-mid": {
+  "sim-32t-tandems-001-SIM-BESS-32T-TANDEMS-001-mid": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Microgrid Interconnect Device",
+    "name": "sim-32t-tandems-001-SIM-BESS-32T-TANDEMS-001-mid",
     "nodes": {
       "grid": {
         "name": "grid",
@@ -4458,16 +3782,16 @@
         "type": "energy.ebus.capability.info"
       }
     },
-    "parent": "sim-40t-001-SIM-BESS-40T-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001-SIM-BESS-32T-TANDEMS-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.mid",
-    "version": 1791330353863
+    "version": 1795049360251
   },
-  "sim-40t-001-lugs-dn": {
+  "sim-32t-tandems-001-lugs-dn": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Downstream lugs",
+    "name": "sim-32t-tandems-001-lugs-dn",
     "nodes": {
       "connection": {
         "name": "connection",
@@ -4544,16 +3868,16 @@
         "type": "energy.ebus.capability.meter"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.lugs",
-    "version": 1791330353863
+    "version": 1795049360251
   },
-  "sim-40t-001-lugs-up": {
+  "sim-32t-tandems-001-lugs-up": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "Upstream lugs",
+    "name": "sim-32t-tandems-001-lugs-up",
     "nodes": {
       "connection": {
         "name": "connection",
@@ -4630,16 +3954,16 @@
         "type": "energy.ebus.capability.meter"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.lugs",
-    "version": 1791330353862
+    "version": 1795049360251
   },
-  "sim-40t-001-pv-1": {
+  "sim-32t-tandems-001-pv-1": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
-    "name": "sim-40t-001-pv-1",
+    "name": "sim-32t-tandems-001-pv-1",
     "nodes": {
       "info": {
         "name": "info",
@@ -4669,12 +3993,12 @@
         "type": "energy.ebus.capability.info"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.pv",
-    "version": 1791330353863
+    "version": 1795049360251
   },
-  "sim-40t-001-sim-evse-sim-40t-001": {
+  "sim-32t-tandems-001-sim-evse-sim-32t-tandems-001": {
     "children": [],
     "extensions": [],
     "homie": "5.0",
@@ -4758,98 +4082,9 @@
         "type": "energy.ebus.capability.switch"
       }
     },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
+    "parent": "sim-32t-tandems-001",
+    "root": "sim-32t-tandems-001",
     "type": "energy.ebus.device.evse",
-    "version": 1791330353862
-  },
-  "sim-40t-001-sim-evse-sim-40t-001-2": {
-    "children": [],
-    "extensions": [],
-    "homie": "5.0",
-    "name": "SPAN Drive - Driveway",
-    "nodes": {
-      "config": {
-        "name": "config",
-        "properties": {
-          "max-charge-current": {
-            "datatype": "integer",
-            "name": "Commissioned maximum EVSE charge current (installer-configured)",
-            "unit": "A"
-          },
-          "user-max-charge-current": {
-            "datatype": "integer",
-            "format": "6:32",
-            "name": "User-configured maximum EVSE charge current (ceiling)",
-            "settable": true,
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.config"
-      },
-      "info": {
-        "name": "info",
-        "properties": {
-          "firmware-version": {
-            "datatype": "string",
-            "name": "Firmware version"
-          },
-          "model": {
-            "datatype": "string",
-            "name": "Model"
-          },
-          "part-number": {
-            "datatype": "string",
-            "name": "Part number"
-          },
-          "serial-number": {
-            "datatype": "string",
-            "name": "Serial number"
-          },
-          "vendor-name": {
-            "datatype": "string",
-            "name": "Vendor name"
-          }
-        },
-        "type": "energy.ebus.capability.info"
-      },
-      "meter": {
-        "name": "meter",
-        "properties": {
-          "advertised-current": {
-            "datatype": "float",
-            "name": "Current EVSE is advertising to the EV",
-            "unit": "A"
-          }
-        },
-        "type": "energy.ebus.capability.meter"
-      },
-      "status": {
-        "name": "status",
-        "properties": {
-          "status": {
-            "datatype": "enum",
-            "format": "AVAILABLE,PREPARING,CHARGING,UNAVAILABLE",
-            "name": "Status"
-          }
-        },
-        "type": "energy.ebus.capability.status"
-      },
-      "switch": {
-        "name": "switch",
-        "properties": {
-          "lock-state": {
-            "datatype": "enum",
-            "format": "UNLOCKED,LOCKED",
-            "name": "Lock state"
-          }
-        },
-        "type": "energy.ebus.capability.switch"
-      }
-    },
-    "parent": "sim-40t-001",
-    "root": "sim-40t-001",
-    "type": "energy.ebus.device.evse",
-    "version": 1791330353862
+    "version": 1795049360251
   }
 }
