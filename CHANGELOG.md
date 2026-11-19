@@ -2,11 +2,33 @@
 
 ## Unreleased
 
+**The shipped templates are all `ref_` templates: the two tandem templates are renamed, and the three `default_MAIN_` templates are removed.**
+
+### Changed
+
+- **The tandem templates are now `ref_MAIN_32_TANDEMS.yaml` and `ref_MLO_48_TANDEMS.yaml`**, formerly `default_MAIN_32_TANDEMS.yaml` and
+  `default_MLO_48_TANDEMS.yaml`. They are the two tracked templates; the others are generated at every start from the emitter's reference captures.
+- **`ref_MAIN_32_TANDEMS` names its panel `SPAN Panel eBus Adapter`** with `display_name`, and every working-panel test now runs on it.
+- **The dashboard opens `ref_MAIN_32.yaml` first**, else the first `ref_*.yaml`.
+- **Only a `ref_` file is a template.** A `default_*.yaml` left in a config directory by an earlier release is editable, and `run.sh` neither refreshes nor
+  deletes it; `run.sh` refreshes the shipped `ref_` files.
+- **The README lists every template in one table**, and the conformance profile in `DEVELOPER.md` is the regenerated one: 452 match, 4 divergence, 69 extension
+  and 1327 omission.
+
+### Removed
+
+- **`default_MAIN_16.yaml`, `default_MAIN_32.yaml` and `default_MAIN_40.yaml`**, which `ref_MAIN_16`, `ref_MAIN_32` and `ref_MAIN_40` cover. The SpanPanel
+  integration's client, span-panel-api, places MAIN 16 at spaces 9 to 24 and MAIN 40 at 9 to 48, and `default_MAIN_16` and `default_MAIN_40` numbered their
+  spaces from 1, so the integration logged "Panel model ... has breaker positions ..., but its circuits occupy spaces ..." for both. The MAIN 16 range is the
+  one its reference capture shows, with circuits on spaces 9 to 24; the MAIN 40 range is the client's own choice, and its capture's circuits sit on spaces 9
+  to 45.
+
 ### Fixed
 
 - **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
   ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
   a panel no longer starts every cycling load at the start of its on phase.
+- **Saving with no config open is refused with 400**, where it answered as if it had saved.
 
 ## 2.8.0 — Tandem and quad breakers, and several panels on one broker
 
@@ -34,8 +56,8 @@ now reach Home Assistant intact.**
 
 ### Fixed
 
-- **Several panels on one broker now reach Home Assistant intact**, where the broker dropped part of their combined state when the integration subscribed over
-  a network and left a panel unable to finish setup.
+- **Several panels on one broker now reach Home Assistant intact**, where the broker dropped part of their combined state when the integration subscribed over a
+  network and left a panel unable to finish setup.
 
 ## 2.7.0 — Reference panels on SPAN firmware release 202639
 
@@ -46,15 +68,15 @@ upstream of the panel. Use this release with SPAN integration 2.2.0 or later, wh
 ### Added
 
 - **A read-only `ref_` template for each reference capture the emitter ships**: `ref_MAIN_32`, `ref_MAIN_32_UPSTREAM_PV`, `ref_UNKNOWN_16`, `ref_MAIN_16`,
-  `ref_MAIN_40`, `ref_MLO_24` and `ref_MLO_48`. They are written into the config directory at every start, run and cloned like the shipped `default_`
-  templates, and kept read-only by the dashboard.
+  `ref_MAIN_40`, `ref_MLO_24` and `ref_MLO_48`. They are written into the config directory at every start, run and cloned like the shipped `default_` templates,
+  and kept read-only by the dashboard.
 - **A config states what a panel records at commissioning**: its site and import limits, each set of lugs' service rating and role, and each circuit's tags,
   locations and protections. A clone keeps them.
 - **A config lists what each device declares and leaves unvalued**, in `unvalued`, `mid_unvalued` and `device_unvalued`, and a clone fills them in from its
   panel, so it publishes no breaker rating or PCS priority its panel does not.
 - **A meter outside the panel, on no breaker space, is modelled under `outside_meters` and kept by a clone**, where a clone skipped it.
-- **Circuits that share a meter and relay each name the circuits they share with**, and a clone gives circuits on one space distinct ids that stay the same
-  from one clone to the next.
+- **Circuits that share a meter and relay each name the circuits they share with**, and a clone gives circuits on one space distinct ids that stay the same from
+  one clone to the next.
 - **Solar is published as a circuit with the `SOLAR` feeds role where the hardware publishes no inverter device**, and a clone reads such a circuit back as the
   solar one.
 - **The `pv` section takes `inverters`, one entry for each inverter no circuit feeds.** Each is published as its own device and listed on a dashboard card of
@@ -82,16 +104,16 @@ upstream of the panel. Use this release with SPAN integration 2.2.0 or later, wh
 - **A clone keeps an inverter no circuit feeds**, where it dropped it.
 - **A clone keeps a SPAN Drive's commissioned charge current and the user's limit.**
 - **Registration names the broker port the simulator was started with**, where it named the default port.
-- **Validation now refuses** a second meter outside the panel, an `unvalued`, `mid_unvalued` or `device_unvalued` that is not a list of paths, a shed
-  priority the emitter does not take, a commissioned-system circuit where the hardware forbids one, a malformed `inverters` entry, and a circuit that names a
-  shared circuit the panel does not have.
+- **Validation now refuses** a second meter outside the panel, an `unvalued`, `mid_unvalued` or `device_unvalued` that is not a list of paths, a shed priority
+  the emitter does not take, a commissioned-system circuit where the hardware forbids one, a malformed `inverters` entry, and a circuit that names a shared
+  circuit the panel does not have.
 
 ## 2.6.0 — SPAN firmware release 202639
 
 **The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's.** The add-on
 refreshes its shipped templates on every start, so an upgraded install's templates publish release 202639's. Use this release with SPAN integration 2.1.2 or
-later, since against release 202639 integration 2.1.1 shows the battery's Meter Power with its sign flipped. A config or clone whose `firmware_version` names
-no SPAN release publishes release 202639's conventions too, so it changes on upgrade, and that includes a clone of the earlier MAIN 40 template, which named
+later, since against release 202639 integration 2.1.1 shows the battery's Meter Power with its sign flipped. A config or clone whose `firmware_version` names no
+SPAN release publishes release 202639's conventions too, so it changes on upgrade, and that includes a clone of the earlier MAIN 40 template, which named
 `sim/v0.1.0`. To keep the earlier conventions, set its `firmware_version` to a 202633 release such as `spanos3/r202633/02`, or, for a clone of a panel, to the
 source panel's firmware; a clone of one of these templates also needs `commissioned_system` removed from its solar template, which an earlier release refuses.
 
@@ -120,8 +142,8 @@ source panel's firmware; a clone of one of these templates also needs `commissio
   earlier release.
 - **A SPAN Drive's user charge limit is no longer published until a user sets one**, as on SPAN firmware r202639, unless the panel's firmware version names an
   earlier release.
-- **The shipped templates now report firmware `spanos3/r202639/03` and publish SPAN release 202639's conventions**, as a SPAN panel after that upgrade
-  does, and a config naming a 202633 release, such as a clone of a template set to `spanos3/r202633/02`, keeps that release's conventions.
+- **The shipped templates now report firmware `spanos3/r202639/03` and publish SPAN release 202639's conventions**, as a SPAN panel after that upgrade does, and
+  a config naming a 202633 release, such as a clone of a template set to `spanos3/r202633/02`, keeps that release's conventions.
 - **The shipped templates' solar circuit is now named "Commissioned PV System", as SPAN firmware r202639 names it**, and locked as that release locks it, with
   its relay not switchable and its priority fixed at `NEVER`, where it was named "Solar Inverter".
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
@@ -135,8 +157,8 @@ source panel's firmware; a clone of one of these templates also needs `commissio
 - **A `pv.nameplate_capacity_w`, or a circuit's `overrides` rating on a template other circuits share, that disagrees with the template's `energy_profile`
   rating is now refused, naming both**, where the two could each win somewhere different; an equal or lone legacy rating moves into the template's
   `energy_profile`.
-- **Every solar device, battery, battery MID and set of lugs is now named after its own device id**, as SPAN firmware release 202639 names them, where they
-  were named "Solar", "Battery", "Microgrid Interconnect Device" and "Upstream lugs"; a circuit keeps its own name.
+- **Every solar device, battery, battery MID and set of lugs is now named after its own device id**, as SPAN firmware release 202639 names them, where they were
+  named "Solar", "Battery", "Microgrid Interconnect Device" and "Upstream lugs"; a circuit keeps its own name.
 - **The shipped configs, and any config that sets no `hardware_version`, now report hardware version `1.2`**, as a SPAN panel publishes it, where they reported
   `rev2`; a config copied from an earlier template keeps its `rev2`, which the status endpoint reports as `UNKNOWN` from release 202639.
 - **A new clone of a panel whose battery publishes a serial number identifies that battery by its serial, as the source panel does**, so re-cloning such a panel
@@ -145,10 +167,10 @@ source panel's firmware; a clone of one of these templates also needs `commissio
 ### Fixed
 
 - **Commands from Home Assistant now take effect**, such as a circuit's relay or shed priority, where PanelBench subscribed to them and then never read them.
-- **PanelBench reconnects after its MQTT broker restarts or stops answering, and publishes its panels again**, where it stayed disconnected, or on a broker
-  that had stopped answering, until it was restarted itself, and logged an error for every topic it could not publish.
-- **A config naming the serial of a panel already running is refused, naming the config that runs it**, where both started, the second silently taking over
-  the first's broker connection and topics.
+- **PanelBench reconnects after its MQTT broker restarts or stops answering, and publishes its panels again**, where it stayed disconnected, or on a broker that
+  had stopped answering, until it was restarted itself, and logged an error for every topic it could not publish.
+- **A config naming the serial of a panel already running is refused, naming the config that runs it**, where both started, the second silently taking over the
+  first's broker connection and topics.
 - **A panel that fails as it starts no longer leaves its broker connection open**, where it stayed open under the panel's identity until the panel started
   again.
 - **Cloning or syncing a panel connects to its broker at the address you gave**, where it dialled the panel's `.local` name, which does not resolve across
@@ -163,8 +185,8 @@ source panel's firmware; a clone of one of these templates also needs `commissio
 - **A clone keeps its panel's PCS priorities, vendor name, model, off-grid shed threshold and battery MID identity**, where it gave PanelBench's own.
 - **A clone keeps its panel's network links and Wi-Fi network or the absence of one**, where a panel on Ethernet cloned as one on Wi-Fi with PanelBench's own
   network.
-- **A clone's battery charges and discharges at the battery's rated power**, or 5 kW per 13.5 kWh where the battery publishes none, where every battery was
-  held to 3.5 kW.
+- **A clone's battery charges and discharges at the battery's rated power**, or 5 kW per 13.5 kWh where the battery publishes none, where every battery was held
+  to 3.5 kW.
 - **A clone records a breaker rating its panel does not publish as absent**, where it wrote 20 A into the config.
 - **Restoring a circuit from a panel that cannot be reached says why**, where it left the circuit as it was without a word.
 - **An upgraded add-on now refreshes its shipped `default_*` templates on every start**, where it kept the copies an earlier release laid down and published

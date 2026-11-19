@@ -2,10 +2,25 @@
 
 ## Unreleased
 
+The shipped templates are now all `ref_` templates, and the three `default_MAIN_` templates are removed.
+
+### Changed
+
+- **The tandem templates are now `ref_MAIN_32_TANDEMS` and `ref_MLO_48_TANDEMS`.**
+- **`ref_MAIN_32_TANDEMS` is named `SPAN Panel eBus Adapter`.**
+- **The dashboard opens `ref_MAIN_32` first.**
+- **A `default_*` file left in your config directory is no longer a template**: you can edit it, and a restart neither refreshes nor deletes it.
+
+### Removed
+
+- **`default_MAIN_16`, `default_MAIN_32` and `default_MAIN_40`**; use `ref_MAIN_16`, `ref_MAIN_32` and `ref_MAIN_40`. The first and last numbered their spaces
+  from 1, where the SpanPanel integration's client places those models at 9 to 24 and 9 to 48, so the integration warned about their breaker positions.
+
 ### Fixed
 
 - **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
   next.
+- **Saving with no config open is refused**, where it answered as if it had saved.
 
 ## 2.8.0 — 2026-11-15
 
@@ -16,8 +31,8 @@ now reach Home Assistant intact.
 
 - **`default_MAIN_32_TANDEMS`, a MAIN 32 with a 20-20 tandem, a 15-20 tandem and a 20-30 package across two spaces**, each published as one circuit at the first
   of its ratings, as a MAIN 32 publishes them.
-- **`default_MLO_48_TANDEMS`, a main-lug-only MLO 48 with four tandems, a quad and a tandem-quad whose circuits name each other**; read it with SPAN
-  integration 2.2.0 or later, and 2.3.0 or later for its tandem-quad.
+- **`default_MLO_48_TANDEMS`, a main-lug-only MLO 48 with four tandems, a quad and a tandem-quad whose circuits name each other**; read it with SPAN integration
+  2.2.0 or later, and 2.3.0 or later for its tandem-quad.
 - **A config may declare `variant`**, which outranks the one its hardware version selects.
 
 ### Changed
@@ -33,15 +48,15 @@ now reach Home Assistant intact.
 ## 2.7.0 — 2026-11-10
 
 PanelBench now ships a read-only template for each reference capture of a real SPAN panel, and a clone or an import of each one publishes what that panel
-published. The captures cover panels other than MAIN 32, a meter outside the panel, circuits that share a meter and relay, and inverters and a battery
-upstream of the panel. Use it with SPAN integration 2.2.0 or later, which supports those panels.
+published. The captures cover panels other than MAIN 32, a meter outside the panel, circuits that share a meter and relay, and inverters and a battery upstream
+of the panel. Use it with SPAN integration 2.2.0 or later, which supports those panels.
 
 ### Added
 
 - **A read-only `ref_` template for each reference capture of a real SPAN panel**, such as `ref_MAIN_32` and `ref_MLO_48`, written at every start and run or
   cloned like the shipped `default_` templates.
-- **A clone keeps what a panel records at commissioning**: its site and import limits, its lugs' service rating and role, and each circuit's tags, locations
-  and protections.
+- **A clone keeps what a panel records at commissioning**: its site and import limits, its lugs' service rating and role, and each circuit's tags, locations and
+  protections.
 - **A clone leaves unvalued what its panel leaves unvalued**, so it publishes no breaker rating or PCS priority its panel does not.
 - **A meter outside the panel is modelled and kept by a clone.**
 - **Circuits that share a meter and relay each name the circuits they share with.**
@@ -66,11 +81,11 @@ upstream of the panel. Use it with SPAN integration 2.2.0 or later, which suppor
 
 ## 2.6.0 — 2026-10-08
 
-The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's. The add-on
-refreshes its shipped templates on every start, so an upgraded install's templates publish release 202639's. Use it with SPAN integration 2.1.2 or later,
-since against release 202639 integration 2.1.1 shows the battery's Meter Power with its sign flipped. A config or clone that names no SPAN release, including
-a clone of the earlier MAIN 40 template, publishes release 202639's too; to keep the earlier conventions, set its `firmware_version` to a 202633 release such
-as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmware, and remove `commissioned_system` from a template clone's solar template.
+The shipped templates now publish SPAN firmware release 202639's conventions, and a config naming a 202633 release keeps that release's. The add-on refreshes
+its shipped templates on every start, so an upgraded install's templates publish release 202639's. Use it with SPAN integration 2.1.2 or later, since against
+release 202639 integration 2.1.1 shows the battery's Meter Power with its sign flipped. A config or clone that names no SPAN release, including a clone of the
+earlier MAIN 40 template, publishes release 202639's too; to keep the earlier conventions, set its `firmware_version` to a 202633 release such as
+`spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmware, and remove `commissioned_system` from a template clone's solar template.
 
 ### Added
 
@@ -94,8 +109,8 @@ as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmw
 - **From release 202639, a SPAN Drive's user charge limit is not published until a user sets one**, as on SPAN firmware.
 - **The shipped templates report firmware `spanos3/r202639/03` and publish release 202639's conventions**, and a config naming a 202633 release keeps that
   release's.
-- **The shipped templates' solar circuit is now named "Commissioned PV System", as SPAN firmware r202639 names it**, and locked as that release locks it,
-  where it was named "Solar Inverter".
+- **The shipped templates' solar circuit is now named "Commissioned PV System", as SPAN firmware r202639 names it**, and locked as that release locks it, where
+  it was named "Solar Inverter".
 - **The shipped configs, and any config that sets no `hardware_version`, now report hardware version `1.2`**, as a SPAN panel publishes it, where they reported
   `rev2`; a config copied from an earlier template keeps its `rev2`, which the status endpoint reports as `UNKNOWN` from release 202639.
 - **A panel without a battery no longer publishes load-shed state**, as the eBus specification requires.
@@ -114,15 +129,15 @@ as `spanos3/r202633/02`, or, for a clone of a panel, to the source panel's firmw
 ### Fixed
 
 - **Commands from Home Assistant take effect**, such as a circuit's relay or shed priority, where PanelBench never read them.
-- **PanelBench reconnects after its MQTT broker restarts or stops answering, and publishes its panels again**, where it stayed disconnected until the add-on
-  was restarted.
+- **PanelBench reconnects after its MQTT broker restarts or stops answering, and publishes its panels again**, where it stayed disconnected until the add-on was
+  restarted.
 - **A config naming the serial of a panel already running is refused**, where both started, the second silently taking over the first's broker connection.
 - **A panel that fails as it starts no longer leaves its broker connection open**, where it stayed open until the panel started again.
 - **Cloning or syncing a panel connects to its broker at the address you gave**, where it dialled the panel's `.local` name, which does not resolve across
   subnets.
 - **A panel's solar output no longer changes when the add-on restarts**, where each start gave the same panel different weather.
-- **The add-on registers with a panel once and reuses its credentials for every clone, sync and restore**, registering again only if the panel's broker
-  refuses them, where each one left another client on the panel.
+- **The add-on registers with a panel once and reuses its credentials for every clone, sync and restore**, registering again only if the panel's broker refuses
+  them, where each one left another client on the panel.
 - **A panel's passphrase is no longer written into its clone's config or an export of it**, but kept in the add-on's private storage, where an existing clone's
   passphrase moves the next time the add-on reads it.
 - **A clone takes its size from the panel's model**, where a panel whose highest spaces were empty was cloned as a smaller one.
