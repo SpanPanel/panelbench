@@ -291,7 +291,9 @@ detection logic.
 
 ### 2. Docker container
 
-Builds and runs the same image that CI pushes to GHCR. Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
+Builds and runs the same image that CI pushes to GHCR. `.dockerignore` keeps what git does not track out of the build context, so a working checkout's generated
+`ref_` templates, clones, history databases, `configs/.secrets/` and `configs/rates/` stay out of the image, as they do from CI's checkout
+(`tests/test_dockerignore.py`). Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
 networking), but the integration can connect by manual configuration. On Linux, Docker with host networking works.
 
 ```bash
