@@ -1,0 +1,23 @@
+# What a local `docker build` leaves out of its context.
+#
+# The add-on image copies `configs/` whole. A working checkout also holds the `ref_`
+# templates generated at every start, user clones and their history databases, and
+# `configs/.secrets/` and `configs/rates/`, which hold credentials and API keys. Git
+# tracks none of them, so a build from git never sees them; this keeps a local build
+# the same. Only the tracked templates and presets go in. tests/test_dockerignore.py
+# reads these rules as Docker does.
+configs/*
+!configs/presets
+!configs/ref_MAIN_32_TANDEMS.yaml
+!configs/ref_MLO_48_TANDEMS.yaml
+
+# Local state and caches, none of which the image uses.
+.env
+.git
+.local
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.superpowers
+**/__pycache__
