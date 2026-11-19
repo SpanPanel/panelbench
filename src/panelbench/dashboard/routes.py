@@ -59,7 +59,7 @@ from panelbench.rates.openei import (
     fetch_rate_plans,
     fetch_utilities,
 )
-from panelbench.reference_templates import TEMPLATE_PREFIX, is_template
+from panelbench.reference_templates import clone_name, first_template, is_template
 from panelbench.solar import compute_solar_curve
 from panelbench.weather import fetch_historical_weather, get_cached_weather
 
@@ -185,12 +185,6 @@ def _try_open_in_editor(request: web.Request, filename: str) -> str | None:
     return None
 
 
-def _first_default_config(config_dir: Path) -> str | None:
-    """Return the filename of the first default_* template, or None."""
-    defaults = sorted(p.name for p in config_dir.glob("default_*.yaml"))
-    return defaults[0] if defaults else None
-
-
 def _all_panels(request: web.Request) -> list[dict[str, object]]:
     """Merge on-disk configs with running panel info.
 
@@ -217,7 +211,7 @@ def _all_panels(request: web.Request) -> list[dict[str, object]]:
             "running": fname in running_map,
             "active": fname == active_file,
             "is_default": is_template(fname),
-            "clone_name": fname.removeprefix("default_").removeprefix(TEMPLATE_PREFIX),
+            "clone_name": clone_name(fname),
             "port": port_map.get(running_map.get(fname, ""), 0),
             # Shown beside the HTTP port because adding a panel by hand asks
             # for both: the bootstrap port to reach it, and the TLS port the
@@ -1901,10 +1895,11 @@ async def handle_clone(request: web.Request) -> web.Response:
 
 
 async def handle_save_reload(request: web.Request) -> web.Response:
-    ctx = _ctx(request)
-    filename = ctx.config_filter or "default_config.yaml"
+    filename = _ctx(request).config_filter
+    if not filename:
+        raise web.HTTPBadRequest(text="No config is open to save.")
     if is_template(filename):
-        raise web.HTTPBadRequest(text="Cannot save changes to a default template. Clone it first.")
+        raise web.HTTPBadRequest(text="Cannot save changes to a template. Clone it first.")
 
     _persist_config(request)
 
@@ -2160,7 +2155,7 @@ async def handle_delete_config(request: web.Request) -> web.Response:
     # Templates are protected — clone instead.
     if is_template(filename):
         return web.Response(
-            text='<div class="flash error">Default templates cannot be deleted.'
+            text='<div class="flash error">Templates cannot be deleted.'
             " Clone to create your own.</div>",
             content_type="text/html",
         )
@@ -2198,11 +2193,11 @@ async def handle_delete_config(request: web.Request) -> web.Response:
     _LOGGER.info("Deleted config %s", filename)
 
     # If we just deleted the active editor file, fall back to viewing
-    # the first default template (read-only).
+    # the first template (read-only).
     if filename == ctx.config_filter:
-        first_default = _first_default_config(ctx.config_dir)
-        if first_default:
-            _open_in_editor(request, first_default)
+        template = first_template(ctx.config_dir)
+        if template is not None:
+            _open_in_editor(request, template.name)
         else:
             ctx.edit(None)
         return web.Response(

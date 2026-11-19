@@ -10,11 +10,15 @@ import asyncio
 import socket
 from typing import TYPE_CHECKING
 
+import pytest
 import pytest_asyncio
 from amqtt.broker import Broker
 
+from tests._helpers import lay_every_template
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from pathlib import Path
 
 
 def _free_port() -> int:
@@ -52,3 +56,15 @@ async def amqtt_broker() -> AsyncIterator[tuple[str, int]]:
         yield ("127.0.0.1", port)
     finally:
         await broker.shutdown()
+
+
+@pytest.fixture(scope="session")
+def template_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A config directory holding `EVERY_TEMPLATE`, laid once for the session.
+
+    Shared by every test that takes it, so a test reads from it and never writes to it;
+    one that needs a directory of its own lays the templates into its ``tmp_path``.
+    """
+    config_dir = tmp_path_factory.mktemp("templates")
+    lay_every_template(config_dir)
+    return config_dir

@@ -1,6 +1,6 @@
-"""The dashboard keeps a reference capture's ``ref_*`` template read-only, as it keeps
-the shipped ``default_*`` ones: it is rebuilt at every start, so an edit to it would
-be lost. A user clones it to run a panel of their own."""
+"""The dashboard keeps a file named as a ``ref_*`` template read-only, whatever it holds:
+a reference capture's is rebuilt at every start, and a tracked one refreshed, so an
+edit to either would be lost. A user clones it to run a panel of their own."""
 
 from __future__ import annotations
 

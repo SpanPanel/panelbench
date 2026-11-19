@@ -29,6 +29,11 @@ from panelbench.emitter_adapter.wire_capture import (
     recorded_panel,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, predates
+from panelbench.reference_templates import (
+    template_capture_names,
+    template_filename,
+    write_reference_templates,
+)
 from tests.fidelity.tree_diff import retained_topics
 
 if TYPE_CHECKING:
@@ -45,6 +50,14 @@ PANEL_CONFIG: Final = CONFIGS / "ref_MAIN_32_TANDEMS.yaml"
 
 # The hand-written ``ref_`` templates, tracked in git beside the ones generated at start.
 SHIPPED_TEMPLATES: Final = ("ref_MAIN_32_TANDEMS.yaml", "ref_MLO_48_TANDEMS.yaml")
+
+# Every template a config directory holds once PanelBench has started: the tracked ones,
+# and one built from each of the pinned emitter's reference captures. Named, never
+# globbed from `CONFIGS`, which holds the generated ones in a checkout and not in CI.
+EVERY_TEMPLATE: Final = (
+    *SHIPPED_TEMPLATES,
+    *(template_filename(name) for name in template_capture_names()),
+)
 
 # The pinned emitter release's masked capture of a real MAIN 32 on SPAN release 202639,
 # by its name among the release's reference captures.
@@ -64,6 +77,18 @@ def panel_config() -> SimulationConfig:
     """A fresh copy of `PANEL_CONFIG`, to modify and then write."""
     config: SimulationConfig = yaml.safe_load(PANEL_CONFIG.read_text(encoding="utf-8"))
     return config
+
+
+def lay_every_template(config_dir: Path) -> None:
+    """Lay `EVERY_TEMPLATE` into *config_dir* as a start does: the tracked ones as
+    ``run.sh`` seeds them, the generated ones as ``write_reference_templates`` builds them."""
+    for name in SHIPPED_TEMPLATES:
+        (config_dir / name).write_bytes((CONFIGS / name).read_bytes())
+    write_reference_templates(config_dir)
+    # A capture the emitter cannot import is logged and skipped at a start; here it
+    # would leave a test checking fewer templates than it names.
+    missing = [name for name in EVERY_TEMPLATE if not (config_dir / name).is_file()]
+    assert not missing, f"not laid: {missing}"
 
 
 # `PANEL_CONFIG` has one free space. A test that needs two takes out this two-pole

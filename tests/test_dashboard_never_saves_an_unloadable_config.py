@@ -4,6 +4,9 @@ A dashboard action used to be able to persist a config the loader refuses: delet
 the circuit `pv.feed` names left the feed dangling, the save went through, and the
 panel restart then refused the file. With that config active, an add-on restart
 crashed while creating the dashboard, so the user had no screen to fix it from.
+
+With no config to open, because the start resumed none, the active one was refused or
+the open one was deleted, the dashboard opens the first template, read-only.
 """
 
 from __future__ import annotations
@@ -17,14 +20,18 @@ import yaml
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+from panelbench import __main__ as panelbench_main
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard import config_store as config_store_module
 from panelbench.dashboard.keys import APP_KEY_DASHBOARD_CONTEXT
 from panelbench.validation import validate_yaml_config
 from tests._helpers import (
+    CONFIGS,
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
+    SHIPPED_TEMPLATES,
     free_two_spaces,
+    lay_every_template,
     name_firmware,
     panel_config,
     write_config,
@@ -34,7 +41,8 @@ if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
 
 _FILE = "panel.yaml"
-_SHIPPED = Path(__file__).resolve().parents[1] / "configs"
+# What the dashboard opens when it has no config to open.
+_FIRST_VIEW = "ref_MAIN_32.yaml"
 
 
 def _with_inverters(firmware: str, *extra: str, feed: str | None) -> SimulationConfig:
@@ -61,14 +69,17 @@ def _with_inverters(firmware: str, *extra: str, feed: str | None) -> SimulationC
 
 
 def _app(tmp_path: Path, config: SimulationConfig | dict[str, object]) -> web.Application:
-    """The dashboard, with *config* the active file beside the shipped templates."""
-    for shipped in sorted(_SHIPPED.glob("default_*.yaml")):
-        (tmp_path / shipped.name).write_text(shipped.read_text(encoding="utf-8"), encoding="utf-8")
+    """The dashboard, with *config* the active file in *tmp_path*."""
     write_config(tmp_path / _FILE, config)
+    return _dashboard(tmp_path, _FILE)
+
+
+def _dashboard(config_dir: Path, config_filter: str | None) -> web.Application:
+    """The dashboard on *config_dir*, started on *config_filter*, as the app starts it."""
     return create_dashboard_app(
         DashboardContext(
-            config_dir=tmp_path,
-            config_filter=_FILE,
+            config_dir=config_dir,
+            config_filter=config_filter,
             get_panel_configs=lambda: {},
             get_panel_ports=lambda: {},
             request_reload=lambda: None,
@@ -157,6 +168,7 @@ async def test_a_save_still_refuses_a_config_the_panel_would_not_load(
 
 @pytest.mark.asyncio
 async def test_the_dashboard_starts_on_an_unloadable_active_config(tmp_path: Path) -> None:
+    lay_every_template(tmp_path)
     app = _app(tmp_path, _unloadable())
 
     async with TestClient(TestServer(app)) as client:
@@ -165,18 +177,89 @@ async def test_the_dashboard_starts_on_an_unloadable_active_config(tmp_path: Pat
 
     assert page.status == 200
     assert "pv.feed &#39;no_such_circuit&#39; names no circuit" in html
-    # The first shipped template, read-only, rather than an empty panel, and never the
-    # refused file, so nothing can be saved over it.
-    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == "default_MAIN_16.yaml"
-    assert "sim-16t-001" in html
+    # The first template, read-only, rather than an empty panel, and never the refused
+    # file, so nothing can be saved over it.
+    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == _FIRST_VIEW
+    assert "sim-main32_r202639" in html
+
+
+def test_with_no_config_to_resume_the_dashboard_opens_the_first_template(
+    tmp_path: Path,
+) -> None:
+    lay_every_template(tmp_path)
+
+    app = _dashboard(tmp_path, "")
+
+    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == _FIRST_VIEW
+
+
+@pytest.mark.asyncio
+async def test_with_no_template_the_dashboard_opens_nothing_and_saves_nothing(
+    tmp_path: Path,
+) -> None:
+    """A save with nothing open is refused rather than answered as done: there is no
+    file to write it to."""
+    app = _dashboard(tmp_path, "")
+
+    async with TestClient(TestServer(app)) as client:
+        saved = await client.post("/save-reload")
+
+    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter is None
+    assert saved.status == 400
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_deleting_the_open_config_opens_the_first_template(tmp_path: Path) -> None:
+    lay_every_template(tmp_path)
+    app = _app(tmp_path, panel_config())
+
+    async with TestClient(TestServer(app)) as client:
+        deleted = await client.post("/delete-config", data={"filename": _FILE})
+
+    assert deleted.status == 200
+    assert not (tmp_path / _FILE).exists()
+    assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == _FIRST_VIEW
+
+
+def test_a_last_config_naming_a_retired_template_starts_on_the_first_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``.last_config`` can name a ``default_`` template that is gone, as in a checkout
+    this release deleted it from. The start resumes nothing, and the dashboard opens the
+    first template, among the generated ones the start writes itself."""
+    for name in SHIPPED_TEMPLATES:
+        (tmp_path / name).write_bytes((CONFIGS / name).read_bytes())
+    (tmp_path / ".last_config").write_text("default_MAIN_40.yaml", encoding="utf-8")
+    started: list[str | None] = []
+
+    class _StartedOn:
+        """Stands in for the app, keeping the config the start resolved for it."""
+
+        def __init__(self, *, config_filter: str | None, **_options: object) -> None:
+            started.append(config_filter)
+
+        async def run(self) -> None:
+            return None
+
+        async def stop(self) -> None:
+            return None
+
+    monkeypatch.delenv("CONFIG_NAME", raising=False)
+    monkeypatch.setattr(panelbench_main, "SimulatorApp", _StartedOn)
+
+    panelbench_main.main(["--config-dir", str(tmp_path)])
+
+    [resumed] = started
+    assert _dashboard(tmp_path, resumed)[APP_KEY_DASHBOARD_CONTEXT].config_filter == _FIRST_VIEW
 
 
 @pytest.mark.parametrize(
     ("path", "form"),
     [
-        ("/load-config", {"config_file": "default_MAIN_16.yaml"}),
-        ("/clone", {"filename": "copy.yaml", "source_file": "default_MAIN_16.yaml"}),
-        ("/restart-panel", {"filename": "default_MAIN_16.yaml"}),
+        ("/load-config", {"config_file": "ref_MAIN_32_TANDEMS.yaml"}),
+        ("/clone", {"filename": "copy.yaml", "source_file": "ref_MAIN_32_TANDEMS.yaml"}),
+        ("/restart-panel", {"filename": "ref_MAIN_32_TANDEMS.yaml"}),
     ],
     ids=["load", "clone", "restart"],
 )
@@ -184,6 +267,7 @@ async def test_the_dashboard_starts_on_an_unloadable_active_config(tmp_path: Pat
 async def test_moving_the_editor_to_another_config_clears_the_load_error(
     tmp_path: Path, path: str, form: dict[str, str]
 ) -> None:
+    lay_every_template(tmp_path)
     app = _app(tmp_path, _unloadable())
 
     async with TestClient(TestServer(app)) as client:

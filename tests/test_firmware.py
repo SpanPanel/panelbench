@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import pytest
 import yaml
@@ -33,10 +33,9 @@ from panelbench.firmware import (
     release_build,
 )
 from tests._helpers import (
-    CONFIGS,
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    SHIPPED_TEMPLATES,
+    EVERY_TEMPLATE,
     discharging_bess_meter,
     name_firmware,
     night_panel,
@@ -50,19 +49,11 @@ if TYPE_CHECKING:
 _SERIAL = panel_config()["panel_config"]["serial_number"]
 _EVSE_LIMIT_PATH = "config/user-max-charge-current"
 _EVSE_LIMIT = f"/{_EVSE_LIMIT_PATH}"
-# The dashboard's rule for a shipped template; user clones beside them are local-only.
-_SHIPPED = sorted(
-    [*CONFIGS.glob("default_*.yaml"), *(CONFIGS / n for n in SHIPPED_TEMPLATES)],
-    key=lambda path: path.name,
-)
-# Those whose battery shows the release's meter sign. The MLO 48 tandems template has
-# none, and its SPAN Drive keeps the user limit the reference panel it is built from
-# published.
-_SHIPPED_WITH_A_BATTERY = [
-    path
-    for path in _SHIPPED
-    if (yaml.safe_load(path.read_text(encoding="utf-8")).get("bess") or {}).get("enabled")
-]
+# The templates whose battery discharges at night, so its meter shows the release's
+# sign. A generated template's battery has no load to cover, every circuit at 0 W, and
+# the MLO 48 tandems template has no battery; its SPAN Drive keeps the user limit the
+# reference panel it is built from published.
+_DISCHARGING_AT_NIGHT: Final = ("ref_MAIN_32_TANDEMS.yaml",)
 
 
 def _naming(firmware: str | None) -> SimulationConfig:
@@ -169,6 +160,15 @@ def _shipped(path: Path) -> SimulationConfig:
     return config
 
 
+def _discharges_at_night(config: SimulationConfig) -> bool:
+    """Whether *config*'s battery has a load to discharge into once the sun is down."""
+    battery = config.get("bess") or {}
+    return bool(battery.get("enabled")) and any(
+        template["energy_profile"]["typical_power"] > 0
+        for template in config["circuit_templates"].values()
+    )
+
+
 def _evse_limits(recorder: RecordingTransport) -> dict[str, str]:
     """Each EVSE's published `config/user-max-charge-current`, by device id."""
     return {
@@ -178,25 +178,26 @@ def _evse_limits(recorder: RecordingTransport) -> dict[str, str]:
     }
 
 
-def test_the_shipped_configs_with_a_battery_are_the_main_ones() -> None:
-    """So the two sign tests below still cover every template they did."""
-    assert [path.stem for path in _SHIPPED_WITH_A_BATTERY] == [
-        "default_MAIN_16",
-        "default_MAIN_32",
-        "default_MAIN_40",
-        "ref_MAIN_32_TANDEMS",
+def test_the_night_cases_are_every_template_whose_battery_discharges(template_dir: Path) -> None:
+    """So the two sign tests below cover every template whose battery shows a sign."""
+    discharging = [
+        name for name in EVERY_TEMPLATE if _discharges_at_night(_shipped(template_dir / name))
     ]
 
+    assert discharging == list(_DISCHARGING_AT_NIGHT)
 
-@pytest.mark.parametrize("path", _SHIPPED_WITH_A_BATTERY, ids=lambda path: path.stem)
+
+@pytest.mark.parametrize("template", _DISCHARGING_AT_NIGHT)
 @pytest.mark.asyncio
-async def test_the_shipped_configs_publish_release_202639(tmp_path: Path, path: Path) -> None:
+async def test_the_shipped_configs_publish_release_202639(
+    tmp_path: Path, template_dir: Path, template: str
+) -> None:
     """The templates are a SPAN panel after the upgrade, in the form SPAN publishes
     the release: the battery's meter positive while discharging, and no SPAN Drive's
     user limit until a user sets one.
     """
-    config = _shipped(path)
-    runtime, recorder = await night_panel(tmp_path / path.name, config)
+    config = _shipped(template_dir / template)
+    runtime, recorder = await night_panel(tmp_path / template, config)
 
     assert release_build(panel_firmware_version(config)) == SPAN_RELEASE_202639
     assert discharging_bess_meter(runtime, recorder) > 0, (
@@ -205,14 +206,15 @@ async def test_the_shipped_configs_publish_release_202639(tmp_path: Path, path: 
     assert _evse_limits(recorder) == {}, "no EVSE's user limit is published until set"
 
 
-@pytest.mark.parametrize("path", _SHIPPED, ids=lambda path: path.stem)
+@pytest.mark.parametrize("template", EVERY_TEMPLATE)
 @pytest.mark.asyncio
 async def test_the_shipped_configs_load_without_a_warning(
-    path: Path, caplog: pytest.LogCaptureFixture
+    template_dir: Path, template: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Valid under release 202639's rules as the dashboard opens it and as the panel
     starts: every solar circuit commissioned on two tabs, nothing left to warn about.
     """
+    path = template_dir / template
     with caplog.at_level(logging.WARNING):
         ConfigStore().load_from_file(path)
         await capture_retained(path)
@@ -220,18 +222,18 @@ async def test_the_shipped_configs_load_without_a_warning(
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
-@pytest.mark.parametrize("path", _SHIPPED_WITH_A_BATTERY, ids=lambda path: path.stem)
+@pytest.mark.parametrize("template", _DISCHARGING_AT_NIGHT)
 @pytest.mark.asyncio
 async def test_a_shipped_config_named_back_to_202633_publishes_its_conventions(
-    tmp_path: Path, path: Path
+    tmp_path: Path, template_dir: Path, template: str
 ) -> None:
     """Emulating the firmware before the upgrade, as the docs describe: a clone of a
     template naming a 202633 release, its solar template's `commissioned_system`
     removed, which that release refuses.
     """
-    config = _shipped(path)
+    config = _shipped(template_dir / template)
     name_firmware(config, "spanos3/r202633/02")
-    runtime, recorder = await night_panel(tmp_path / path.name, config)
+    runtime, recorder = await night_panel(tmp_path / template, config)
     evses = ManifestPhysicsView(build_manifest(config)).all_evse()
 
     assert predates(panel_firmware_version(config), SPAN_RELEASE_202639)

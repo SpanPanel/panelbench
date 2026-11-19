@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
     from panelbench.config_types import CircuitDefinitionExtended, SimulationConfig
 
-_SHIPPED: Final = sorted(CONFIGS.glob("default_*.yaml")) + [CONFIGS / n for n in SHIPPED_TEMPLATES]
+_SHIPPED: Final = [CONFIGS / n for n in SHIPPED_TEMPLATES]
 _MAIN_32: Final = CONFIGS / "ref_MAIN_32_TANDEMS.yaml"
 _MLO_48: Final = CONFIGS / "ref_MLO_48_TANDEMS.yaml"
 

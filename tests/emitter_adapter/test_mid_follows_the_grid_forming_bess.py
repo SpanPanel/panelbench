@@ -23,6 +23,7 @@ import pytest
 import yaml
 
 from panelbench.emitter_adapter.spec_generator import build_manifest
+from tests._helpers import EVERY_TEMPLATE
 
 if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
@@ -172,26 +173,23 @@ def test_the_explicit_key_overrides_a_legacy_signal() -> None:
     assert not _has_mid(profile)
 
 
-def test_every_shipped_config_with_a_battery_publishes_a_mid() -> None:
+def test_every_shipped_config_with_a_battery_publishes_a_mid(template_dir: Path) -> None:
     """The invariant, checked against the files we actually ship.
 
-    `default_MAIN_16` and `default_MAIN_32` both enabled a battery and published no
-    MID, so a fresh install of either -- no stale config anywhere, nothing upgraded --
-    showed a battery with no islanding state. The unit tests above all passed while
-    that was true, because every one of them builds its own profile. This one reads
-    the configs off disk, which is the only way that gap was ever going to be caught.
+    Two templates once shipped enabled a battery and published no MID, so a fresh
+    install of either -- no stale config anywhere, nothing upgraded -- showed a battery
+    with no islanding state. The unit tests above all passed while that was true,
+    because every one of them builds its own profile. This one reads every template off
+    disk as a start lays it down, which is the only way that gap was ever going to be
+    caught.
     """
-    config_dir = Path(__file__).resolve().parents[2] / "configs"
-    shipped = sorted(config_dir.glob("default_*.yaml"))
-    assert shipped, f"no configs found under {config_dir}"
+    with_battery: dict[str, SimulationConfig] = {}
+    for name in EVERY_TEMPLATE:
+        profile = cast("SimulationConfig", yaml.safe_load((template_dir / name).read_text()))
+        if (profile.get("bess") or {}).get("enabled"):
+            with_battery[name] = profile
+    assert with_battery, "no template enables a battery, so nothing here is checked"
 
-    missing = []
-    for path in shipped:
-        profile = cast("SimulationConfig", yaml.safe_load(path.read_text()))
-        bess = profile.get("bess") or {}
-        if not bess.get("enabled"):
-            continue
-        if not _has_mid(profile):
-            missing.append(path.name)
+    missing = [name for name, profile in with_battery.items() if not _has_mid(profile)]
 
-    assert not missing, f"configs enable a BESS but publish no MID: {missing}"
+    assert not missing, f"templates enable a BESS but publish no MID: {missing}"

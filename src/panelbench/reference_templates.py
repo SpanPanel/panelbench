@@ -2,8 +2,8 @@
 
 The emitter ships masked captures of real SPAN panels, each with the panel definition
 recorded with it (``load_reference_capture``). Each becomes a ``ref_*`` template,
-read-only in the dashboard and cloned like the shipped ``default_*`` ones, so a user can
-run a panel as a real one published itself.
+read-only in the dashboard and cloned like the two hand-written ``ref_`` templates the
+repository tracks, so a user can run a panel as a real one published itself.
 
 A template is built, not kept: at every start the definition is read through
 PanelBench's own definition import, as the dashboard's Import reads one, and written
@@ -36,12 +36,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 TEMPLATE_PREFIX = "ref_"
-"""What names a reference capture's template, a marker one ignore rule covers, so no
-generated template is tracked however a capture is named. The dashboard keeps a
-template under it read-only, as it keeps the shipped ``default_*`` ones
-(``is_template``)."""
-
-_SHIPPED_PREFIX = "default_"
+"""What names a template: each reference capture's, and each hand-written one the
+repository tracks. One ignore rule covers the marker, so no generated template is
+tracked however a capture is named; the hand-written ones are excepted by name. The
+dashboard keeps every file under it read-only (``is_template``)."""
 
 _TEMPLATE_NAMES: Final[Mapping[str, str]] = {
     "main32_r202639": "MAIN_32",
@@ -65,9 +63,9 @@ would be ``MAIN_32`` as the r202639 capture's is."""
 
 
 def is_template(filename: str) -> bool:
-    """Whether *filename* is a template the dashboard keeps read-only: shipped, or
-    built from a reference capture."""
-    return filename.startswith((_SHIPPED_PREFIX, TEMPLATE_PREFIX))
+    """Whether *filename* is a template the dashboard keeps read-only: hand-written and
+    tracked, or built from a reference capture."""
+    return filename.startswith(TEMPLATE_PREFIX)
 
 
 def template_capture_names() -> tuple[str, ...]:
@@ -82,6 +80,30 @@ def template_filename(name: str) -> str:
     the pinned one still brings its captures' templates with it.
     """
     return f"{TEMPLATE_PREFIX}{_TEMPLATE_NAMES.get(name, name)}.yaml"
+
+
+FIRST_TEMPLATE: Final = template_filename("main32_r202639")
+"""The template the dashboard opens when it has no config to open: a real MAIN 32 on
+release 202639, as it published itself."""
+
+
+def first_template(config_dir: Path) -> Path | None:
+    """The template the dashboard opens in *config_dir* when it has no config to open.
+
+    ``FIRST_TEMPLATE`` where the directory holds it, else the first template there by
+    name, as when the emitter could not import that capture or the directory refused
+    the write, else none.
+    """
+    preferred = config_dir / FIRST_TEMPLATE
+    if preferred.is_file():
+        return preferred
+    return next(iter(sorted(config_dir.glob(f"{TEMPLATE_PREFIX}*.yaml"))), None)
+
+
+def clone_name(filename: str) -> str:
+    """The name the dashboard offers for a clone of *filename*: a template's without its
+    marker, so the clone is no template, and any other config's as it is."""
+    return filename.removeprefix(TEMPLATE_PREFIX)
 
 
 def reference_template(name: str) -> dict[str, object]:
