@@ -361,6 +361,14 @@ def validate_unfed_inverters(config_data: Mapping[str, object]) -> None:
             f"pv.inverters are not published here: {variant_selection(config_data)}, which "
             "publishes no inverter device, only the circuit feeding one"
         )
+    # They publish only while the section is enabled (`pv_section.unfed_inverters`), so a
+    # list with no `enabled` beside it would publish nothing and say nothing.
+    if "enabled" not in pv_cfg:
+        raise ValueError(
+            "pv.inverters lists inverters no circuit feeds, which publish only while "
+            "pv.enabled is true, and pv.enabled is not set: set it to true to publish "
+            "them, or to false to keep them off"
+        )
 
 
 def _validate_unfed_inverter(index: int, inverter: object, identifiers: dict[str, int]) -> None:

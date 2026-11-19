@@ -239,3 +239,21 @@ def test_listed_inverters_are_refused_by_a_variant_publishing_no_inverter() -> N
 
     with pytest.raises(ValueError, match="publishes no inverter device"):
         validate_yaml_config(config)
+
+
+@pytest.mark.parametrize("enabled", [None, False])
+def test_inverters_listed_without_pv_enabled_are_refused(
+    enabled: bool | None,
+) -> None:
+    """`pv.enabled` gates every inverter no circuit feeds. Left out, the inverters
+    `pv.inverters` lists would silently publish nothing, so the config is refused
+    naming the key; set false, they are off as the config says."""
+    config = _two_unfed()
+    section = _section(config)
+    if enabled is None:
+        del section["enabled"]
+        with pytest.raises(ValueError, match=r"pv\.enabled"):
+            validate_yaml_config(config)
+    else:
+        section["enabled"] = enabled
+        validate_yaml_config(config)
