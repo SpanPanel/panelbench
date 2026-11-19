@@ -25,8 +25,8 @@ panel_config:
   total_tabs: 32
   main_size: 200
   # `status/wifi-ssid` is declared by the enclosure and read by consumers today;
-  # without a value it is an entity that never resolves. Synthetic, so it attests the mapping and not what a real
-  # network is called.
+  # without a value it is an entity that never resolves. Synthetic, so it attests the
+  # mapping and not what a real network is called.
   wifi_ssid: sim-wifi
   latitude: 37.7
   longitude: -122.4

@@ -215,8 +215,10 @@ def test_the_shipped_ref_templates_are_tracked(template: str) -> None:
     path = CONFIGS / template
 
     assert path.is_file()
+    # --no-index evaluates the rules whether or not the file is tracked: 0 is ignored,
+    # 1 not ignored, 128 a git error.
     ignored = subprocess.run(
-        ["git", "check-ignore", "-q", str(path)], cwd=CONFIGS.parent, check=False
+        ["git", "check-ignore", "-q", "--no-index", str(path)], cwd=CONFIGS.parent, check=False
     )
     assert ignored.returncode == 1
 
