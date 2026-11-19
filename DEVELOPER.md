@@ -349,7 +349,7 @@ ADVERTISE_ADDRESS=192.168.7.27 CONFIG_DIR=./configs/panel2 ./scripts/run-local.s
 ```yaml
 panel_config:
   serial_number: str # Unique panel serial (e.g., "SPAN-SIM-001")
-  total_tabs: int # Highest breaker space (16, 24, 32, 40, 48); a MAIN 16 clone has 24, a MAIN 40 clone 48
+  total_tabs: int # Highest breaker space (8, 16, 24, 32, 40, 48); a MAIN 16 clone has 24, a MAIN 40 clone 48
   main_size: int # Main breaker amps (100, 150, 200)
   latitude: float # Degrees north (default: 37.7)
   longitude: float # Degrees east (default: -122.4)

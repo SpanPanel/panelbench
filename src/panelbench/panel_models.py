@@ -73,16 +73,18 @@ def model_positions(model: str) -> tuple[int, int] | None:
 def panel_spaces(panel: Mapping[str, object]) -> range:
     """The breaker spaces the ``panel_config`` mapping *panel* describes, in order.
 
-    Its reported model's positions (``PANEL_POSITIONS``) where ``total_tabs`` reaches
-    the model's last one, as a clone of that model has it, so a circuit placed on one
-    sits where the integration expects that model's circuits. Otherwise 1 to
-    ``total_tabs``: a model the table does not hold, or a config sized by its count of
-    spaces (16 or 40 with no ``model``), which keeps the spaces it was written with.
+    Where *panel* names its ``model``, as a clone and a reference template do, that
+    model's positions (``PANEL_POSITIONS``) up to ``total_tabs``, so a circuit placed on
+    one sits where the integration expects that model's circuits, even in a clone sized
+    before PanelBench knew them. Otherwise 1 to ``total_tabs``: a model the table does
+    not hold, or a config with no ``model``, sized by its count of spaces, which keeps
+    the spaces it was written with.
     """
     total_tabs = _total_tabs(panel)
-    positions = model_positions(reported_model(panel))
-    if positions is not None and total_tabs >= positions[1]:
-        return range(positions[0], positions[1] + 1)
+    model = panel.get("model")
+    positions = model_positions(str(model)) if model else None
+    if positions is not None:
+        return range(positions[0], min(positions[1], total_tabs) + 1)
     return range(1, total_tabs + 1)
 
 

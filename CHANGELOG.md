@@ -31,8 +31,8 @@
   from 1, so the first circuit added to a clone of `ref_MAIN_40`, or to one of `ref_MAIN_16` once a circuit was removed, landed on space 1 and drew the
   integration's positions warning. A clone or imported definition lists only those spaces as unmapped, and a clone of a MAIN 16 or MAIN 40 takes the model's
   last space, 24 or 48, as its `total_tabs`, where it took 16 or 40 and resized itself from its circuits, with a warning, when one sat higher. A clone whose
-  circuits sit outside its model's spaces says so in the log. A config with no `model` whose `total_tabs` falls short of its model's last space, such as one
-  sized 16 or 40, keeps spaces 1 to `total_tabs`, as before.
+  circuits sit outside its model's spaces says so in the log. The spaces follow a config's `model` wherever it names one, so a clone an earlier release sized
+  40 starts at 9 too; a config with no `model`, such as one sized 16 or 40 by its count of spaces, keeps spaces 1 to `total_tabs`, as before.
 - **A local image build leaves the untracked configs out.** The add-on image copies `configs/` whole, so one built from a working checkout carried the
   generated `ref_` templates, clones, history databases, and `configs/.secrets/` and `configs/rates/`, which hold credentials and API keys. `.dockerignore` now
   keeps all but the presets and the two tracked templates out, as a build from git has it, and leaves local state and caches out of the build context; images

@@ -2,8 +2,10 @@
 
 The SpanPanel integration's client warns of a panel whose circuits sit outside its
 model's positions (``panel_models.PANEL_POSITIONS``), and not every model starts at
-space 1. So the spaces PanelBench offers a new circuit, and lists as unmapped in a
-clone or an imported definition, are the model's, never 1 to ``total_tabs``.
+space 1. So where a config names its model, as a clone and a reference template do,
+the spaces PanelBench offers a new circuit, and lists as unmapped in a clone or an
+imported definition, are that model's. A config with no ``model``, sized by its count
+of spaces, keeps 1 to ``total_tabs``.
 """
 
 from __future__ import annotations
@@ -46,6 +48,18 @@ def test_a_known_models_spaces_are_its_positions(
 
 def test_a_model_without_positions_has_spaces_one_to_total_tabs() -> None:
     assert panel_spaces(_panel(16, "UNKNOWN")) == range(1, 17)
+
+
+@pytest.mark.parametrize(
+    ("model", "total_tabs", "first"), [("MAIN_40", 40, 9), ("MAIN_16", 16, 9)]
+)
+def test_a_named_model_short_of_its_last_space_keeps_its_first(
+    model: str, total_tabs: int, first: int
+) -> None:
+    """A clone made before PanelBench knew the positions names its model but was sized
+    by the model's numeric suffix, as a 2.8.0 clone of a MAIN 40 with no circuit above
+    40 is: its spaces still start where the model's do, up to ``total_tabs``."""
+    assert panel_spaces(_panel(total_tabs, model)) == range(first, total_tabs + 1)
 
 
 @pytest.mark.parametrize("total_tabs", [16, 40])

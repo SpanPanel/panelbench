@@ -356,10 +356,10 @@ simulation_params:
   update_interval: 5
 ```
 
-`total_tabs` is the panel's highest space. A panel has the spaces of the model it reports, its `model` or the one its `total_tabs` names, up to `total_tabs`,
-as the SpanPanel integration expects them: a MAIN 16 numbers its spaces 9 to 24 and a MAIN 40 9 to 48, and an MLO 24, MAIN 32 or MLO 48 starts at 1. The
-dashboard offers a new circuit only those spaces, a clone lists only them in `unmapped_tabs`, and a clone of a MAIN 16 or MAIN 40 takes 24 or 48 as its
-`total_tabs`. A model PanelBench has no positions for, such as the 8 spaces above, has spaces 1 to `total_tabs`.
+`total_tabs` is the panel's highest space. A config that names its `model`, as a clone and a template do, has that model's spaces up to `total_tabs`, as the
+SpanPanel integration expects them: a MAIN 16 numbers its spaces 9 to 24 and a MAIN 40 9 to 48, and an MLO 24, MAIN 32 or MLO 48 starts at 1. The dashboard
+offers a new circuit only those spaces, a clone lists only them in `unmapped_tabs`, and a clone of a MAIN 16 or MAIN 40 takes 24 or 48 as its `total_tabs`. A
+config with no `model`, such as the one above, or with a model PanelBench has no positions for, has spaces 1 to `total_tabs`.
 
 ### Config Selection
 

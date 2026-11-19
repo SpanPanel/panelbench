@@ -1170,10 +1170,11 @@ class TestPanelSize:
         assert "MAIN_8" in caplog.text
         validate_yaml_config(config)
 
-    def test_a_main_16_is_sized_to_its_last_position_without_a_warning(
+    def test_a_main_16_is_sized_to_its_last_position_without_resizing_from_its_circuits(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A MAIN 16's spaces run to 24, so circuits up to 17 fit its model."""
+        """A MAIN 16's spaces run to 24, so circuits up to 17 fit its model's size. These
+        on 1 to 7 sit outside its spaces, which is warned of separately."""
         devices = _base_devices()
         devices[_SERIAL].update_property("info", "model", "MAIN_16")
 
