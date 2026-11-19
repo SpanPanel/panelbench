@@ -248,10 +248,10 @@ they hang rather than by name, because real firmware names a battery, MID or inv
 Drive by the circuit that feeds it, an upstream battery by the lugs it feeds, and a MID by its battery. The module docstring of
 `tests/fidelity/test_upstream_parity.py` describes each cell and what it cannot see.
 
-The reference data is the release's own. Its captures ship in its wheel and are read through `load_reference_capture`; its example, which does not, is vendored
-byte-identical under `tests/fidelity/fixtures/upstream/` (see its `PROVENANCE.md`). No upstream code is copied: reading a definition or a capture is the pinned
-package's public API. `test_vendored_example_matches_the_pinned_release` compares the vendored bytes with the release's tag in a local checkout of the upstream
-repository, and skips without one:
+The reference data is the release's own. Its captures ship in its wheel and are read through `load_reference_capture`; its example, which does not, is
+vendored byte-identical under `tests/fidelity/fixtures/upstream/` (see its `PROVENANCE.md`). No upstream code is copied: reading a definition or a capture
+is the pinned package's public API. `test_vendored_example_matches_the_pinned_release` compares the vendored bytes with the release's tag in a local
+checkout of the upstream repository, and skips without one:
 
 ```bash
 EBUS_EMITTER_CHECKOUT=/path/to/distribution-enclosure-simulator uv run pytest tests/fidelity
@@ -638,8 +638,8 @@ with the target panel, scrapes its MQTT topics, translates the eBus description 
 ### What gets cloned
 
 - Panel identity (`sim-{serial}-clone`), vendor name, main breaker rating, and the panel size its model names
-- The panel's time zone, line voltages, off-grid SOC shed threshold, model, and its network links and SSID (or its absence), but not its door or cloud state,
-  which are live state the clone simulates as it does power
+- The panel's time zone, line voltages, off-grid SOC shed threshold, model, and its network links and SSID (or its absence),
+  but not its door or cloud state, which are live state the clone simulates as it does power
 - The panel's firmware version, so the clone publishes as that SPAN release does
 - The panel's hardware version
 - All circuits: name, tab position, breaker rating (or its absence), relay behavior, priority, PCS priority
