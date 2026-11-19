@@ -12,6 +12,12 @@
 - **The dashboard opens `ref_MAIN_32.yaml` first**, else the first `ref_*.yaml`.
 - **Only a `ref_` file is a template.** A `default_*.yaml` left in a config directory by an earlier release is editable, and `run.sh` neither refreshes nor
   deletes it; `run.sh` refreshes the shipped `ref_` files.
+- **Saving with no config open is refused, saying no config is open**, where it said a default template could not be saved; a template's refusal reads
+  "template".
+- **Upgrading leaves your `default_*` files as they were.** An install whose `.last_config` names `default_MAIN_16.yaml` or `default_MAIN_40.yaml` still has
+  that file and resumes it, and the integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.yaml` or `default_MLO_48_TANDEMS.yaml`
+  keeps the serial its `ref_` twin has (`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one and the other is refused with an `error`
+  badge naming the serial. Delete the leftover `default_*` files, or clone the `ref_` equivalent.
 - **The README lists every template in one table**, and the conformance profile in `DEVELOPER.md` is the regenerated one: 452 match, 4 divergence, 69 extension
   and 1327 omission.
 
@@ -28,7 +34,6 @@
 - **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
   ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
   a panel no longer starts every cycling load at the start of its on phase.
-- **Saving with no config open is refused with 400**, where it answered as if it had saved.
 
 ## 2.8.0 — Tandem and quad breakers, and several panels on one broker
 

@@ -10,6 +10,11 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 - **`ref_MAIN_32_TANDEMS` is named `SPAN Panel eBus Adapter`.**
 - **The dashboard opens `ref_MAIN_32` first.**
 - **A `default_*` file left in your config directory is no longer a template**: you can edit it, and a restart neither refreshes nor deletes it.
+- **Saving with no config open is refused, saying no config is open.**
+- **Upgrading leaves your `default_*` files as they were**: if `.last_config` names `default_MAIN_16.yaml` or `default_MAIN_40.yaml`, it resumes that file and the
+  integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.yaml` or `default_MLO_48_TANDEMS.yaml` keeps its `ref_` twin's serial
+  (`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one and the other shows an `error` badge naming the serial. Delete the leftover
+  `default_*` files, or clone the `ref_` equivalent.
 
 ### Removed
 
@@ -20,7 +25,6 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 
 - **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
   next.
-- **Saving with no config open is refused**, where it answered as if it had saved.
 
 ## 2.8.0 — 2026-11-15
 

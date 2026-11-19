@@ -364,12 +364,17 @@ Without `CONFIG_NAME`, the simulator resumes the config it last ran, or starts w
 
 ### Templates
 
-The shipped templates are read-only: the dashboard refuses to save, delete or rename a file whose name starts with `ref_`, and a template runs or clones like
+The shipped templates are read-only: the dashboard refuses to save or delete a file whose name starts with `ref_`, and a template runs or clones like
 any other config. Clone one to get a copy you can edit.
 
 Two are tracked in `configs/` and hand-written, with modelled loads. The rest are written at every start from the reference captures of real SPAN panels that
-the emitter, `ebus-panel-sim`, ships, and every load in them is 0 W. An install's copies of the tracked two are refreshed at every start. A `default_*.yaml` an
-earlier release left in an install's config directory is no longer a template: it is editable, and is neither refreshed nor deleted.
+the emitter, `ebus-panel-sim`, ships, and every load in them is 0 W. An add-on install's copies of the tracked two are refreshed at every start. A `default_*.yaml`
+an earlier release left in an install's config directory is no longer a template: it is editable, and is neither refreshed nor deleted.
+
+An install that upgrades keeps those files. If its `.last_config` names `default_MAIN_16.yaml` or `default_MAIN_40.yaml`, it resumes that file, and the
+integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.yaml` or `default_MLO_48_TANDEMS.yaml` keeps the serial its `ref_` twin has
+(`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one, and the other is refused with an `error` badge naming the serial. Delete the
+leftover `default_*` files, or clone the `ref_` equivalent.
 
 | File                           | Tabs | Source    | Description                                                                      |
 | ------------------------------ | ---- | --------- | -------------------------------------------------------------------------------- |
