@@ -14,14 +14,14 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
+from tests._helpers import CONFIGS, SHIPPED_TEMPLATES
 
-_CONFIGS = Path(__file__).resolve().parents[1] / "configs"
-_SHIPPED = sorted(p.name for p in _CONFIGS.glob("default_*.yaml"))
+_SHIPPED = sorted(p.name for p in CONFIGS.glob("default_*.yaml")) + list(SHIPPED_TEMPLATES)
 
 
 def _app(tmp_path: Path, template: str) -> web.Application:
     """The dashboard viewing the shipped *template*."""
-    (tmp_path / template).write_bytes((_CONFIGS / template).read_bytes())
+    (tmp_path / template).write_bytes((CONFIGS / template).read_bytes())
     return create_dashboard_app(
         DashboardContext(
             config_dir=tmp_path,
@@ -34,7 +34,7 @@ def _app(tmp_path: Path, template: str) -> web.Application:
 
 
 def test_the_tandem_templates_are_shipped() -> None:
-    assert {"default_MAIN_32_TANDEMS.yaml", "default_MLO_48_TANDEMS.yaml"} <= set(_SHIPPED)
+    assert set(SHIPPED_TEMPLATES) <= set(_SHIPPED)
 
 
 @pytest.mark.asyncio
@@ -50,7 +50,7 @@ async def test_a_shipped_template_is_listed_as_one_and_not_saved_over(
         saved = await client.post("/save-reload")
 
     assert ">template</span>" in listed
-    clone_name = template.removeprefix("default_")
+    clone_name = template.removeprefix("default_").removeprefix("ref_")
     assert f"cloneConfig(this,'{template}','{clone_name}')" in listed
     assert saved.status == 400
     assert (tmp_path / template).read_bytes() == before

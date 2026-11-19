@@ -38,7 +38,11 @@ if TYPE_CHECKING:
     from panelbench.emitter_adapter.runtime import CloneRuntime
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
-DEFAULT_CONFIG: Final = Path(__file__).resolve().parents[1] / "configs" / "default_MAIN_40.yaml"
+CONFIGS: Final = Path(__file__).resolve().parents[1] / "configs"
+DEFAULT_CONFIG: Final = CONFIGS / "default_MAIN_40.yaml"
+
+# The hand-written ``ref_`` templates, tracked in git beside the ones generated at start.
+SHIPPED_TEMPLATES: Final = ("ref_MAIN_32_TANDEMS.yaml", "ref_MLO_48_TANDEMS.yaml")
 
 # The pinned emitter release's masked capture of a real MAIN 32 on SPAN release 202639,
 # by its name among the release's reference captures.

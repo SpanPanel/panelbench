@@ -194,7 +194,7 @@ def _main_32_style(message: str) -> None:
     assert f"hardware_version {_MAIN_32_HARDWARE!r} selects the 'span' variant" in message
     assert "set hardware_version: '3.0'" in message
     assert "ref_ template" in message
-    assert "default_MLO_48_TANDEMS" in message
+    assert "ref_MLO_48_TANDEMS" in message
     assert "make it one circuit" in message
 
 

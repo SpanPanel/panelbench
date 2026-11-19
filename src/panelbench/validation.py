@@ -557,7 +557,7 @@ def _one_circuit_per_space_fix(config_data: Mapping[str, object]) -> str:
     return (
         "to publish each of a tandem's or quad's circuits separately, as newer SPAN hardware "
         f"does, {to_gen3} and name them to each other in shared_with, or start from a ref_ "
-        "template or default_MLO_48_TANDEMS; to publish the breaker as a MAIN 32 does, make it "
+        "template or ref_MLO_48_TANDEMS; to publish the breaker as a MAIN 32 does, make it "
         "one circuit on its space, or one two-pole circuit across its two spaces, with no "
         "shared_with"
     )

@@ -33,9 +33,11 @@ from panelbench.firmware import (
     release_build,
 )
 from tests._helpers import (
+    CONFIGS,
     CURRENT_FIRMWARE,
     DEFAULT_CONFIG,
     EARLIER_FIRMWARE,
+    SHIPPED_TEMPLATES,
     default_config,
     discharging_bess_meter,
     name_firmware,
@@ -50,7 +52,10 @@ _SERIAL = default_config()["panel_config"]["serial_number"]
 _EVSE_LIMIT_PATH = "config/user-max-charge-current"
 _EVSE_LIMIT = f"/{_EVSE_LIMIT_PATH}"
 # The dashboard's rule for a shipped template; user clones beside them are local-only.
-_SHIPPED = sorted(DEFAULT_CONFIG.parent.glob("default_*.yaml"))
+_SHIPPED = sorted(
+    [*DEFAULT_CONFIG.parent.glob("default_*.yaml"), *(CONFIGS / n for n in SHIPPED_TEMPLATES)],
+    key=lambda path: path.name,
+)
 # Those whose battery shows the release's meter sign. The MLO 48 tandems template has
 # none, and its SPAN Drive keeps the user limit the reference panel it is built from
 # published.
@@ -179,8 +184,8 @@ def test_the_shipped_configs_with_a_battery_are_the_main_ones() -> None:
     assert [path.stem for path in _SHIPPED_WITH_A_BATTERY] == [
         "default_MAIN_16",
         "default_MAIN_32",
-        "default_MAIN_32_TANDEMS",
         "default_MAIN_40",
+        "ref_MAIN_32_TANDEMS",
     ]
 
 

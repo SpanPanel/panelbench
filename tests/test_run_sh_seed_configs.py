@@ -103,7 +103,6 @@ def test_every_shipped_template_is_laid_down_and_a_stale_one_refreshed(tmp_path:
     """From ``configs/``, as the add-on image ships it (``COPY configs/ configs/``): each
     ``default_*`` file is laid down, and each one an earlier release left is refreshed."""
     shipped = sorted(p.name for p in _CONFIGS.glob("default_*.yaml"))
-    assert {"default_MAIN_32_TANDEMS.yaml", "default_MLO_48_TANDEMS.yaml"} <= set(shipped)
     config_dir = tmp_path / "config-panelbench"
     config_dir.mkdir()
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import subprocess
 from pathlib import Path
 from typing import ClassVar
 
@@ -27,6 +28,7 @@ from panelbench.reference_templates import (
     template_filename,
     write_reference_templates,
 )
+from tests._helpers import CONFIGS, SHIPPED_TEMPLATES
 from tests.fidelity.reproduction import assert_reproduces
 
 
@@ -204,3 +206,22 @@ def test_only_the_shipped_and_reference_templates_are_templates() -> None:
     assert is_template("ref_MAIN_32.yaml")
     assert not is_template("my-panel.yaml")
     assert not is_template("main32_issue269.yaml")
+
+
+@pytest.mark.parametrize("template", SHIPPED_TEMPLATES)
+def test_the_shipped_ref_templates_are_tracked(template: str) -> None:
+    """The hand-written ``ref_`` templates sit beside the generated ones, which the
+    ``ref_`` rule ignores: git must not ignore them."""
+    path = CONFIGS / template
+
+    assert path.is_file()
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", str(path)], cwd=CONFIGS.parent, check=False
+    )
+    assert ignored.returncode == 1
+
+
+def test_a_generated_template_never_takes_a_shipped_name() -> None:
+    generated = {template_filename(n) for n in template_capture_names()}
+
+    assert generated.isdisjoint(SHIPPED_TEMPLATES)
