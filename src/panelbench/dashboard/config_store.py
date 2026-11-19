@@ -32,7 +32,8 @@ if TYPE_CHECKING:
 
 from panelbench.clone import update_config_from_scrape
 from panelbench.config_defaults import normalize_config
-from panelbench.config_types import BESSConfigYAML
+from panelbench.config_types import BESSConfigYAML, SimulationConfig
+from panelbench.panel_models import panel_spaces
 from panelbench.dashboard.defaults import make_defaults
 from panelbench.dashboard.presets import (
     evse_schedule_factors,
@@ -708,12 +709,15 @@ class ConfigStore:
         return self._merge_entity(circuit_dict)
 
     def get_unmapped_tabs(self) -> list[int]:
-        """Return tab numbers not assigned to any circuit, sorted ascending."""
-        total_tabs = self._state.get("panel_config", {}).get("total_tabs", 32)
+        """Return the panel's spaces no circuit is on, sorted ascending.
+
+        The spaces of the model the panel reports (``panel_models.panel_spaces``), so a
+        MAIN 16 or MAIN 40, whose spaces start at 9, offers nothing below 9.
+        """
         used: set[int] = set()
         for circ in self._circuits():
             used.update(circ.get("tabs", []))
-        return sorted(t for t in range(1, total_tabs + 1) if t not in used)
+        return [t for t in panel_spaces(cast("SimulationConfig", self._state)) if t not in used]
 
     @_one_edit
     def add_entity_from_tabs(self, tabs: list[int]) -> EntityView:

@@ -1109,15 +1109,29 @@ class TestPanelSize:
     """The panel's size is the model it publishes, not its highest occupied space."""
 
     def test_the_model_names_the_size(self) -> None:
-        """A MAIN 40 whose circuits stop at space 17 is still a 40-space panel."""
+        """A MAIN 32 whose circuits stop at space 17 is still a 32-space panel."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_32")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 32
+        assert config["unmapped_tabs"] == [
+            t for t in range(1, 33) if t not in {1, 3, 5, 7, 9, 11, 13, 15, 17}
+        ]
+        validate_yaml_config(config)
+
+    def test_a_model_numbered_from_9_is_sized_to_its_last_position(self) -> None:
+        """A MAIN 40 numbers its spaces 9 to 48, so its clone takes 48 spaces and lists
+        none below 9 as unmapped."""
         devices = _base_devices()
         devices[_SERIAL].update_property("info", "model", "MAIN_40")
 
         config = translate_scraped_panel(_make_scraped(devices))
 
-        assert _panel_config(config)["total_tabs"] == 40
+        assert _panel_config(config)["total_tabs"] == 48
         assert config["unmapped_tabs"] == [
-            t for t in range(1, 41) if t not in {1, 3, 5, 7, 9, 11, 13, 15, 17}
+            t for t in range(9, 49) if t not in {9, 11, 13, 15, 17}
         ]
         validate_yaml_config(config)
 
@@ -1146,13 +1160,25 @@ class TestPanelSize:
     ) -> None:
         """A size the circuits do not fit in would make a clone the panel refuses."""
         devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_8")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 24
+        assert "MAIN_8" in caplog.text
+        validate_yaml_config(config)
+
+    def test_a_main_16_is_sized_to_its_last_position_without_a_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A MAIN 16's spaces run to 24, so circuits up to 17 fit its model."""
+        devices = _base_devices()
         devices[_SERIAL].update_property("info", "model", "MAIN_16")
 
         config = translate_scraped_panel(_make_scraped(devices))
 
         assert _panel_config(config)["total_tabs"] == 24
-        assert "MAIN_16" in caplog.text
-        validate_yaml_config(config)
+        assert "sizing the clone from its circuits" not in caplog.text
 
 
 class TestPanelSiteValues:

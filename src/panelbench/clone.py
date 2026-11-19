@@ -23,7 +23,7 @@ import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
 import yaml
 from ebus_panel_sim import EmitterError, PanelDefinition, Variant
@@ -33,6 +33,7 @@ from ebus_sdk import DiscoveredDevice
 from panelbench.breakers import breaker_misfit
 from panelbench.emitter_adapter import commissioning
 from panelbench.hardware import publishes_shared_breakers, relay_locks_priority, variant_for
+from panelbench.panel_models import PANEL_POSITIONS, panel_spaces
 from panelbench.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
@@ -82,6 +83,7 @@ _STANDARD_PANEL_SIZES: Final = (16, 24, 32, 40, 48)
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from panelbench.config_types import SimulationConfig
     from panelbench.scraper import ScrapedPanel
 
 _LOGGER = logging.getLogger(__name__)
@@ -310,9 +312,13 @@ def translate_panel_tree(
     for evse_id in evse_nodes:
         _enrich_evse_template(devices, circuit_nodes, evse_id, templates, circuits, unvalued, keys)
 
-    # Unmapped tabs
-    all_tabs = set(range(1, total_tabs + 1))
-    unmapped = sorted(all_tabs - used_tabs)
+    # Unmapped tabs: the spaces of the model the clone reports that no circuit is on, so
+    # a MAIN 16 or MAIN 40, whose spaces start at 9, lists none below 9.
+    unmapped = [
+        space
+        for space in panel_spaces(cast("SimulationConfig", {"panel_config": panel_config}))
+        if space not in used_tabs
+    ]
 
     config: dict[str, object] = {
         "panel_config": panel_config,
@@ -799,11 +805,18 @@ def _published_panel_size(
     devices: Mapping[str, DiscoveredDevice],
     panel_device_id: str,
 ) -> int | None:
-    """The size the panel's ``info/model`` names by its numeric suffix (``MAIN_32``).
+    """The size the panel's ``info/model`` names: its last position, for a model whose
+    positions PanelBench holds (``panel_models.PANEL_POSITIONS``), else its numeric
+    suffix (``MAIN_32``).
 
-    A panel publishes no size of its own: upstream's capture derives one the same way.
+    A panel publishes no size of its own: upstream's capture derives one from the
+    suffix. But a MAIN 16 or MAIN 40 numbers its spaces from 9, to 24 or 48, and a size
+    is the highest space a clone may place a circuit on, so the suffix would be short.
     """
     model = _get_prop(devices, panel_device_id, "info", "model") or ""
+    positions = PANEL_POSITIONS.get(model.strip().upper())
+    if positions is not None:
+        return positions[1]
     suffix = re.search(r"(\d+)$", model)
     return int(suffix.group(1)) if suffix else None
 
