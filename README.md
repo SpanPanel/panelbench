@@ -194,7 +194,10 @@ pv:
       nameplate_capacity_w: 7600.0
 ```
 
-They publish only while `enabled` is `true`, so `inverters` with no `enabled` beside it is refused rather than left silent; `enabled: false` keeps them off.
+They publish only while `enabled` is `true`, so `inverters` with no `enabled` beside it is refused rather than left silent, `enabled: false` keeps them off,
+and an `enabled` that is not `true` or `false`, such as an empty one or a quoted `"false"`, is refused. The same holds for the one inverter the section's own
+keys describe on a panel with no PV circuit, except that `enabled` may be left out there, and the keys then describe nothing, as they do once the panel's
+only PV circuit is removed.
 With `inverters` given, the section's own keys describe only an inverter a PV circuit feeds, so on a panel with none they are refused; `firmware_version` stays
 every inverter's default. A panel with one such inverter and no PV circuit may still describe it in the section's own keys, as a clone of a panel before release
 202639 does, and a config naming such a release takes one solar device at most. A clone writes whichever of the two describes the panel. The dashboard shows
@@ -382,17 +385,17 @@ integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.y
 (`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one, and the other is refused with an `error` badge naming the serial. Delete the
 leftover `default_*` files, or clone the `ref_` equivalent.
 
-| File                           | Tabs | Source    | Description                                                                      |
-| ------------------------------ | ---- | --------- | -------------------------------------------------------------------------------- |
-| `ref_MAIN_32_TANDEMS.yaml`     | 32   | tracked   | MAIN 32 with solar, battery, 1 EVSE, 20-20 and 15-20 tandems and a 20-30 package |
-| `ref_MLO_48_TANDEMS.yaml`      | 48   | tracked   | Main-lug-only on hardware 3.0, 1 EVSE, four tandems, a quad and a tandem-quad    |
-| `ref_MAIN_32.yaml`             | 32   | generated | MAIN 32 with a battery                                                           |
-| `ref_MAIN_32_UPSTREAM_PV.yaml` | 32   | generated | MAIN 32 with two inverters and a battery upstream of the panel                   |
-| `ref_MAIN_16.yaml`             | 16   | generated | MAIN 16 with a meter outside the panel                                           |
-| `ref_MAIN_40.yaml`             | 40   | generated | MAIN 40 with a battery fed by a circuit                                          |
-| `ref_MLO_24.yaml`              | 24   | generated | MLO 24, with no main breaker and a battery fed by a circuit                      |
-| `ref_MLO_48.yaml`              | 48   | generated | MLO 48, with no main breaker and circuits sharing a meter and relay              |
-| `ref_UNKNOWN_16.yaml`          | 16   | generated | 16-space panel that publishes no model, with a meter outside it                  |
+| File                           | Spaces | Source    | Description                                                                      |
+| ------------------------------ | ------ | --------- | -------------------------------------------------------------------------------- |
+| `ref_MAIN_32_TANDEMS.yaml`     | 1-32   | tracked   | MAIN 32 with solar, battery, 1 EVSE, 20-20 and 15-20 tandems and a 20-30 package |
+| `ref_MLO_48_TANDEMS.yaml`      | 1-48   | tracked   | Main-lug-only on hardware 3.0, 1 EVSE, four tandems, a quad and a tandem-quad    |
+| `ref_MAIN_32.yaml`             | 1-32   | generated | MAIN 32 with a battery                                                           |
+| `ref_MAIN_32_UPSTREAM_PV.yaml` | 1-32   | generated | MAIN 32 with two inverters and a battery upstream of the panel                   |
+| `ref_MAIN_16.yaml`             | 9-24   | generated | MAIN 16 with a meter outside the panel                                           |
+| `ref_MAIN_40.yaml`             | 9-48   | generated | MAIN 40 with a battery fed by a circuit                                          |
+| `ref_MLO_24.yaml`              | 1-24   | generated | MLO 24, with no main breaker and a battery fed by a circuit                      |
+| `ref_MLO_48.yaml`              | 1-48   | generated | MLO 48, with no main breaker and circuits sharing a meter and relay              |
+| `ref_UNKNOWN_16.yaml`          | 1-16   | generated | 16-space panel that publishes no model, with a meter outside it                  |
 
 Each generated template is that panel as it published itself on `spanos3/r202639/03`, with serials, ids and site details masked. Read them with the `span-panel`
 integration v2.2.0 or later.

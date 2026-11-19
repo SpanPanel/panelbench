@@ -15,12 +15,13 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
   integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.yaml` or `default_MLO_48_TANDEMS.yaml` keeps its `ref_` twin's serial
   (`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one and the other shows an `error` badge naming the serial. Delete the leftover
   `default_*` files, or clone the `ref_` equivalent.
-- **A `pv` section listing `inverters` must set `enabled`**: without it they published nothing; now the config is refused, saying so.
+- **A `pv` section listing `inverters` must set `enabled`, to `true` or `false`**: without it they published nothing, and a quoted `"false"` published them;
+  now the config is refused, saying so.
 
 ### Fixed
 
-- **A circuit added to a clone of a MAIN 16 or MAIN 40 lands on that model's spaces**, 9 to 24 or 9 to 48, where it landed on space 1 and the integration warned
-  about its breaker positions.
+- **A clone of a MAIN 16 or MAIN 40 offers only its model's spaces**, 9 to 24 or 9 to 48, where a circuit added to it could land on space 1 and the integration
+  warned about its breaker positions.
 
 ### Removed
 

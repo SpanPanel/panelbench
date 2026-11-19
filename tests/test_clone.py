@@ -1121,18 +1121,20 @@ class TestPanelSize:
         ]
         validate_yaml_config(config)
 
-    def test_a_model_numbered_from_9_is_sized_to_its_last_position(self) -> None:
+    def test_a_model_numbered_from_9_is_sized_to_its_last_position(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """A MAIN 40 numbers its spaces 9 to 48, so its clone takes 48 spaces and lists
-        none below 9 as unmapped."""
+        none below 9 as unmapped. These circuits on 1 to 7 sit outside those spaces,
+        which the clone says, since the MAIN 40's positions are an inference."""
         devices = _base_devices()
         devices[_SERIAL].update_property("info", "model", "MAIN_40")
 
         config = translate_scraped_panel(_make_scraped(devices))
 
         assert _panel_config(config)["total_tabs"] == 48
-        assert config["unmapped_tabs"] == [
-            t for t in range(9, 49) if t not in {9, 11, 13, 15, 17}
-        ]
+        assert config["unmapped_tabs"] == [t for t in range(9, 49) if t not in {9, 11, 13, 15, 17}]
+        assert "whose spaces are 9 to 48, but has circuits on 1, 3, 5, 7" in caplog.text
         validate_yaml_config(config)
 
     def test_the_model_itself_is_kept(self) -> None:

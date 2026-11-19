@@ -23,7 +23,7 @@ import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final
 
 import yaml
 from ebus_panel_sim import EmitterError, PanelDefinition, Variant
@@ -33,7 +33,7 @@ from ebus_sdk import DiscoveredDevice
 from panelbench.breakers import breaker_misfit
 from panelbench.emitter_adapter import commissioning
 from panelbench.hardware import publishes_shared_breakers, relay_locks_priority, variant_for
-from panelbench.panel_models import PANEL_POSITIONS, panel_spaces
+from panelbench.panel_models import model_positions, panel_spaces, reported_model
 from panelbench.validation import validate_yaml_config
 
 # Homie node type strings used by the scraping path to identify entity classes from
@@ -83,7 +83,6 @@ _STANDARD_PANEL_SIZES: Final = (16, 24, 32, 40, 48)
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from panelbench.config_types import SimulationConfig
     from panelbench.scraper import ScrapedPanel
 
 _LOGGER = logging.getLogger(__name__)
@@ -314,11 +313,20 @@ def translate_panel_tree(
 
     # Unmapped tabs: the spaces of the model the clone reports that no circuit is on, so
     # a MAIN 16 or MAIN 40, whose spaces start at 9, lists none below 9.
-    unmapped = [
-        space
-        for space in panel_spaces(cast("SimulationConfig", {"panel_config": panel_config}))
-        if space not in used_tabs
-    ]
+    spaces = panel_spaces(panel_config)
+    unmapped = [space for space in spaces if space not in used_tabs]
+    outside = sorted(space for space in used_tabs if space not in spaces)
+    if outside:
+        # The positions are the integration's client's, and the MAIN 40's an inference,
+        # so a real panel disagreeing with them is worth saying.
+        _LOGGER.warning(
+            "Panel %s reports model %s, whose spaces are %d to %d, but has circuits on %s",
+            panel_device_id,
+            reported_model(panel_config),
+            spaces.start,
+            spaces.stop - 1,
+            ", ".join(str(space) for space in outside),
+        )
 
     config: dict[str, object] = {
         "panel_config": panel_config,
@@ -766,12 +774,12 @@ def _derive_total_tabs(
     panel_device_id: str,
     circuit_nodes: list[str],
 ) -> int:
-    """The panel's size: what it publishes, else its highest occupied space.
+    """The panel's size, the highest space a clone may place a circuit on: the one its
+    ``info/model`` names (``_published_panel_size``), else its highest occupied space.
 
-    An ``info/panel-size``, where one is published, then the numeric suffix of
-    ``info/model`` (``MAIN_32``), as upstream's capture reads it. Only without either
-    does the highest breaker position decide, rounded up to a standard size, and
-    that undercounts any panel whose top spaces are empty.
+    Only without a model that names one does the highest breaker position decide,
+    rounded up to a standard size, and that undercounts any panel whose top spaces are
+    empty.
 
     A published size the circuits do not fit in is reported and set aside, since the
     clone would place a circuit on a space the panel does not have.
@@ -814,7 +822,7 @@ def _published_panel_size(
     is the highest space a clone may place a circuit on, so the suffix would be short.
     """
     model = _get_prop(devices, panel_device_id, "info", "model") or ""
-    positions = PANEL_POSITIONS.get(model.strip().upper())
+    positions = model_positions(model)
     if positions is not None:
         return positions[1]
     suffix = re.search(r"(\d+)$", model)

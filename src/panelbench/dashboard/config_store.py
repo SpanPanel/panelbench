@@ -32,8 +32,7 @@ if TYPE_CHECKING:
 
 from panelbench.clone import update_config_from_scrape
 from panelbench.config_defaults import normalize_config
-from panelbench.config_types import BESSConfigYAML, SimulationConfig
-from panelbench.panel_models import panel_spaces
+from panelbench.config_types import BESSConfigYAML
 from panelbench.dashboard.defaults import make_defaults
 from panelbench.dashboard.presets import (
     evse_schedule_factors,
@@ -43,6 +42,7 @@ from panelbench.dashboard.presets import (
     get_preset,
 )
 from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior, relay_locked
+from panelbench.panel_models import panel_spaces
 from panelbench.solar import compute_solar_curve
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
@@ -712,12 +712,15 @@ class ConfigStore:
         """Return the panel's spaces no circuit is on, sorted ascending.
 
         The spaces of the model the panel reports (``panel_models.panel_spaces``), so a
-        MAIN 16 or MAIN 40, whose spaces start at 9, offers nothing below 9.
+        clone of a MAIN 16 or MAIN 40, whose spaces start at 9, offers nothing below 9.
         """
         used: set[int] = set()
         for circ in self._circuits():
             used.update(circ.get("tabs", []))
-        return [t for t in panel_spaces(cast("SimulationConfig", self._state)) if t not in used]
+        return [t for t in self._spaces() if t not in used]
+
+    def _spaces(self) -> range:
+        return panel_spaces(self._state.get("panel_config", {}))
 
     @_one_edit
     def add_entity_from_tabs(self, tabs: list[int]) -> EntityView:
@@ -737,8 +740,14 @@ class ConfigStore:
             if b - a != 2:
                 raise ValueError(f"Double-pole tabs {tabs} must be exactly 2 apart")
 
+        spaces = self._spaces()
         unmapped = set(self.get_unmapped_tabs())
         for t in tabs:
+            if t not in spaces:
+                last = spaces.stop - 1
+                raise ValueError(
+                    f"Tab {t} is not one of this panel's spaces, {spaces.start} to {last}"
+                )
             if t not in unmapped:
                 raise ValueError(f"Tab {t} is already assigned to a circuit")
 

@@ -12,7 +12,7 @@ one aggregate inverter.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import pytest
 from ebus_panel_sim import DeviceInstance
@@ -241,19 +241,38 @@ def test_listed_inverters_are_refused_by_a_variant_publishing_no_inverter() -> N
         validate_yaml_config(config)
 
 
-@pytest.mark.parametrize("enabled", [None, False])
-def test_inverters_listed_without_pv_enabled_are_refused(
-    enabled: bool | None,
-) -> None:
+def test_inverters_listed_without_pv_enabled_are_refused() -> None:
     """`pv.enabled` gates every inverter no circuit feeds. Left out, the inverters
     `pv.inverters` lists would silently publish nothing, so the config is refused
-    naming the key; set false, they are off as the config says."""
+    naming the key."""
     config = _two_unfed()
-    section = _section(config)
-    if enabled is None:
-        del section["enabled"]
-        with pytest.raises(ValueError, match=r"pv\.enabled"):
-            validate_yaml_config(config)
-    else:
-        section["enabled"] = enabled
+    del _section(config)["enabled"]
+    with pytest.raises(ValueError, match=r"pv\.enabled"):
+        validate_yaml_config(config)
+
+
+@pytest.mark.parametrize("enabled", [None, "false", "true", 1])
+def test_a_pv_enabled_that_is_not_true_or_false_is_refused(enabled: object) -> None:
+    """YAML's `enabled:` is null, which would publish nothing, and a quoted `"false"`
+    is truthy, which would publish the inverters it means to keep off."""
+    config = _two_unfed()
+    cast("dict[str, object]", _section(config))["enabled"] = enabled
+    with pytest.raises(ValueError, match=r"pv\.enabled must be true or false"):
+        validate_yaml_config(config)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_pv_enabled_true_or_false_is_accepted(enabled: bool) -> None:
+    """True publishes the listed inverters; false keeps them off, as the config says."""
+    config = _two_unfed()
+    _section(config)["enabled"] = enabled
+    validate_yaml_config(config)
+
+
+def test_a_section_pv_enabled_that_is_not_true_or_false_is_refused() -> None:
+    """The rule is the section's, so it holds where a PV circuit's inverter is what the
+    section describes, too."""
+    config = panel_config()
+    cast("dict[str, object]", config.setdefault("pv", {}))["enabled"] = "false"
+    with pytest.raises(ValueError, match=r"pv\.enabled must be true or false"):
         validate_yaml_config(config)

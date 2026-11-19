@@ -20,18 +20,23 @@
   badge naming the serial. Delete the leftover `default_*` files, or clone the `ref_` equivalent.
 - **The README lists every template in one table**, and the conformance profile in `DEVELOPER.md` is the regenerated one: 452 match, 4 divergence, 69 extension
   and 1327 omission.
-- **A `pv` section listing `inverters` must set `enabled`.** The inverters no circuit feeds publish only while `pv.enabled` is `true`, and a config listing them
-  without it loaded and published none of them; it is now refused, saying to set `enabled` to `true` to publish them or `false` to keep them off.
+- **A `pv` section listing `inverters` must set `enabled`, and `pv.enabled` must be `true` or `false`.** The inverters no circuit feeds publish only while
+  `pv.enabled` is `true`, and a config listing them without it loaded and published none of them; it is now refused, saying to set `enabled` to `true` to
+  publish them or `false` to keep them off. An `enabled` that is empty or quoted, such as `"false"`, which published the opposite of what it says, is refused
+  too.
 
 ### Fixed
 
-- **A circuit added to a clone of a MAIN 16 or MAIN 40 lands on that model's spaces**, where the dashboard put it on space 1, outside the 9 to 24 or 9 to 48 the
-  SpanPanel integration expects, which drew its positions warning. The dashboard offers, and a clone or imported definition lists as unmapped, only the spaces
-  of the model the panel reports (`panel_models.panel_spaces`), and a clone of a MAIN 16 or MAIN 40 takes 24 or 48 as its `total_tabs`, where it took the
-  model's numeric suffix and then resized itself from its circuits with a warning.
-- **A local image build leaves out what git does not track.** The add-on image copies `configs/` whole, so one built from a working checkout carried the
+- **A clone of a MAIN 16 or MAIN 40 offers only its model's spaces**, 9 to 24 or 9 to 48, as the SpanPanel integration expects. The dashboard offered spaces
+  from 1, so the first circuit added to a clone of `ref_MAIN_40`, or to one of `ref_MAIN_16` once a circuit was removed, landed on space 1 and drew the
+  integration's positions warning. A clone or imported definition lists only those spaces as unmapped, and a clone of a MAIN 16 or MAIN 40 takes the model's
+  last space, 24 or 48, as its `total_tabs`, where it took 16 or 40 and resized itself from its circuits, with a warning, when one sat higher. A clone whose
+  circuits sit outside its model's spaces says so in the log. A config with no `model` whose `total_tabs` falls short of its model's last space, such as one
+  sized 16 or 40, keeps spaces 1 to `total_tabs`, as before.
+- **A local image build leaves the untracked configs out.** The add-on image copies `configs/` whole, so one built from a working checkout carried the
   generated `ref_` templates, clones, history databases, and `configs/.secrets/` and `configs/rates/`, which hold credentials and API keys. `.dockerignore` now
-  keeps them out, as a build from git does; images built by CI were not affected.
+  keeps all but the presets and the two tracked templates out, as a build from git has it, and leaves local state and caches out of the build context; images
+  built by CI were not affected.
 
 ### Removed
 

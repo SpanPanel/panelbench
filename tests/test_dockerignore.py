@@ -30,8 +30,13 @@ def _rules() -> list[tuple[bool, re.Pattern[str]]]:
             continue
         negated = line.startswith("!")
         pattern = line.removeprefix("!").strip("/")
-        regex = re.escape(pattern).replace(r"\*\*/", "(?:.*/)?").replace(r"\*", "[^/]*")
-        rules.append((negated, re.compile(f"{regex.replace(r'\\?', '[^/]')}$")))
+        # Only what this reading supports: `*`, `?` and a leading `**/`. A character
+        # class or any other `**` would be read wrongly here, so it fails instead.
+        assert "[" not in pattern, f"unsupported .dockerignore syntax: {line}"
+        assert "**" not in pattern.removeprefix("**/"), f"unsupported .dockerignore syntax: {line}"
+        regex = re.escape(pattern).replace(r"\*\*/", "(?:.*/)?")
+        regex = regex.replace(r"\*", "[^/]*").replace(r"\?", "[^/]")
+        rules.append((negated, re.compile(f"{regex}$")))
     return rules
 
 

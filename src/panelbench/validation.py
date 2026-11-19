@@ -300,7 +300,14 @@ def validate_pv_section(config_data: Mapping[str, object]) -> None:
     Refused here, naming the circuits, rather than when the panel builds its
     manifest; ``pv_section.bound_pv_circuit_id`` states the rule. *config_data*'s
     templates and circuits have already passed validation.
+
+    ``enabled``, where given, must be a boolean: ``pv_section.unfed_inverters`` reads its
+    truth, so YAML's null (``enabled:``) would publish nothing and a quoted ``"false"``
+    would publish what it means to keep off.
     """
+    pv_cfg = config_data.get("pv")
+    if isinstance(pv_cfg, dict) and not isinstance(pv_cfg.get("enabled", False), bool):
+        raise ValueError(f"pv.enabled must be true or false, not {pv_cfg['enabled']!r}")
     bound_pv_circuit_id(config_data)
 
 

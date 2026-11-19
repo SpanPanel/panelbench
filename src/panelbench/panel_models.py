@@ -52,21 +52,40 @@ def panel_model(config: SimulationConfig) -> str:
     The config's own ``model``, as a clone keeps its panel's, else the model its
     size names. ``str()`` because YAML reads an all-digit value as a number.
     """
-    panel = config["panel_config"]
+    return reported_model(config["panel_config"])
+
+
+def reported_model(panel: Mapping[str, object]) -> str:
+    """The model a ``panel_config`` mapping describes, as ``panel_model`` gives it."""
     model = panel.get("model")
     if model:
         return str(model)
-    size = int(panel.get("total_tabs", DEFAULT_PANEL_SIZE))
+    size = _total_tabs(panel)
     return PANEL_SIZE_TO_MODEL.get(size, f"MAIN_{size}")
 
 
-def panel_spaces(config: SimulationConfig) -> range:
-    """The breaker spaces the panel *config* describes has, in order.
+def model_positions(model: str) -> tuple[int, int] | None:
+    """*model*'s first and last space, read as the integration's client reads a model
+    (stripped, upper case), or ``None`` for a model ``PANEL_POSITIONS`` does not hold."""
+    return PANEL_POSITIONS.get(model.strip().upper())
 
-    Its reported model's positions (``PANEL_POSITIONS``), up to ``total_tabs``, so a
-    circuit placed on one sits where the integration expects that model's circuits;
-    1 to ``total_tabs`` for a model the table does not hold.
+
+def panel_spaces(panel: Mapping[str, object]) -> range:
+    """The breaker spaces the ``panel_config`` mapping *panel* describes, in order.
+
+    Its reported model's positions (``PANEL_POSITIONS``) where ``total_tabs`` reaches
+    the model's last one, as a clone of that model has it, so a circuit placed on one
+    sits where the integration expects that model's circuits. Otherwise 1 to
+    ``total_tabs``: a model the table does not hold, or a config sized by its count of
+    spaces (16 or 40 with no ``model``), which keeps the spaces it was written with.
     """
-    total_tabs = int(config["panel_config"].get("total_tabs", DEFAULT_PANEL_SIZE))
-    first, last = PANEL_POSITIONS.get(panel_model(config), (1, total_tabs))
-    return range(first, min(last, total_tabs) + 1)
+    total_tabs = _total_tabs(panel)
+    positions = model_positions(reported_model(panel))
+    if positions is not None and total_tabs >= positions[1]:
+        return range(positions[0], positions[1] + 1)
+    return range(1, total_tabs + 1)
+
+
+def _total_tabs(panel: Mapping[str, object]) -> int:
+    raw = panel.get("total_tabs", DEFAULT_PANEL_SIZE)
+    return int(raw) if isinstance(raw, int | float | str) else DEFAULT_PANEL_SIZE

@@ -291,9 +291,9 @@ detection logic.
 
 ### 2. Docker container
 
-Builds and runs the same image that CI pushes to GHCR. `.dockerignore` keeps what git does not track out of the build context, so a working checkout's generated
-`ref_` templates, clones, history databases, `configs/.secrets/` and `configs/rates/` stay out of the image, as they do from CI's checkout
-(`tests/test_dockerignore.py`). Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
+Builds and runs the same image that CI pushes to GHCR. `.dockerignore` keeps everything in `configs/` but the presets and the two tracked templates out of the
+build, so a working checkout's generated `ref_` templates, clones, history databases, `configs/.secrets/` and `configs/rates/` stay out of the image, as they do
+from CI's checkout, and it leaves local state and caches out of the context (`tests/test_dockerignore.py`). Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
 networking), but the integration can connect by manual configuration. On Linux, Docker with host networking works.
 
 ```bash
@@ -349,7 +349,7 @@ ADVERTISE_ADDRESS=192.168.7.27 CONFIG_DIR=./configs/panel2 ./scripts/run-local.s
 ```yaml
 panel_config:
   serial_number: str # Unique panel serial (e.g., "SPAN-SIM-001")
-  total_tabs: int # Breaker tab count (8, 32, 64)
+  total_tabs: int # Highest breaker space (16, 24, 32, 40, 48); a MAIN 16 clone has 24, a MAIN 40 clone 48
   main_size: int # Main breaker amps (100, 150, 200)
   latitude: float # Degrees north (default: 37.7)
   longitude: float # Degrees east (default: -122.4)
