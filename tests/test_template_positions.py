@@ -43,14 +43,17 @@ def test_every_shipped_template_places_its_circuits_within_its_models_positions(
     template_dir: Path,
 ) -> None:
     """By the model each panel reports. One the table does not hold, as a capture's
-    ``UNKNOWN``, has no positions to place against, so it is skipped."""
+    ``UNKNOWN``, has no positions to place against, so it is skipped, and the skips are
+    asserted, so the test cannot pass by checking nothing."""
     outside: list[str] = []
+    skipped: set[str] = set()
     for name in EVERY_TEMPLATE:
         config: SimulationConfig = yaml.safe_load(
             (template_dir / name).read_text(encoding="utf-8")
         )
         model = panel_model(config)
         if model not in _POSITIONS:
+            skipped.add(name)
             continue
         first, last = _POSITIONS[model]
         outside.extend(
@@ -59,4 +62,5 @@ def test_every_shipped_template_places_its_circuits_within_its_models_positions(
             if not all(first <= tab <= last for tab in circuit["tabs"])
         )
 
+    assert skipped == {"ref_UNKNOWN_16.yaml"}, skipped
     assert not outside, outside

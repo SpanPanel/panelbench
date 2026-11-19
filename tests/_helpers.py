@@ -95,6 +95,9 @@ def lay_every_template(config_dir: Path) -> None:
 # circuit, whose load no test reads, as the README's rehearsal frees them.
 _FREED_CIRCUIT: Final = "heat_pump_backup"
 
+# The circuit of the panel's one SPAN Drive, whose template a second takes.
+_FIRST_DRIVE: Final = "span_drive_garage"
+
 # The second SPAN Drive a test of several drives adds beside the panel's one.
 SECOND_DRIVE: Final = "SPAN Drive - Driveway"
 
@@ -108,6 +111,9 @@ def free_two_spaces(config: SimulationConfig) -> list[int]:
     [circuit] = [c for c in config["circuits"] if c["id"] == _FREED_CIRCUIT]
     config["circuits"].remove(circuit)
     spaces = list(circuit["tabs"])
+    assert len(spaces) == 2 and spaces[1] - spaces[0] == 2, (
+        f"two poles, one above the other: {spaces}"
+    )
     config["unmapped_tabs"] = sorted([*config["unmapped_tabs"], *spaces])
     return spaces
 
@@ -117,12 +123,13 @@ def add_second_drive(config: SimulationConfig) -> None:
 
     On the drive template the first uses, on two spaces `free_two_spaces` frees.
     """
+    [first] = [c for c in config["circuits"] if c["id"] == _FIRST_DRIVE]
     spaces = free_two_spaces(config)
     config["circuits"].append(
         {
             "id": "span_drive_driveway",
             "name": SECOND_DRIVE,
-            "template": "span_drive",
+            "template": first["template"],
             "tabs": spaces,
         }
     )

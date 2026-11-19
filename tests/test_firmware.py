@@ -36,6 +36,7 @@ from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
     EVERY_TEMPLATE,
+    add_second_drive,
     discharging_bess_meter,
     name_firmware,
     night_panel,
@@ -145,13 +146,15 @@ async def test_a_clone_of_an_earlier_panel_keeps_its_conventions(tmp_path: Path)
     Asserted on the EVSE limit rather than the BESS meter's sign, because the limit
     is published at the first tick whatever the battery is doing.
     """
-    source = write_config(tmp_path / "panel.yaml", _naming(EARLIER_FIRMWARE))
+    earlier = _naming(EARLIER_FIRMWARE)
+    add_second_drive(earlier)
+    source = write_config(tmp_path / "panel.yaml", earlier)
     cloned = translate_panel_tree(_SERIAL, discovered_devices(await capture_retained(source)))
 
     republished = await capture_retained(write_config(tmp_path / "clone.yaml", cloned))
 
     limits = [t for t in republished if t.endswith(_EVSE_LIMIT)]
-    assert len(limits) == 1, "the cloned SPAN Drive keeps an r202633 panel's preset limit"
+    assert len(limits) == 2, "each cloned SPAN Drive keeps an r202633 panel's preset limit"
 
 
 def _shipped(path: Path) -> SimulationConfig:

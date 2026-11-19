@@ -1,9 +1,12 @@
-"""A template for each reference capture the pinned emitter ships.
+"""What a template is: the contract every shipped template shares.
 
-The emitter ships masked captures of real SPAN panels, each with the panel definition
-recorded with it (``load_reference_capture``). Each becomes a ``ref_*`` template,
-read-only in the dashboard and cloned like the two hand-written ``ref_`` templates the
-repository tracks, so a user can run a panel as a real one published itself.
+A template is a config whose name starts with ``ref_`` (``TEMPLATE_PREFIX``), read-only
+in the dashboard (``is_template``), opened first by ``first_template`` and cloned under
+a name without the marker (``clone_name``). Two are hand-written and tracked in the
+repository's ``configs/``; the rest are built here, one for each reference capture the
+pinned emitter ships. The emitter's masked captures of real SPAN panels each come with
+the panel definition recorded with them (``load_reference_capture``), so a user can run
+a panel as a real one published itself.
 
 A template is built, not kept: at every start the definition is read through
 PanelBench's own definition import, as the dashboard's Import reads one, and written
