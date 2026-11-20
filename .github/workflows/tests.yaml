@@ -32,6 +32,19 @@ jobs:
       - name: Install mosquitto
         run: sudo apt-get update && sudo apt-get install -y mosquitto
 
+      # Ubuntu 26.04's apparmor package confines /usr/sbin/mosquitto to configs under
+      # /etc/mosquitto, so the broker tests/integration starts with a config in its
+      # tmp_path cannot open it and exits. Unload that profile on this runner where the
+      # kernel has it loaded; the grep prints the profile and its mode to the log. A
+      # runner without it has nothing to unload.
+      - name: Let the test broker read its config
+        run: |
+          if sudo grep '^mosquitto (' /sys/kernel/security/apparmor/profiles; then
+            sudo apparmor_parser -R /etc/apparmor.d/mosquitto
+          else
+            echo "No mosquitto AppArmor profile is loaded"
+          fi
+
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
