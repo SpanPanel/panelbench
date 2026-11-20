@@ -141,15 +141,16 @@ simulation_params:
 
 
 class TestUnsupportedPanelSize:
-    """Configs with total_tabs outside _PANEL_SIZE_TO_MODEL fail loudly at panel-add."""
+    """Configs with total_tabs outside PANEL_SIZE_TO_MODEL fail loudly at panel-add."""
 
     @pytest.mark.asyncio
-    async def test_unsupported_total_tabs_raises_key_error(
+    async def test_unsupported_total_tabs_is_refused(
         self,
         tmp_path: Path,
         amqtt_broker: tuple[str, int],
     ) -> None:
-        """total_tabs=20 has no SPAN model — _start_panel must raise AND not register."""
+        """total_tabs=20 has no SPAN model — _start_panel must refuse it, as validation
+        does when the panel loads, AND not register."""
         host, port = amqtt_broker
         config = tmp_path / "bad_size.yaml"
         config.write_text(_BAD_SIZE_CONFIG.format(broker_host=host, broker_port=port))
@@ -163,7 +164,7 @@ class TestUnsupportedPanelSize:
             ca_cert_path=None,
         )
 
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError, match=r"total_tabs must be the spaces of a SPAN panel"):
             await app._start_panel(config)
 
         assert config not in app._panels

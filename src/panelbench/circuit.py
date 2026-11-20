@@ -9,9 +9,15 @@ to drive the emitter (which builds the transport-agnostic snapshots).
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from panelbench.virtual_devices import on_the_panel
+
+# The circuit overrides that land in its template's energy profile; any other lands in
+# the template itself.
+OVERRIDDEN_PROFILE_KEYS: Final = frozenset(
+    {"mode", "power_range", "typical_power", "power_variation", "efficiency"}
+)
 
 if TYPE_CHECKING:
     from panelbench.config_types import (
@@ -43,15 +49,8 @@ class SimulatedCircuit:
         # Apply circuit-level overrides to the template, routing
         # energy-profile keys into the nested ``energy_profile`` dict.
         if "overrides" in circuit_def:
-            _ENERGY_PROFILE_KEYS = {
-                "mode",
-                "power_range",
-                "typical_power",
-                "power_variation",
-                "efficiency",
-            }
             for key, value in circuit_def["overrides"].items():
-                if key in _ENERGY_PROFILE_KEYS:
+                if key in OVERRIDDEN_PROFILE_KEYS:
                     self._template["energy_profile"][key] = value  # type: ignore[literal-required]
                 else:
                     self._template[key] = value  # type: ignore[literal-required]

@@ -429,6 +429,7 @@ def update_config_from_scrape(
     circuit_nodes = _devices_of_type(scraped.devices, scraped.serial_number, TYPE_CIRCUIT)
     keys = _circuit_keys(scraped.devices, circuit_nodes)
     shared = _shared_with_by_circuit(config)
+    template_of = _template_by_circuit(config)
 
     changed = False
 
@@ -436,38 +437,25 @@ def update_config_from_scrape(
         if node_uuid not in keys:
             continue
 
-        template_name = _template_name(keys[node_uuid])
-        template = templates.get(template_name)
-        if not isinstance(template, dict):
-            continue
-
-        ep = template.get("energy_profile")
-        if not isinstance(ep, dict):
-            continue
-
         # Update energy seeds. Enclosure frame: `exported-energy` is the
         # enclosure exporting to the circuit (consumption), `imported-energy` is
         # the circuit backfeeding the enclosure (production). See the seeding
         # comment in `_translate_circuit`. A breaker the config records takes its one
-        # register on each of its circuits.
-        breaker = _breaker_nodes(node_uuid, keys, shared.get(_circuit_id(keys[node_uuid]), ()))
+        # register on each of its circuits, a circuit the scrape left out included.
+        mates = shared.get(_circuit_id(keys[node_uuid]), [])
+        breaker = _breaker_nodes(node_uuid, keys, mates)
         exported = _breaker_register(scraped.devices, breaker, "exported-energy")
-        if (
-            exported is not None
-            and exported > 0
-            and ep.get("initial_consumed_energy_wh") != exported
-        ):
-            ep["initial_consumed_energy_wh"] = exported
-            changed = True
-
         imported = _breaker_register(scraped.devices, breaker, "imported-energy")
-        if (
-            imported is not None
-            and imported > 0
-            and ep.get("initial_produced_energy_wh") != imported
+        own = _template_name(keys[node_uuid])
+        for template_name in dict.fromkeys(
+            [own, *(template_of[m] for m in mates if m in template_of)]
         ):
-            ep["initial_produced_energy_wh"] = imported
-            changed = True
+            template = templates.get(template_name)
+            ep = template.get("energy_profile") if isinstance(template, dict) else None
+            if not isinstance(ep, dict):
+                continue
+            changed = _seed(ep, "initial_consumed_energy_wh", exported) or changed
+            changed = _seed(ep, "initial_produced_energy_wh", imported) or changed
 
     # Update last_synced timestamp
     panel_source = config.get("panel_source")
@@ -1594,6 +1582,24 @@ def _breaker_register(
         if (value := _float_prop(devices, node, "meter", register)) is not None
     ]
     return max(values) if values else None
+
+
+def _seed(energy_profile: dict[str, object], key: str, register: float | None) -> bool:
+    """Seed *key* with a register read above 0, and say whether that changed it."""
+    if register is None or register <= 0 or energy_profile.get(key) == register:
+        return False
+    energy_profile[key] = register
+    return True
+
+
+def _template_by_circuit(config: Mapping[str, object]) -> dict[str, str]:
+    """Each of *config*'s circuits' template, by the circuit's id."""
+    circuits = config.get("circuits")
+    return {
+        str(circuit["id"]): str(circuit["template"])
+        for circuit in (circuits if isinstance(circuits, list) else [])
+        if isinstance(circuit, dict) and "id" in circuit and "template" in circuit
+    }
 
 
 def _shared_with_by_circuit(config: Mapping[str, object]) -> dict[str, list[str]]:

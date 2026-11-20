@@ -36,27 +36,24 @@ circuit_templates:
     breaker_rating: 20
     energy_profile:
       mode: consumer
-      power_range:
-        min: 50
-        max: 150
+      power_range: [50, 150]
+      typical_power: 100
   always:
     relay_behavior: always_on
     priority: NEVER
     breaker_rating: 20
     energy_profile:
       mode: consumer
-      power_range:
-        min: 50
-        max: 150
+      power_range: [50, 150]
+      typical_power: 100
   dishwasher:
     relay_behavior: controllable
     priority: OFF_GRID
     breaker_rating: 20
     energy_profile:
       mode: consumer
-      power_range:
-        min: 50
-        max: 150
+      power_range: [50, 150]
+      typical_power: 100
 circuits:
 - id: chest_freezer
   name: Chest Freezer

@@ -70,9 +70,12 @@
   would feed. A `pv.feed` or `bess.feed` naming one is refused.
 - **A config the panel cannot start on is refused when PanelBench loads, edits or saves it, saying why**, where it loaded and saved and the panel then
   failed to start. PanelBench builds the emitter as a panel's start does, so whatever the emitter refuses, such as an `unvalued` path the device's profile
-  declares none of, is refused with its reason, each circuit and meter named by its `id`. A section or setting of the wrong shape, such as `lugs: x` or
-  `bess.charge_hours: 5`, is refused by name, where the panel failed with an error naming nothing. A `bess.feed` naming no circuit, which published a
-  battery fed by nothing, is refused, and deleting the circuit it names in the dashboard drops it, as it drops a `pv.feed`.
+  declares none of, is refused with its reason, each circuit and meter named by its `id`. A section or setting of the wrong shape, such as `lugs: x`,
+  `bess.charge_hours: 5` or a template's `power_range: {min: 50, max: 150}`, is refused by name, a circuit's `overrides` as they leave its template, where
+  the panel failed to start or tick with an error naming nothing; a number may still be quoted where it is read as one.
+  A `total_tabs` that is no SPAN panel's size, which the dashboard's form allowed, and a battery of 0 kWh, which failed on its first tick, are refused. A
+  `bess.feed` naming no circuit, which published a battery fed by nothing, is refused, and deleting the circuit it names in the dashboard drops it, as it
+  drops a `pv.feed`.
 - **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
   ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
   a panel no longer starts every cycling load at the start of its on phase.

@@ -35,7 +35,6 @@ from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.discovery import PanelAdvertiser, PanelBrowser
 from panelbench.emitter_adapter.runtime import BrokerConnection
 from panelbench.panel import PanelInstance
-from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 from panelbench.panel_secrets import SECRETS_FILENAME, PanelSecretsStore
 from panelbench.recorder import RecorderDataSource
 from panelbench.schema import HomieSchemaRegistry, load_schema, render_for_panel
@@ -322,14 +321,12 @@ class SimulatorApp:
             running={s: p.config_path for s, p in self._serial_to_panel.items()}
         )
 
-        # Validate panel size and render schema before registering. If the
-        # panel's total_tabs is not a SPAN model size, stop the started panel
-        # cleanly so we don't leave a zombie tick task and MQTT publisher
-        # without a bootstrap HTTP server to match.
+        # Render the schema before registering, the panel's size having passed
+        # validation as it loaded. If anything here fails, stop the started panel
+        # cleanly so we don't leave a zombie tick task and MQTT publisher without a
+        # bootstrap HTTP server to match.
         try:
             total_tabs = panel.total_tabs
-            if total_tabs not in PANEL_SIZE_TO_MODEL:
-                raise KeyError(f"total_tabs {total_tabs} is not a SPAN panel size")
             # The model MQTT publishes, so mDNS cannot advertise another.
             panel_model = panel.model
             firmware = panel.firmware_version

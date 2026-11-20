@@ -53,9 +53,10 @@ def construct_emitter(
 
     The one place PanelBench builds one: a panel's start, an import's render and
     validation all build it here, so a config validation accepts is one a panel
-    starts on. Construction applies every rule the emitter has for a definition and
-    publishes nothing until ``start``. The emitter registers its own default ``/set``
-    handlers from an empty *setters*, so no producer-side wiring is needed.
+    starts on. Construction applies every rule the emitter has for a definition, and
+    already hands *transport* the device tree it describes; ``start`` begins the
+    panel's life on it. The emitter registers its own default ``/set`` handlers from
+    an empty *setters*, so no producer-side wiring is needed.
     """
     return Emitter.from_definition(definition, setters, mqttc=transport)
 
