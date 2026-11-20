@@ -621,7 +621,10 @@ ebus/5/{serial}/{node}/{property}
 | `power-flows`     | Aggregated: PV, battery, grid, site power                              |
 
 `{circuit-uuid}` is a UUID v5 over `{panel-serial}/{circuit-id}`. It is scoped to the panel because the shipped configs reuse circuit ids such as
-`solar_inverter` across panel sizes, and two panels in one add-on publish to one broker.
+`solar_inverter` across panel sizes, and two panels in one add-on publish to one broker. A hardware 3.0 panel whose config numbers its circuits
+(`circuit_number`) names them instead as such a panel does: `circuit-<n>` before release 202645 and `{panel-serial}-{hex16}-1-16-<n>` from it (see the
+README's Device ids). Before 202645 nothing scopes those ids to the panel, as a real panel's own broker needs nothing to, so PanelBench refuses to start a
+panel whose device ids another running panel already publishes.
 
 ### Settable Properties
 

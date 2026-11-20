@@ -20,6 +20,14 @@ axis that decides whether a user's history survives.
     PV, several   <panel>-<slug of serial or model>-<feed circuit uuid>
     MID           <bess-id>-mid
 
+except on a hardware 3.0 panel whose config numbers its circuits
+(``circuit_number``), which names them as such a panel does: by SPAN's number
+for each, ``<n>``, under the shape its release gives it (``circuit_device_id``).
+
+    Circuit       circuit-<n>, then <panel-serial>-<hex16>-1-16-<n> from 202645
+    Remote CT     remote-ct-<n>, then <panel-serial>-<hex16>-1-42-<n>
+    Lugs          <panel-serial>-<hex16>-1-21-2 upstream from 202645
+
 `devices/distribution-enclosure.md` Example 1 shows the proxied form concretely:
 `xy-0001-aaaaa-lugs-up`, `xy-0001-aaaaa-TG000000000001` (panel + the BESS's own
 serial), `xy-0001-aaaaa-pv-1`, `xy-0001-aaaaa-TG000000000001-mid`.

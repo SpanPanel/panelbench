@@ -151,7 +151,10 @@ reports hardware version `1.2`. Read it with the SpanPanel/span
 integration **v2.1.2 or later**. `ref_MLO_48_TANDEMS` reports hardware version `3.0`,
 as the reference MLO 48 it is built from does; read it, and the `ref_`
 templates, with **v2.2.0 or later**. Its tandem-quad is drawn and
-judged correctly from **v2.3.0**.
+judged correctly from **v2.3.0**. A hardware 3.0 panel publishes the
+device ids a real one does, which change at SPAN release 202645; the
+integration carries its entities across that change from **v2.3.3** (in
+pre-release as v2.3.3b1).
 
 To emulate a panel before the upgrade to release 202639, clone a
 config from the dashboard, then in the clone's YAML name a 202633

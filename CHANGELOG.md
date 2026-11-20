@@ -1,17 +1,22 @@
 # Changelog
 
-## Unreleased
+## 2.9.0 — SPAN release 202645, and the device ids real panels publish
 
-**The shipped templates are all `ref_` templates: the two tandem templates are renamed, and the three `default_MAIN_` templates are removed.**
+**PanelBench runs on `ebus-panel-sim` 0.11.0. Its generated templates are each panel's latest capture, on SPAN release 202645 where the emitter has one,
+and a hardware 3.0 panel publishes the device ids a real one does.** The shipped templates are all `ref_` templates: the two tandem templates are renamed,
+and the three `default_MAIN_` templates are removed. The `span-panel` integration carries a hardware 3.0 panel's entities across the change of ids at
+release 202645 from v2.3.3 (in pre-release as v2.3.3b1).
 
 ### Added
 
 - **PanelBench publishes the device ids a real panel does.** A hardware 3.0 panel names its circuits, its remote CT and its lugs by SPAN's numbers for them,
   which it keeps while the ids around them change at release 202645: `circuit-<n>` and `remote-ct-<n>` before it, `{serial}-{hex16}-1-16-<n>`,
   `-1-42-<n>` and `-1-21-2` from it. A circuit records its number as `circuit_number`, and the panel its segment as `panel_config.device_id_hex`, so the ids
-  follow `firmware_version` across the release. A template of a hardware 3.0 capture and a clone of such a panel record them as the panel publishes them,
-  and a circuit added in the dashboard takes the next number. A MAIN 32, whose ids no release changes, and a config that records no numbers publish as
-  before.
+  follow `firmware_version` across the release. A template of a hardware 3.0 capture that keeps its panel's ids and a clone of such a panel record them as
+  the panel publishes them, and a circuit added in the dashboard takes the lowest number its panel's circuits leave. A MAIN 32, whose ids no release
+  changes, and a config that records no numbers publish as before. Since nothing scopes those ids to the panel before release 202645, a panel whose
+  device ids another running panel already publishes is refused at start, as one with a running serial is. The `span-panel` integration carries a panel's
+  entities across the change from v2.3.3 (in pre-release as v2.3.3b1).
 - **Three templates of real panels**, generated from the emitter's reference captures: `ref_MAIN_32_CASCADE`, a MAIN 32 fed by another panel, with a battery;
   `ref_MAIN_16_BESS`, a MAIN 16 with a hybrid battery and an EVSE; and `ref_MLO_48_HYBRID`, an MLO 48 whose battery's inverter takes its solar.
 - **A battery can take its own solar.** `bess.inverter_type: hybrid` (default `ac-coupled`) says the battery's own inverter also takes PV, on its DC side, and
@@ -53,8 +58,10 @@
 - **Four generated templates are their panels' later captures, on release 202645**: `ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48`, where
   they were the release 202639 captures of the same panels. `ref_MAIN_40` is that panel recommissioned, with 38 circuits and no battery, where it had 5 and
   a battery fed by a circuit, and `ref_UNKNOWN_16` adds an EVSE. Each keeps its serial (`sim-main32_r202639`, `sim-r202639-a`, `sim-r202639-c` and
-  `sim-r202639-e`), as a panel keeps its serial through a firmware upgrade: a panel run from one of them before upgrading PanelBench and after it is one
-  panel upgraded, as Home Assistant sees it.
+  `sim-r202639-e`), as a panel keeps its serial through a firmware upgrade, so Home Assistant keeps a panel run from one of them across the upgrade of
+  PanelBench. `ref_MAIN_32` keeps its devices' ids too. The hardware 3.0 templates (`ref_UNKNOWN_16`, `ref_MAIN_16`, `ref_MAIN_40`, `ref_MLO_24` and
+  `ref_MLO_48`) now publish their panels' own ids for their circuits and remote CT, and on release 202645 for their lugs, where they published hashed and
+  serial-scoped ones, so Home Assistant sees those devices as new.
 - **A `pv` section listing `inverters` must set `enabled`, and `pv.enabled` must be `true` or `false`.** The inverters no circuit feeds publish only while
   `pv.enabled` is `true`, and a config listing them without it loaded and published none of them; it is now refused, saying to set `enabled` to `true` to
   publish them or `false` to keep them off. An `enabled` that is empty or quoted, such as `"false"`, which published the opposite of what it says, is refused

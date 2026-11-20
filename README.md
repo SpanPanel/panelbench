@@ -48,7 +48,7 @@ Click a simulator configuration to view it. Templates are read-only. A running s
 ## Home Assistant App
 
 PanelBench installs as a Home Assistant app from this repository. Images are published for `amd64` and `aarch64`, and the app is not distributed through HACS.
-It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish. The
+It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the two tracked templates publish. The
 [reference panels](#templates), and `ref_MLO_48_TANDEMS.yaml`, which is built from one, need **v2.2.0 or later**; its tandem-quad is drawn and judged correctly
 from **v2.3.0**.
 
@@ -484,10 +484,12 @@ PanelBench publishes the same ids:
 | lugs | `{serial}-lugs-up`, `{serial}-lugs-dn` | `{serial}-{hex16}-1-21-2` upstream |
 
 A circuit records its number as `circuit_number`, a remote CT its own, and the panel its 16-hex segment as `panel_config.device_id_hex`; the ids follow
-`firmware_version`, a firmware naming no release taking the later shape. A template of a hardware 3.0 capture, and a clone of such a panel, record them as
-the panel publishes them, and a circuit added in the dashboard takes the lowest number its panel's circuits leave. A MAIN 32 keeps its ids on every release,
+`firmware_version`, a firmware naming no release taking the later shape. A template of a hardware 3.0 capture that keeps its panel's ids, and a clone of
+such a panel, record them as the panel publishes them, and a circuit added in the dashboard takes the lowest number its panel's circuits leave. A MAIN 32 keeps its ids on every release,
 and a config that records no numbers publishes the ids it always has. No capture shows a hardware 3.0 panel's downstream lugs from release 202645, so
-`{serial}-{hex16}-1-21-1` is a guess.
+`{serial}-{hex16}-1-21-1` is a guess. Before release 202645 nothing scopes these ids to the panel, as a real panel's own broker needs nothing to, so
+PanelBench refuses to start a panel whose device ids another panel it runs already publishes. The `span-panel` integration carries a panel's entities across
+the change of ids from **v2.3.3** (in pre-release as v2.3.3b1).
 
 ```yaml
 panel_config:
