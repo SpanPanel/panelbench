@@ -28,7 +28,7 @@ from panelbench.dashboard.keys import (
     APP_KEY_RATE_CACHE,
     APP_KEY_STORE,
 )
-from tests._helpers import default_config, write_config
+from tests._helpers import panel_config, write_config
 
 _FILE = "panel.yaml"
 # What htmx sends with every request it makes, which is how the dashboard's forms
@@ -38,8 +38,8 @@ _HTMX = {"HX-Request": "true"}
 
 @pytest.fixture
 def app(tmp_path: Path) -> web.Application:
-    """The dashboard, editing a saved copy of the shipped MAIN 40 config."""
-    write_config(tmp_path / _FILE, default_config())
+    """The dashboard, editing a saved copy of `PANEL_CONFIG`."""
+    write_config(tmp_path / _FILE, panel_config())
     return create_dashboard_app(
         DashboardContext(
             config_dir=tmp_path,
@@ -68,9 +68,9 @@ def _refuse_everything(monkeypatch: pytest.MonkeyPatch) -> None:
         ("POST", "/entities", {"entity_type": "circuit"}),
         ("POST", "/entities", {"entity_type": "evse"}),
         ("DELETE", "/entities/living_room_lights", {}),
-        ("PUT", "/entities/pool_pump/profile", {"hour_0": "0.5"}),
-        ("POST", "/entities/pool_pump/profile/preset", {"preset": "always_on"}),
-        ("PUT", "/entities/pool_pump/active-days", {"days_submitted": "1", "day_0": "on"}),
+        ("PUT", "/entities/dishwasher/profile", {"hour_0": "0.5"}),
+        ("POST", "/entities/dishwasher/profile/preset", {"preset": "always_on"}),
+        ("PUT", "/entities/dishwasher/active-days", {"days_submitted": "1", "day_0": "on"}),
         (
             "PUT",
             "/entities/span_drive_garage/evse-schedule",
@@ -177,7 +177,7 @@ async def test_a_new_circuit_takes_the_first_free_space(app: web.Application) ->
     ("method", "path", "form", "reason"),
     [
         ("PUT", "/panel-config", {"total_tabs": "41"}, "even number"),
-        ("PUT", "/entities/pool_pump", {"typical_power": "lots"}, "could not convert"),
+        ("PUT", "/entities/dishwasher", {"typical_power": "lots"}, "could not convert"),
     ],
     ids=["odd tabs", "non-numeric field"],
 )
@@ -262,7 +262,7 @@ def test_nothing_outside_the_store_writes_its_state() -> None:
 
 def _custom_battery_app(tmp_path: Path) -> web.Application:
     """The dashboard, editing a panel whose battery follows a utility rate."""
-    config = default_config()
+    config = panel_config()
     bess = config.get("bess")
     assert bess is not None
     bess["charge_mode"] = "custom"
@@ -320,7 +320,7 @@ async def test_a_panel_source_sync_says_the_change_is_unsaved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The sync refreshes the energy seeds as an unsaved edit, so it says to save."""
-    config = default_config()
+    config = panel_config()
     config["panel_source"] = {"origin_serial": "nt-0000-tg1", "host": "192.168.1.100"}
     write_config(tmp_path / _FILE, config)
     app = create_dashboard_app(

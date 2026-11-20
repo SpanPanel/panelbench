@@ -163,7 +163,7 @@ The other four buckets are the actually useful output. Together they are a **con
 parts are shared eBus vocabulary and which are SPAN's own. That is the contract someone writing a consumer codes against, and because it is derived from the
 wire it cannot drift the way hand-written integration notes always do.
 
-Current profile: 557 match, 4 divergence, 82 extension, 1486 omission, 0 violations. All four divergences are deliberate SPAN choices, such as `shed/policy`
+Current profile: 452 match, 4 divergence, 69 extension, 1327 omission, 0 violations. All four divergences are deliberate SPAN choices, such as `shed/policy`
 being read-only because a real SPAN panel does not accept policy writes.
 
 ### Running it
@@ -239,7 +239,7 @@ publish:
 | Cell         | Reference (`ebus-panel-sim`)                                   | PanelBench                                    |
 | ------------ | -------------------------------------------------------------- | --------------------------------------------- |
 | `example`    | the release's example definition and ticks                     | its import of that definition, run as a clone |
-| `panelbench` | the release's capture reading PanelBench's published tree      | `configs/default_MAIN_40.yaml`                |
+| `panelbench` | the release's capture reading PanelBench's published tree      | `configs/ref_MAIN_32_TANDEMS.yaml`            |
 | `captured`   | the release's reading of a real panel's capture on SPAN 202639 | its import of that definition, run as a clone |
 
 Every cell is at full structural parity and asserts it directly, and both producers must agree on what is settable. Identity values, device ids and the
@@ -291,7 +291,9 @@ detection logic.
 
 ### 2. Docker container
 
-Builds and runs the same image that CI pushes to GHCR. Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
+Builds and runs the same image that CI pushes to GHCR. `.dockerignore` keeps everything in `configs/` but the presets and the two tracked templates out of the
+build, so a working checkout's generated `ref_` templates, clones, history databases, `configs/.secrets/` and `configs/rates/` stay out of the image, as they do
+from CI's checkout, and it leaves local state and caches out of the context (`tests/test_dockerignore.py`). Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
 networking), but the integration can connect by manual configuration. On Linux, Docker with host networking works.
 
 ```bash
@@ -347,7 +349,7 @@ ADVERTISE_ADDRESS=192.168.7.27 CONFIG_DIR=./configs/panel2 ./scripts/run-local.s
 ```yaml
 panel_config:
   serial_number: str # Unique panel serial (e.g., "SPAN-SIM-001")
-  total_tabs: int # Breaker tab count (8, 32, 64)
+  total_tabs: int # Highest breaker space (8, 16, 24, 32, 40, 48); a MAIN 16 clone has 24, a MAIN 40 clone 48
   main_size: int # Main breaker amps (100, 150, 200)
   latitude: float # Degrees north (default: 37.7)
   longitude: float # Degrees east (default: -122.4)
@@ -361,6 +363,12 @@ panel_config:
   ethernet_link: bool # status/ethernet
   wifi_ssid: str | null # status/wifi-ssid (default: sim-wifi while Wi-Fi is up); null publishes none
   unvalued: [str] # node/property paths the panel declares and leaves unvalued, as a clone reads them
+  # Whether the panel has a feedthrough module (default: true). false publishes no downstream lugs under hardware 3.0
+  # from release 202645 (hardware.publishes_downstream_lugs); a clone of a panel publishing its upstream lugs alone writes it
+  feedthrough: bool
+  # The 16 hex digits a hardware 3.0 panel's numbered devices publish under from release 202645, {serial}-{hex16}-1-16-<n>
+  # (instance_ids); absent, one is derived from the serial
+  device_id_hex: str
   registration_limit: # Absent, every registration succeeds
     per_minute: int # Registrations each client may make in a minute; past it, registration answers 429
     retry_after: bool # Whether the refusal carries Retry-After (default: true)
@@ -399,7 +407,7 @@ circuit_templates: # Reusable template definitions
       # it. The pinned emitter still requires one and publishes 20 for it until it accepts the absence.
 
     # Optional behavioral modules
-    cycling_pattern:
+    cycling_pattern: # On for the first part of each cycle of simulated time, counted from the epoch
       on_duration: int # Seconds on (explicit mode)
       off_duration: int # Seconds off (explicit mode)
       duty_cycle: float # 0.0-1.0 — fraction of cycle spent on (from HA stats)
@@ -445,6 +453,9 @@ circuits:
     name: str # Human-readable name
     template: str # References a circuit_templates key
     tabs: [int] # Tab positions ([1] = 120V, [1, 3] = 240V)
+    # SPAN's number for the circuit on hardware 3.0, kept across releases: published as circuit-<n>, then
+    # {serial}-{hex16}-1-16-<n> from release 202645; absent, the circuit keeps its hashed id
+    circuit_number: int
     breaker_rating: int # Per-circuit override (optional)
     pcs_priority:
       int | null # Published as pcs/priority (default: the circuit's position). null records a panel that
@@ -471,9 +482,10 @@ unmapped_tabs: [int] # Tab numbers with no circuit assigned
 outside_meters: # A meter the panel reads that sits outside it, on no breaker space; one at most
   - id: str # Scopes its device id, as a circuit's id does
     unvalued: [str]
+    circuit_number: int # SPAN's number for it as a remote CT: remote-ct-<n>, then {serial}-{hex16}-1-42-<n>
 
 lugs: # Each set of lugs as commissioned, published in its connection node
-  upstream: # downstream takes the same keys
+  upstream: # downstream takes the same keys, and is refused for lugs the panel does not publish (panel_config.feedthrough)
     feeds_role: str # What the lugs feed where it is not a device of its own
     service_rating_a: int # The utility service rating at a service entrance
     overcurrent_protection_a: int
@@ -609,7 +621,10 @@ ebus/5/{serial}/{node}/{property}
 | `power-flows`     | Aggregated: PV, battery, grid, site power                              |
 
 `{circuit-uuid}` is a UUID v5 over `{panel-serial}/{circuit-id}`. It is scoped to the panel because the shipped configs reuse circuit ids such as
-`solar_inverter` across panel sizes, and two panels in one add-on publish to one broker.
+`solar_inverter` across panel sizes, and two panels in one add-on publish to one broker. A hardware 3.0 panel whose config numbers its circuits
+(`circuit_number`) names them instead as such a panel does: `circuit-<n>` before release 202645 and `{panel-serial}-{hex16}-1-16-<n>` from it (see the
+README's Device ids). Before 202645 nothing scopes those ids to the panel, as a real panel's own broker needs nothing to, so PanelBench refuses to start a
+panel whose device ids another running panel already publishes.
 
 ### Settable Properties
 
@@ -726,6 +741,10 @@ The Battery Storage Energy Equipment tracks real state-of-energy by integrating 
 - **Discharging**: `SOE -= power * dt / discharge_efficiency`
 - **Backup reserve**: Normal discharge stops at `backup_reserve_pct` (default 20%); only grid-disconnect emergencies drain to the 5% hard floor
 - **Charge modes**: Custom (hour-based schedule), Solar Generation (tracks PV curve), Solar Excess (surplus after loads)
+- **A hybrid battery's own array**: `bess.inverter_type: hybrid` (default `ac-coupled`), with `bess.pv_array.nameplate_capacity_w`, gives the battery's
+  inverter an array. The engine produces it with the PV circuits' solar model (`RealisticBehaviorEngine.solar_output_w`), and the runtime hands it to the
+  emitter as the battery's `TickInputs.bess_pv`, which the emitter adds to `power-flows/pv`, its dispatch's solar and the grid. The Model view books it the
+  same way. A clone takes the coupling from the emitter's own reading of the tree (`clone._hybrid_batteries`); an import keeps its definition's.
 
 ### Energy Accumulation
 

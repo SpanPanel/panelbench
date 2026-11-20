@@ -28,16 +28,17 @@ from panelbench.dashboard.presets import init_presets
 from panelbench.dashboard.routes import refuse_unloadable_edits, setup_routes
 from panelbench.panel_secrets import PanelSecretsStore
 from panelbench.rates.cache import RateCache
+from panelbench.reference_templates import first_template
 
 __all__ = ["DashboardContext", "create_dashboard_app"]
 
 
-def _view_first_default(context: DashboardContext, store: ConfigStore) -> None:
-    """Show the first shipped template, read-only, or nothing when there is none."""
-    defaults = sorted(context.config_dir.glob("default_*.yaml"))
-    if defaults:
-        store.load_from_file(defaults[0])
-        context.edit(defaults[0].name)
+def _view_first_template(context: DashboardContext, store: ConfigStore) -> None:
+    """Show the first template, read-only, or nothing when there is none."""
+    template = first_template(context.config_dir)
+    if template is not None:
+        store.load_from_file(template)
+        context.edit(template.name)
     else:
         context.edit(None)
 
@@ -51,8 +52,7 @@ def create_dashboard_app(context: DashboardContext) -> web.Application:
 
     # Load the active config into the editor/viewer. One the panel would refuse is
     # not opened, so nothing can be saved over it: the dashboard still starts on the
-    # first default template, read-only, says why, and lets the user pick or fix a
-    # config.
+    # first template, read-only, says why, and lets the user pick or fix a config.
     if context.config_filter:
         config_path = context.config_dir / context.config_filter
         if config_path.exists():
@@ -60,11 +60,11 @@ def create_dashboard_app(context: DashboardContext) -> web.Application:
                 store.load_from_file(config_path)
             except (ValueError, TypeError, yaml.YAMLError) as exc:
                 load_error = f"{context.config_filter} was not opened: {exc}"
-                _view_first_default(context, store)
+                _view_first_template(context, store)
                 context.load_error = load_error
     else:
-        # No active config — show first default template (read-only).
-        _view_first_default(context, store)
+        # No active config — show the first template (read-only).
+        _view_first_template(context, store)
 
     app[APP_KEY_STORE] = store
     app[APP_KEY_PANEL_SECRETS] = secrets

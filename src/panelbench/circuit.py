@@ -9,14 +9,63 @@ to drive the emitter (which builds the transport-agnostic snapshots).
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final, cast
+
+from panelbench.virtual_devices import on_the_panel
+
+# The circuit overrides that land in its template's energy profile; any other lands in
+# the template itself.
+OVERRIDDEN_PROFILE_KEYS: Final = frozenset(
+    {"mode", "power_range", "typical_power", "power_variation", "efficiency"}
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from panelbench.config_types import (
         CircuitDefinitionExtended,
         CircuitTemplateExtended,
     )
     from panelbench.engine import RealisticBehaviorEngine
+
+
+def effective_template(
+    template: CircuitTemplateExtended, circuit: CircuitDefinitionExtended
+) -> CircuitTemplateExtended:
+    """*circuit*'s template as the panel models and publishes it
+    (``effective_settings``), for code reading a validated config."""
+    # The template's keys, set from the circuit's settings under the same keys, which
+    # validation checks on this result as it checks a template's own.
+    return cast("CircuitTemplateExtended", effective_settings(template, circuit))
+
+
+def effective_settings(
+    template: Mapping[str, object], circuit: Mapping[str, object]
+) -> dict[str, object]:
+    """*circuit*'s template as the panel models and publishes it.
+
+    A copy of *template* with the circuit's own ``recorder_entity``, its ``overrides``
+    (``OVERRIDDEN_PROFILE_KEYS`` into the energy profile, any other into the template),
+    and its own ``breaker_rating``, which replaces the template's under either key, as
+    the dashboard's rating edit writes it. The engine, the definition and validation
+    all read a circuit through this, so what is checked is what is modelled, and what
+    is modelled is what is published.
+    """
+    merged: dict[str, object] = deepcopy(dict(template))
+    recorder_entity = circuit.get("recorder_entity")
+    if recorder_entity is not None:
+        merged["recorder_entity"] = recorder_entity
+    profile = merged.get("energy_profile")
+    overrides = circuit.get("overrides")
+    for key, value in overrides.items() if isinstance(overrides, dict) else ():
+        if key in OVERRIDDEN_PROFILE_KEYS and isinstance(profile, dict):
+            profile[key] = value
+        else:
+            merged[key] = value
+    if "breaker_rating" in circuit:
+        merged["breaker_rating"] = circuit["breaker_rating"]
+        merged.pop("breaker_rating_a", None)
+    return merged
 
 
 class SimulatedCircuit:
@@ -29,34 +78,9 @@ class SimulatedCircuit:
         behavior_engine: RealisticBehaviorEngine,
     ) -> None:
         self._circuit_def = circuit_def
-        self._template = deepcopy(template)
+        # The circuit's recorder link, overrides and own rating, over its template.
+        self._template = effective_template(template, circuit_def)
         self._behavior_engine = behavior_engine
-
-        # Per-circuit recorder link lives on the circuit definition in YAML;
-        # merge it so behaviour engine / modeling see ``recorder_entity``.
-        rec_entity = circuit_def.get("recorder_entity")
-        if rec_entity is not None:
-            self._template["recorder_entity"] = rec_entity
-
-        # Apply circuit-level overrides to the template, routing
-        # energy-profile keys into the nested ``energy_profile`` dict.
-        if "overrides" in circuit_def:
-            _ENERGY_PROFILE_KEYS = {
-                "mode",
-                "power_range",
-                "typical_power",
-                "power_variation",
-                "efficiency",
-            }
-            for key, value in circuit_def["overrides"].items():
-                if key in _ENERGY_PROFILE_KEYS:
-                    self._template["energy_profile"][key] = value  # type: ignore[literal-required]
-                else:
-                    self._template[key] = value  # type: ignore[literal-required]
-
-        # Circuit-level breaker_rating overrides template
-        if "breaker_rating" in circuit_def:
-            self._template["breaker_rating"] = circuit_def["breaker_rating"]
 
         # Derived from template (stable across ticks)
         self._energy_mode: str = self._template["energy_profile"]["mode"]
@@ -107,7 +131,6 @@ class SimulatedCircuit:
             base_power = power_override
         else:
             base_power = self._behavior_engine.get_circuit_power(
-                self._circuit_def["id"],
                 self._template,
                 current_time,
                 self._relay_state,
@@ -166,6 +189,12 @@ class SimulatedCircuit:
     @property
     def tabs(self) -> list[int]:
         return self._circuit_def.get("tabs", [])
+
+    @property
+    def on_the_panel(self) -> bool:
+        """Whether this circuit sits on a breaker space, and so is published; a virtual
+        device is modelled alone (``virtual_devices``)."""
+        return on_the_panel(self._circuit_def)
 
     @property
     def template_name(self) -> str:

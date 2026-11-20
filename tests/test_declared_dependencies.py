@@ -29,6 +29,8 @@ import tomllib
 from importlib.metadata import packages_distributions
 from pathlib import Path
 
+import yaml
+
 _REPO = Path(__file__).resolve().parent.parent
 _SRC = _REPO / "panelbench" if (_REPO / "panelbench" / "__init__.py").exists() else _REPO / "src"
 _FIRST_PARTY = {"panelbench"}
@@ -118,3 +120,28 @@ def test_every_runtime_import_is_a_declared_dependency() -> None:
         "`pip install .` — which is how the add-on image builds — yields an "
         "install that fails on import:\n  " + "\n  ".join(undeclared)
     )
+
+
+def _exact_pins(requirements: list[str]) -> dict[str, str]:
+    """Each requirement pinned with ``==``, by its normalised name."""
+    pins: dict[str, str] = {}
+    for requirement in requirements:
+        name, sep, version = requirement.partition("==")
+        if sep:
+            pins[name.strip().lower().replace("_", "-")] = version.strip()
+    return pins
+
+
+def test_the_mypy_hook_pins_what_the_project_pins() -> None:
+    """The hook type-checks in its own environment, so a pin there the project does not
+    share checks code nobody runs. It drifted twice: ``ebus-sdk`` to 0.17.0, and
+    ``ebus-panel-sim`` left at 0.10.0b2 while the project ran 0.11.0, which failed CI
+    on a keyword only 0.11.0 has."""
+    hooks = yaml.safe_load((_REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+    (mypy,) = [hook for repo in hooks["repos"] for hook in repo["hooks"] if hook["id"] == "mypy"]
+    manifest = tomllib.loads((_REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    project = _exact_pins(manifest["project"]["dependencies"])
+    hook = _exact_pins(mypy["additional_dependencies"])
+
+    assert hook, "the mypy hook pins nothing"
+    assert {name: project.get(name) for name in hook} == hook

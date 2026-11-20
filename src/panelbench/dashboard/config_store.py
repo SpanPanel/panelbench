@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any, Concatenate, cast
 
 import yaml
 
+from panelbench.circuit import effective_settings
+from panelbench.device_numbers import next_number
 from panelbench.inverter import AC_COUPLED, normalise_inverter_type, template_inverter_type
 from panelbench.pv_section import UNFED_INVERTER_POSITION, unfed_inverter_entries
 
@@ -42,6 +44,7 @@ from panelbench.dashboard.presets import (
     get_preset,
 )
 from panelbench.emitter_adapter.spec_generator import normalise_relay_behavior, relay_locked
+from panelbench.panel_models import panel_spaces
 from panelbench.solar import compute_solar_curve
 from panelbench.validation import validate_yaml_config
 from panelbench.weather import get_cached_weather
@@ -422,6 +425,14 @@ class ConfigStore:
                 return circ
         return None
 
+    def get_breaker_mates(self, entity_id: str) -> list[str]:
+        """The other circuits on *entity_id*'s breaker, by id: those it names in
+        ``shared_with``, which a tandem's or quad's circuits share one relay with."""
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+        return [str(mate) for mate in circuit.get("shared_with") or []]
+
     def _mark_user_modified(self, template_name: str) -> None:
         """Flag a template as user-modified so recorder replay is bypassed."""
         template = self._templates().get(template_name)
@@ -526,17 +537,16 @@ class ConfigStore:
         return not current
 
     def _merge_entity(self, circuit: dict[str, Any]) -> EntityView:
-        """Build an EntityView by merging template + circuit overrides."""
+        """An EntityView of *circuit* as the panel has it: its template with the
+        circuit's overrides and own rating over it (``circuit.effective_settings``),
+        which the engine models and the panel publishes, so the dashboard shows, and
+        its lock guards judge, the same."""
         template_name = circuit["template"]
-        template = deepcopy(self._templates().get(template_name, {}))
-
+        template: dict[str, Any] = effective_settings(
+            self._templates().get(template_name, {}), circuit
+        )
         overrides = circuit.get("overrides", {})
         energy_profile = dict(template.get("energy_profile", {}))
-        for k, v in overrides.items():
-            if k == "power_range":
-                energy_profile["power_range"] = v
-            elif k in energy_profile:
-                energy_profile[k] = v
 
         return EntityView(
             id=circuit["id"],
@@ -552,7 +562,8 @@ class ConfigStore:
             time_of_day_profile=template.get("time_of_day_profile"),
             smart_behavior=template.get("smart_behavior"),
             hvac_type=template.get("hvac_type"),
-            breaker_rating=circuit.get("breaker_rating") or template.get("breaker_rating"),
+            # As the definition reads it: the legacy key first.
+            breaker_rating=template.get("breaker_rating_a") or template.get("breaker_rating"),
             overrides=dict(overrides),
             recorder_entity=template.get("recorder_entity"),
             user_modified=bool(template.get("user_modified")),
@@ -614,10 +625,22 @@ class ConfigStore:
         # following" was not expressible at all.
         if "inverter_type" in data:
             template["inverter_type"] = normalise_inverter_type(str(data["inverter_type"]))
-        if "priority" in data:
-            template["priority"] = data["priority"]
-        if "relay_behavior" in data:
-            template["relay_behavior"] = data["relay_behavior"]
+        # A breaker's circuits share one relay and one priority, so an edit to either
+        # is the breaker's: every circuit on it takes it, through its own template.
+        breaker_edits = {key: data[key] for key in ("priority", "relay_behavior") if key in data}
+        breaker_templates = [template_name] + [
+            mate["template"]
+            for mate_id in self.get_breaker_mates(entity_id)
+            if (mate := self._find_circuit(mate_id)) is not None
+        ]
+        for name in dict.fromkeys(breaker_templates):
+            breaker_template = self._templates().get(name, {})
+            # The form posts both whatever was touched, so a mate leaves recorder
+            # replay only where its own value changes.
+            changed = any(breaker_template.get(k) != v for k, v in breaker_edits.items())
+            breaker_template.update(breaker_edits)
+            if changed and name != template_name:
+                self._mark_user_modified(name)
 
         overrides: dict[str, Any] = circuit.get("overrides", {})
         ep = template.get("energy_profile", {})
@@ -702,18 +725,27 @@ class ConfigStore:
             circuit_dict["id"] = entity_id
             counter += 1
 
+        # A panel that numbers its circuits numbers this one too, as SPAN would.
+        if (number := next_number(self._state)) is not None:
+            circuit_dict["circuit_number"] = number
         self._templates()[template_name] = template_dict
         self._circuits().append(circuit_dict)
         self._dirty = True
         return self._merge_entity(circuit_dict)
 
     def get_unmapped_tabs(self) -> list[int]:
-        """Return tab numbers not assigned to any circuit, sorted ascending."""
-        total_tabs = self._state.get("panel_config", {}).get("total_tabs", 32)
+        """Return the panel's spaces no circuit is on, sorted ascending.
+
+        The spaces of the model the panel reports (``panel_models.panel_spaces``), so a
+        clone of a MAIN 16 or MAIN 40, whose spaces start at 9, offers nothing below 9.
+        """
         used: set[int] = set()
         for circ in self._circuits():
             used.update(circ.get("tabs", []))
-        return sorted(t for t in range(1, total_tabs + 1) if t not in used)
+        return [t for t in self._spaces() if t not in used]
+
+    def _spaces(self) -> range:
+        return panel_spaces(self._state.get("panel_config", {}))
 
     @_one_edit
     def add_entity_from_tabs(self, tabs: list[int]) -> EntityView:
@@ -733,8 +765,14 @@ class ConfigStore:
             if b - a != 2:
                 raise ValueError(f"Double-pole tabs {tabs} must be exactly 2 apart")
 
+        spaces = self._spaces()
         unmapped = set(self.get_unmapped_tabs())
         for t in tabs:
+            if t not in spaces:
+                last = spaces.stop - 1
+                raise ValueError(
+                    f"Tab {t} is not one of this panel's spaces, {spaces.start} to {last}"
+                )
             if t not in unmapped:
                 raise ValueError(f"Tab {t} is already assigned to a circuit")
 
@@ -752,6 +790,9 @@ class ConfigStore:
             circuit_dict["id"] = entity_id
             counter += 1
 
+        # A panel that numbers its circuits numbers this one too, as SPAN would.
+        if (number := next_number(self._state)) is not None:
+            circuit_dict["circuit_number"] = number
         self._templates()[template_name] = template_dict
         self._circuits().append(circuit_dict)
         self._dirty = True
@@ -776,9 +817,11 @@ class ConfigStore:
         if index is None:
             raise KeyError(f"Entity not found: {entity_id}")
         circuit = circuits.pop(index)
-        pv = self._state.get("pv")
-        if isinstance(pv, dict) and str(pv.get("feed")) == str(entity_id):
-            pv.pop("feed")
+        # A feed naming the circuit would name nothing once it is gone.
+        for section in ("pv", "bess"):
+            fed = self._state.get(section)
+            if isinstance(fed, dict) and str(fed.get("feed")) == str(entity_id):
+                fed.pop("feed")
         template_name = circuit["template"]
         still_used = any(c.get("template") == template_name for c in circuits)
         if not still_used:

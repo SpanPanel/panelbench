@@ -35,11 +35,16 @@ from ebus_panel_sim import (
 
 from panelbench.const import DEFAULT_WIFI_SSID
 from panelbench.emitter_adapter.broker_link import BrokerLink
-from panelbench.emitter_adapter.definition import bess_config, build_definition
-from panelbench.emitter_adapter.instance_ids import (
-    evse_device_id,
-    stable_circuit_uuid,
+from panelbench.emitter_adapter.definition import (
+    bess_config,
+    build_definition,
+    construct_emitter,
 )
+from panelbench.emitter_adapter.instance_ids import (
+    circuit_device_id,
+    evse_device_id,
+)
+from panelbench.emitter_adapter.spec_generator import circuits_for_device_type
 from panelbench.emitter_adapter.transport import LoopBoundTransport
 
 if TYPE_CHECKING:
@@ -81,24 +86,49 @@ class CloneRuntime:
     lifecycle, which is the same rule the SDK follows for an injected client."""
 
 
+def published_device_ids(engine: DynamicSimulationEngine) -> frozenset[str]:
+    """Every device id the panel *engine* runs would publish, its own serial first
+    among them: what another panel on the same broker must not publish too."""
+    return frozenset(d.instance_id for d in build_definition(engine.config).manifest.instances)
+
+
 def bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | None:
     """Build the emitter-side BESSConfig from the engine's loaded clone profile.
     Returns None when the profile has no BESS enabled."""
     return bess_config(engine.serial_number, engine.config.get("bess") or {})
 
 
-def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) -> None:
-    """Apply a fresh BESS config to a running emitter without restart.
+def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) -> bool:
+    """Apply a fresh BESS config to a running emitter without restart, or say it
+    cannot be.
 
     Mutates the engine's loaded config so subsequent reads see the new
     values, rebuilds the emitter-side ``BESSConfig`` from the YAML, and
     swaps it on the emitter (SOC/SOE state is preserved across the swap).
+
+    Returns False, changing nothing, unless the change keeps the battery the emitter
+    was started with, coupled as it was. The emitter builds its batteries at start and
+    takes PV only for one it started hybrid, so a battery the change enables,
+    disables or renames, or makes hybrid or ac-coupled, needs the panel restarted on
+    the saved config instead.
     """
+    battery = bess_config(runtime.engine.serial_number, bess_yaml)
+    hybrid = bess_yaml.get("inverter_type") == "hybrid"
+    started = _started_batteries(runtime.manifest)
+    if battery is None or started.get(battery.instance_id) is not hybrid:
+        return False
     runtime.engine.config["bess"] = bess_yaml
-    new_cfg = bess_config_from_engine(runtime.engine)
-    if new_cfg is None:
-        return
-    runtime.emitter.update_bess_config(new_cfg)
+    runtime.emitter.update_bess_config(battery)
+    return True
+
+
+def _started_batteries(manifest: DeviceManifest) -> dict[str, bool]:
+    """The batteries the emitter was started with, each mapped to whether it is
+    hybrid, which the emitter takes PV for."""
+    return {
+        battery.instance_id: battery.metadata.get("inverter-type") == "hybrid"
+        for battery in manifest.of_class("bess")
+    }
 
 
 def _resolve_broker(
@@ -158,13 +188,10 @@ async def start_clone(
     definition = build_definition(engine.config)
     manifest = definition.manifest
 
-    panel_id = engine.config["panel_config"]["serial_number"]
     uuid_to_circuit_id = {
-        stable_circuit_uuid(panel_id, c["id"]): c["id"] for c in engine.config["circuits"]
+        circuit_device_id(engine.config, c): c["id"] for c in engine.config["circuits"]
     }
 
-    # The emitter registers internal default /set handlers from the empty
-    # SetterRegistry — no producer-side wiring required.
     setters = SetterRegistry()
 
     # The will rides the CONNECT packet, so it has to be registered on the client
@@ -202,7 +229,7 @@ async def start_clone(
         transport = loop_bound
 
     try:
-        emitter = Emitter.from_definition(definition, setters, mqttc=transport)
+        emitter = construct_emitter(definition, setters, transport)
         # Synchronous, and returns immediately for an injected client rather than
         # polling is_connected for the connect timeout: the SDK never starts a client
         # it did not build, so nothing would change during the wait.
@@ -248,6 +275,7 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
         evse=_evse_tick_inputs(runtime.engine.config, raw.circuits),
         envelope=_panel_envelope(runtime.engine.config),
         bess_communication=_bess_communication(runtime.engine, raw.bess_link),
+        bess_pv=_bess_pv(runtime, raw.bess_pv_w),
     )
     return runtime.emitter.publish_tick(tick)
 
@@ -264,6 +292,17 @@ def _bess_communication(
     """
     battery = bess_config_from_engine(engine)
     return {} if battery is None else {battery.instance_id: link}
+
+
+def _bess_pv(runtime: CloneRuntime, watts: float) -> dict[str, float]:
+    """A hybrid battery's own array production, keyed by the battery the engine's
+    config enables now, where the emitter started that battery hybrid. Empty for any
+    other, which the emitter refuses to give PV, and with none. The engine produces
+    nothing for a battery its config does not make hybrid."""
+    battery = bess_config_from_engine(runtime.engine)
+    if battery is None or not _started_batteries(runtime.manifest).get(battery.instance_id):
+        return {}
+    return {battery.instance_id: watts}
 
 
 async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
@@ -345,24 +384,12 @@ def _first_feed_for_device_type(config: SimulationConfig, device_type: str) -> s
 
 
 def _feeds_for_device_type(config: SimulationConfig, device_type: str) -> list[str]:
-    templates = config.get("circuit_templates")
-    circuits = config.get("circuits")
-    if not isinstance(templates, dict) or not isinstance(circuits, list):
-        return []
+    """The device ids of the circuits feeding *device_type* devices, from the one list
+    the manifest builds them from (``spec_generator.circuits_for_device_type``)."""
     # Read from the config being walked, not from a serial handed in beside it: a
     # feed id must be the id the *owner* of these circuits publishes, and taking
     # both from one mapping is what makes that true by construction.
-    panel_id = config["panel_config"]["serial_number"]
-    feeds: list[str] = []
-    for item in circuits:
-        if not isinstance(item, dict):
-            continue
-        template_name = item.get("template")
-        if template_name is None or not isinstance(template_name, str):
-            continue
-        template = templates.get(template_name)
-        if isinstance(template, dict) and template.get("device_type") == device_type:
-            circuit_id = item.get("id")
-            if circuit_id is not None:
-                feeds.append(stable_circuit_uuid(panel_id, str(circuit_id)))
-    return feeds
+    return [
+        circuit_device_id(config, circuit)
+        for circuit in circuits_for_device_type(config, device_type)
+    ]

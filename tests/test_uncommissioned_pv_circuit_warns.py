@@ -21,14 +21,14 @@ import pytest
 
 from panelbench.config_types import SimulationConfig
 from panelbench.validation import validate_yaml_config
-from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, default_config
+from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, panel_config
 
 
 def _solar_on(
     firmware: str, *, commissioned: bool, tabs: list[int] | None = None
 ) -> SimulationConfig:
-    """The default panel naming *firmware*, its solar circuit locked or not."""
-    config = default_config()
+    """The working panel naming *firmware*, its solar circuit locked or not."""
+    config = panel_config()
     config["firmware_version"] = firmware
     [solar] = [c for c in config["circuits"] if c["id"] == "solar_inverter"]
     if tabs is not None:
@@ -64,7 +64,7 @@ def test_an_uncommissioned_pv_circuit_loads_with_a_warning(
 
     [message] = _unlocked_warnings(caplog)
     assert "'solar_inverter'" in message
-    assert "'solar'" in message
+    assert "'solar_production'" in message
 
 
 def test_a_commissioned_pv_circuit_is_not_warned_about(caplog: pytest.LogCaptureFixture) -> None:

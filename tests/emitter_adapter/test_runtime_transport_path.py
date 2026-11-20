@@ -18,13 +18,12 @@ import pytest
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.transport import LoopBoundTransport
 from panelbench.engine import DynamicSimulationEngine
-from tests._helpers import relay_opened_by_command, settable_relays
+from tests._helpers import PANEL_CONFIG, panel_config, relay_opened_by_command, settable_relays
 
 if TYPE_CHECKING:
     from tests.emitter_adapter._fake_aiomqtt import FakeBroker, FakeClient
 
-_CONFIG = pathlib.Path(__file__).resolve().parents[2] / "configs" / "default_MAIN_40.yaml"
-_ROOT = "ebus/5/sim-40t-001"
+_ROOT = f"ebus/5/{panel_config()['panel_config']['serial_number']}"
 
 
 async def _started(config: pathlib.Path) -> emitter_runtime.CloneRuntime:
@@ -38,7 +37,7 @@ async def test_the_tree_reaches_the_broker_through_the_queue(
     fake_broker: FakeBroker,
 ) -> None:
     """The whole point: a synchronous SDK publish path feeding an async client."""
-    runtime = await _started(_CONFIG)
+    runtime = await _started(PANEL_CONFIG)
     assert isinstance(runtime.transport, LoopBoundTransport)
     await emitter_runtime.publish_tick(runtime)
     await runtime.transport.drain()
@@ -47,7 +46,7 @@ async def test_the_tree_reaches_the_broker_through_the_queue(
     topics = [t for t, _, _, _ in client.published]
 
     assert client.entered
-    assert len(topics) > 100, f"implausibly few topics for a 40-space panel: {len(topics)}"
+    assert len(topics) > 100, f"implausibly few topics for a 32-space panel: {len(topics)}"
     assert any(t.endswith("/$description") for t in topics)
     assert all(t.startswith("ebus/5/") for t in topics)
 
@@ -64,7 +63,7 @@ async def test_each_device_describes_itself_before_it_announces_ready(
     arrived. The transport's own test proves the queue preserves submission
     order; this proves the order submitted is the one Homie requires.
     """
-    runtime = await _started(_CONFIG)
+    runtime = await _started(PANEL_CONFIG)
     assert isinstance(runtime.transport, LoopBoundTransport)
     await runtime.transport.drain()
 
@@ -93,7 +92,7 @@ async def test_teardown_drains_before_closing_the_client(
     would drop exactly the message that tells consumers the producer went away,
     and the fake raises rather than letting that pass silently.
     """
-    runtime = await _started(_CONFIG)
+    runtime = await _started(PANEL_CONFIG)
     await emitter_runtime.publish_tick(runtime)
 
     await emitter_runtime.stop_clone(runtime, graceful=True)
@@ -115,7 +114,7 @@ async def test_a_relay_command_from_home_assistant_reaches_the_emitter(
 ) -> None:
     """The defect, end to end: HA published `<circuit>/switch/relay/set OPEN` and
     PanelBench subscribed to it, then never read the message."""
-    runtime = await _started(_CONFIG)
+    runtime = await _started(PANEL_CONFIG)
     assert isinstance(runtime.transport, LoopBoundTransport)
     await runtime.transport.drain()
     circuit = settable_relays(runtime)[0]
@@ -133,7 +132,7 @@ async def test_a_reconnect_restores_the_subscriptions_then_republishes_the_tree(
     """What the SDK does for a client it builds, and leaves to the caller for an
     injected one: re-subscribe, then `republish_tree`. A broker that restarted
     without persistence holds nothing until the tree is announced again."""
-    runtime = await _started(_CONFIG)
+    runtime = await _started(PANEL_CONFIG)
     assert isinstance(runtime.transport, LoopBoundTransport)
     await runtime.transport.drain()
     first = fake_broker.clients[0]

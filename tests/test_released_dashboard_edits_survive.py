@@ -24,7 +24,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.dashboard.config_store import ConfigStore
-from tests._helpers import default_config, pv_rating, rating_literal, write_config
+from tests._helpers import panel_config, pv_rating, rating_literal, write_config
 
 if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
@@ -152,7 +152,7 @@ async def test_a_template_clone_writes_the_stale_copy_out_once(
     """Cloning is a write the user asked for, so the clone holds the rating once and
     the stale copy is warned about once, not by every reader after."""
     write_config(tmp_path / "edited.yaml", _edited(name, template, watts))
-    write_config(tmp_path / "active.yaml", default_config())
+    write_config(tmp_path / "active.yaml", panel_config())
     app = create_dashboard_app(
         DashboardContext(
             config_dir=tmp_path,

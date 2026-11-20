@@ -35,7 +35,6 @@ from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.discovery import PanelAdvertiser, PanelBrowser
 from panelbench.emitter_adapter.runtime import BrokerConnection
 from panelbench.panel import PanelInstance
-from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 from panelbench.panel_secrets import SECRETS_FILENAME, PanelSecretsStore
 from panelbench.recorder import RecorderDataSource
 from panelbench.schema import HomieSchemaRegistry, load_schema, render_for_panel
@@ -223,13 +222,13 @@ class SimulatorApp:
         """Apply a fresh BESS config to the running panel for ``filename`` without
         restarting it. SOC/SOE persists across the swap. Refreshes the cached
         config hash so the reload watcher doesn't see the on-disk YAML change as
-        a restart trigger. Returns True when applied, False when no panel matches."""
+        a restart trigger. Returns True when applied, False when no panel matches
+        or the change needs a restart, which the caller then makes."""
         for path, panel in self._panels.items():
             if path.name != filename:
                 continue
-            if panel.runtime is None:
+            if panel.runtime is None or not panel.update_bess_config(bess_yaml):
                 return False
-            panel.update_bess_config(bess_yaml)
             # Refresh the cached hash so the reload watcher sees the file as
             # already-current.
             self._config_hashes[path] = _file_hash(path)
@@ -319,17 +318,19 @@ class SimulatorApp:
             broker=broker,
         )
         serial = await panel.start(
-            running={s: p.config_path for s, p in self._serial_to_panel.items()}
+            running={
+                device_id: p.config_path
+                for p in self._serial_to_panel.values()
+                for device_id in p.device_ids
+            }
         )
 
-        # Validate panel size and render schema before registering. If the
-        # panel's total_tabs is not a SPAN model size, stop the started panel
-        # cleanly so we don't leave a zombie tick task and MQTT publisher
-        # without a bootstrap HTTP server to match.
+        # Render the schema before registering, the panel's size having passed
+        # validation as it loaded. If anything here fails, stop the started panel
+        # cleanly so we don't leave a zombie tick task and MQTT publisher without a
+        # bootstrap HTTP server to match.
         try:
             total_tabs = panel.total_tabs
-            if total_tabs not in PANEL_SIZE_TO_MODEL:
-                raise KeyError(f"total_tabs {total_tabs} is not a SPAN panel size")
             # The model MQTT publishes, so mDNS cannot advertise another.
             panel_model = panel.model
             firmware = panel.firmware_version

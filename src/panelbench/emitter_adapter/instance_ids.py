@@ -20,6 +20,14 @@ axis that decides whether a user's history survives.
     PV, several   <panel>-<slug of serial or model>-<feed circuit uuid>
     MID           <bess-id>-mid
 
+except on a hardware 3.0 panel whose config numbers its circuits
+(``circuit_number``), which names them as such a panel does: by SPAN's number
+for each, ``<n>``, under the shape its release gives it (``circuit_device_id``).
+
+    Circuit       circuit-<n>, then <panel-serial>-<hex16>-1-16-<n> from 202645
+    Remote CT     remote-ct-<n>, then <panel-serial>-<hex16>-1-42-<n>
+    Lugs          <panel-serial>-<hex16>-1-21-2 upstream from 202645
+
 `devices/distribution-enclosure.md` Example 1 shows the proxied form concretely:
 `xy-0001-aaaaa-lugs-up`, `xy-0001-aaaaa-TG000000000001` (panel + the BESS's own
 serial), `xy-0001-aaaaa-pv-1`, `xy-0001-aaaaa-TG000000000001-mid`.
@@ -34,9 +42,13 @@ diverge. Both now call these functions.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
+
+from panelbench.firmware import SPAN_RELEASE_202645, panel_firmware_version, predates
+from panelbench.hardware import panel_variant
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -71,9 +83,112 @@ def stable_circuit_uuid(panel_id: str, circuit_id: str) -> str:
     return str(uuid.uuid5(_CIRCUIT_NAMESPACE, f"{panel_id}/{circuit_id}")).replace("-", "")
 
 
-def lugs_device_ids(panel_id: str) -> tuple[str, str]:
-    """Upstream and downstream lugs device ids, in that order."""
-    return f"{panel_id}-lugs-up", f"{panel_id}-lugs-dn"
+# The SPAN traits a hardware 3.0 panel numbers its devices by from release 202645,
+# `{serial}-{hex16}-1-<trait>-<n>`, as every r202645 capture publishes them.
+_CIRCUIT_TRAIT: Final = 16
+_REMOTE_CT_TRAIT: Final = 42
+_LUGS_TRAIT: Final = 21
+# Before release 202645 a numbered device is `<kind>-<n>`, under no root.
+_BEFORE_202645: Final = {_CIRCUIT_TRAIT: "circuit", _REMOTE_CT_TRAIT: "remote-ct"}
+# The variant whose panels number their devices: hardware 3.0's.
+_NUMBERING_VARIANT: Final = "span-alpha-test-b2"
+
+
+def circuit_device_id(config: Mapping[str, object], circuit: Mapping[str, object]) -> str:
+    """The device id the panel *config* describes publishes *circuit* under.
+
+    A hardware 3.0 panel names a circuit by SPAN's number for it, ``<n>``, which it
+    keeps while the id around it changes at release 202645: ``circuit-<n>``
+    before it, ``{serial}-{hex16}-1-16-<n>`` from it, as its captures show. A
+    firmware naming no release is current. Anything else keeps the hashed id
+    (``stable_circuit_uuid``): a MAIN 32, whose ids no release changes, and a
+    circuit, or a whole panel, a config records no number for, so a config written
+    before numbers publishes as it did.
+    """
+    number = _number(circuit)
+    if number is None or not _names_by_number(config):
+        return stable_circuit_uuid(_serial(config), str(circuit["id"]))
+    return _numbered_id(config, _CIRCUIT_TRAIT, number)
+
+
+def outside_meter_device_id(config: Mapping[str, object], meter: Mapping[str, object]) -> str:
+    """The device id a meter outside the panel publishes under: a remote CT's,
+    ``remote-ct-<n>`` and then ``{serial}-{hex16}-1-42-<n>``, as
+    ``circuit_device_id`` names a circuit, and hashed from its ``id`` otherwise."""
+    number = _number(meter)
+    if number is None or not _names_by_number(config):
+        return stable_circuit_uuid(_serial(config), str(meter["id"]))
+    return _numbered_id(config, _REMOTE_CT_TRAIT, number)
+
+
+def lugs_device_ids(config: Mapping[str, object]) -> tuple[str, str]:
+    """Upstream and downstream lugs device ids, in that order.
+
+    ``{serial}-lugs-up`` and ``-dn``, except on a numbered hardware 3.0 panel from
+    release 202645, whose lugs are numbered devices too: its upstream lugs are
+    ``{serial}-{hex16}-1-21-2`` in every r202645 capture. No capture shows such a
+    panel's downstream lugs, every one of them having no feedthrough, so
+    ``-1-21-1`` is a guess.
+    """
+    serial = _serial(config)
+    if _names_by_number(config) and not predates(
+        panel_firmware_version(config), SPAN_RELEASE_202645
+    ):
+        segment = device_id_hex(config)
+        return (
+            f"{serial}-{segment}-1-{_LUGS_TRAIT}-2",
+            f"{serial}-{segment}-1-{_LUGS_TRAIT}-1",  # a guess: see above
+        )
+    return f"{serial}-lugs-up", f"{serial}-lugs-dn"
+
+
+def device_id_hex(config: Mapping[str, object]) -> str:
+    """The 16-hex segment the panel's numbered devices publish under from release
+    202645: the one ``panel_config.device_id_hex`` records, or else one of the
+    panel's own, derived from its serial so it holds from one start to the next."""
+    panel = config.get("panel_config")
+    recorded = panel.get("device_id_hex") if isinstance(panel, dict) else None
+    if isinstance(recorded, str):
+        return recorded
+    return hashlib.sha256(_serial(config).encode()).hexdigest()[:16]
+
+
+def _names_by_number(config: Mapping[str, object]) -> bool:
+    """Whether *config*'s panel names its devices by number: hardware 3.0's variant,
+    with a number recorded for any of its circuits or meters outside it."""
+    if panel_variant(config) != _NUMBERING_VARIANT:
+        return False
+    return any(
+        isinstance(entry, dict) and _number(entry) is not None
+        for section in ("circuits", "outside_meters")
+        for entry in _entries(config.get(section))
+    )
+
+
+def _numbered_id(config: Mapping[str, object], trait: int, number: int) -> str:
+    if predates(panel_firmware_version(config), SPAN_RELEASE_202645):
+        return f"{_BEFORE_202645[trait]}-{number}"
+    return f"{_serial(config)}-{device_id_hex(config)}-1-{trait}-{number}"
+
+
+def _number(entry: Mapping[str, object]) -> int | None:
+    """An entry's ``circuit_number``, which validation has made a whole number."""
+    number = entry.get("circuit_number")
+    if isinstance(number, bool) or not isinstance(number, (int, float)):
+        return None
+    return int(number)
+
+
+def _entries(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
+
+
+def _serial(config: Mapping[str, object]) -> str:
+    """The serial the panel publishes as its root id."""
+    panel = config.get("panel_config")
+    if not isinstance(panel, dict):
+        raise ValueError("a panel's devices are named under its panel_config.serial_number")
+    return str(panel["serial_number"])
 
 
 def bess_device_id(panel_id: str, bess: Mapping[str, object] | None) -> str:

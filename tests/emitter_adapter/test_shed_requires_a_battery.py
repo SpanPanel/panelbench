@@ -17,7 +17,7 @@ import pytest
 
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.wire_capture import recorded_panel
-from tests._helpers import default_config, published, write_config
+from tests._helpers import panel_config, published, write_config
 
 pytestmark = pytest.mark.asyncio
 
@@ -27,7 +27,7 @@ _SHED_NODES = ("shed", "shed-forecast")
 async def test_a_panel_without_a_battery_declares_and_publishes_no_shed_nodes(
     tmp_path: Path,
 ) -> None:
-    config = default_config()
+    config = panel_config()
     config["bess"] = {"enabled": False}
     runtime, recorder = await recorded_panel(write_config(tmp_path / "no_battery.yaml", config))
     await emitter_runtime.publish_tick(runtime)

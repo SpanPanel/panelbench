@@ -1,7 +1,4 @@
-from pathlib import Path
-
 import pytest
-import yaml
 
 from panelbench.config_types import (
     BESSConfigYAML,
@@ -11,50 +8,47 @@ from panelbench.config_types import (
 )
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.spec_generator import build_manifest
-from tests._helpers import default_config
+from tests._helpers import add_second_drive, panel_config
 
-_SERIAL = "sim-40t-001"
-"""The serial `default_MAIN_40.yaml` declares.
+_SERIAL = panel_config()["panel_config"]["serial_number"]
+"""The serial `PANEL_CONFIG` declares.
 
 Named because circuit device ids are scoped to their panel, so it is now an input
 to a feed id and not only the prefix of the proxied ids below.
 """
 
 
-def _profile() -> dict:
-    """Load the default_MAIN_40 clone profile fixture."""
-    return yaml.safe_load(Path("configs/default_MAIN_40.yaml").read_text())
-
-
 def test_build_manifest_includes_panel_lugs_and_circuits() -> None:
-    manifest = build_manifest(_profile())
+    manifest = build_manifest(panel_config())
     assert len(manifest.of_class("panel")) == 1
     assert len(manifest.of_class("lugs")) == 2
     assert len(manifest.of_class("circuit")) > 0
 
 
 def test_build_manifest_includes_bess_when_enabled() -> None:
-    profile = _profile()
-    if profile.get("bess", {}).get("enabled"):
+    profile = panel_config()
+    if (profile.get("bess") or {}).get("enabled"):
         manifest = build_manifest(profile)
         assert len(manifest.of_class("bess")) == 1
     else:
-        pytest.skip("default_MAIN_40 has no enabled BESS")
+        pytest.skip("the panel config has no enabled BESS")
 
 
 def test_build_manifest_derives_pv_and_evse_from_device_type_templates() -> None:
-    manifest = build_manifest(_profile())
+    profile = panel_config()
+    add_second_drive(profile)
+    manifest = build_manifest(profile)
 
     pv = manifest.of_class("pv")[0]
-    assert pv.instance_id == "sim-40t-001-pv-1"
+    assert pv.instance_id == f"{_SERIAL}-pv-1"
     assert pv.metadata["feed"] == stable_circuit_uuid(_SERIAL, "solar_inverter")
     assert pv.metadata["relative-position"] == "IN_PANEL"
 
     evse = manifest.of_class("evse")[0]
-    assert evse.instance_id == "sim-40t-001-sim-evse-sim-40t-001"
+    assert evse.instance_id == f"{_SERIAL}-sim-evse-{_SERIAL}"
     assert evse.metadata["feed"] == stable_circuit_uuid(_SERIAL, "span_drive_garage")
     assert len(manifest.of_class("evse")) == 2
-    assert manifest.of_class("evse")[1].instance_id == "sim-40t-001-sim-evse-sim-40t-001-2"
+    assert manifest.of_class("evse")[1].instance_id == f"{_SERIAL}-sim-evse-{_SERIAL}-2"
     assert manifest.of_class("evse")[1].metadata["feed"] == stable_circuit_uuid(
         _SERIAL,
         "span_drive_driveway",
@@ -140,7 +134,7 @@ def test_circuit_metadata_includes_physics_keys() -> None:
         },
         "circuits": [
             {"id": "kitchen", "name": "Kitchen", "template": "lighting", "tabs": [1]},
-            {"id": "hvac", "name": "HVAC", "template": "lighting", "tabs": [3, 4]},
+            {"id": "hvac", "name": "HVAC", "template": "lighting", "tabs": [3, 5]},
         ],
     }
     manifest = build_manifest(profile)
@@ -157,7 +151,7 @@ def test_circuit_metadata_includes_physics_keys() -> None:
     assert kitchen.metadata["always-on"] == "false"
 
     hvac = by_name["HVAC"]
-    assert hvac.metadata["tab-numbers"] == "3,4"
+    assert hvac.metadata["tab-numbers"] == "3,5"
 
 
 def test_bess_metadata_includes_physics_keys() -> None:
@@ -250,8 +244,8 @@ def _one_circuit_profile(
     template: CircuitTemplateExtended | None = None,
     circuit: CircuitDefinitionExtended | None = None,
 ) -> SimulationConfig:
-    """The shipped MAIN 40, reduced to one circuit and no battery, to change in place."""
-    config = default_config()
+    """`PANEL_CONFIG`, reduced to one circuit and no battery, to change in place."""
+    config = panel_config()
     config["panel_config"]["serial_number"] = "abc-123"
     config["circuit_templates"] = {"t": template or _template()}
     config["circuits"] = [circuit or _circuit()]

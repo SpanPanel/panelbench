@@ -32,11 +32,11 @@ from panelbench.emitter_adapter.definition import (
 )
 from panelbench.emitter_adapter.wire_capture import capture_retained
 from panelbench.validation import validate_yaml_config
-from tests._helpers import DEFAULT_CONFIG, EARLIER_FIRMWARE, default_config, write_config
+from tests._helpers import EARLIER_FIRMWARE, PANEL_CONFIG, panel_config, write_config
 
 
 def _definition() -> PanelDefinition:
-    return build_definition(default_config())
+    return build_definition(panel_config())
 
 
 async def _runs(config: dict[str, object], tmp_path: Path) -> None:
@@ -66,7 +66,12 @@ def test_battery_dispatch_comes_from_the_definition() -> None:
 def test_the_starting_charge_is_the_manifests() -> None:
     """The emitter seeds the battery from the manifest's `initial-soe-kwh`, not from
     `BESSConfig.initial_soc_pct`, so the import must keep the manifest's value."""
-    definition = _definition()
+    config = panel_config()
+    source = config.get("bess")
+    assert source is not None
+    # The template seeds no charge, so its copy states one, half full, for the manifest.
+    source["initial_soe_kwh"] = source["nameplate_capacity_kwh"] / 2
+    definition = build_definition(config)
     seeded = ManifestPhysicsView(definition.manifest).bess(definition.bess_configs[0].instance_id)
     assert seeded.initial_soe_kwh is not None
     battery = dataclasses.replace(definition.bess_configs[0], initial_soc_pct=90.0)
@@ -130,9 +135,10 @@ def test_a_battery_config_naming_no_battery_device_is_refused() -> None:
 
 def test_dispatch_yaml_inverts_bess_config() -> None:
     battery = _definition().bess_configs[0]
+    serial = panel_config()["panel_config"]["serial_number"]
 
     rebuilt = bess_config(
-        "sim-40t-001", {"enabled": True, **bess_dispatch_yaml(battery, _definition().manifest)}
+        serial, {"enabled": True, **bess_dispatch_yaml(battery, _definition().manifest)}
     )
 
     assert rebuilt is not None
@@ -148,7 +154,7 @@ def test_dispatch_yaml_inverts_bess_config() -> None:
 
 
 def test_shed_yaml_inverts_load_shedding_config() -> None:
-    panel = default_config()["panel_config"]
+    panel = panel_config()["panel_config"]
     shed = LoadSheddingConfig(soc_threshold_pct=37.0)
 
     panel["soc_shed_threshold"] = load_shedding_yaml(shed)["soc_shed_threshold"]
@@ -159,7 +165,7 @@ def test_shed_yaml_inverts_load_shedding_config() -> None:
 @pytest.mark.asyncio
 async def test_a_masked_capture_imports(tmp_path: Path) -> None:
     """Upstream's capture masks by default, so the panel's id is not its serial."""
-    retained = await capture_retained(DEFAULT_CONFIG)
+    retained = await capture_retained(PANEL_CONFIG)
     definition, _notes = definition_from_tree(
         tree_from_retained({t: p.decode() for t, p in retained.items()}), variant="span"
     )
@@ -175,7 +181,7 @@ async def test_a_masked_capture_imports(tmp_path: Path) -> None:
 def dashboard_app(tmp_path: Path) -> web.Application:
     cfg_dir = tmp_path / "cfg"
     cfg_dir.mkdir()
-    write_config(cfg_dir / "panel.yaml", default_config())
+    write_config(cfg_dir / "panel.yaml", panel_config())
     ctx = DashboardContext(
         config_dir=cfg_dir,
         config_filter="panel.yaml",
@@ -215,7 +221,7 @@ async def test_an_import_is_unsaved_until_saved(
 ) -> None:
     """The imported config exists nowhere on disk, so leaving it must prompt."""
     if kind == "config":
-        text = DEFAULT_CONFIG.read_text(encoding="utf-8")
+        text = PANEL_CONFIG.read_text(encoding="utf-8")
     else:
         path = tmp_path / "upload.definition.yaml"
         dump_definition(_definition(), path)
@@ -258,8 +264,8 @@ async def test_a_pre_202639_definition_with_a_commissioned_circuit_is_a_400(
     Validation refuses that pair, and the endpoint says why, rather than
     import a lock the definition's own release never published.
     """
-    config = default_config()
-    solar = config["circuit_templates"]["solar"]
+    config = panel_config()
+    solar = config["circuit_templates"]["solar_production"]
     solar["priority"] = "NEVER"
     solar["relay_behavior"] = "non_controllable"
     solar["commissioned_system"] = "pv"

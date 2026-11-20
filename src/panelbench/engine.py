@@ -25,7 +25,6 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from panelbench.behavior_mutable_state import BehaviorEngineMutableState
 from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
@@ -34,6 +33,8 @@ from panelbench.exceptions import SimulationConfigurationError
 from panelbench.inverter import template_is_hybrid
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from ebus_panel_sim import BESSCommunication, BESSDevice
 
     from panelbench.config_types import (
@@ -66,6 +67,8 @@ class EngineTick:
     """Signed instant power per circuit, keyed by emitter instance id."""
     bess_link: BESSCommunication
     """The requested health of the panel's link to its battery."""
+    bess_pv_w: float
+    """What a hybrid battery's own array produces, in watts, positive; 0 for any other."""
 
 
 # ---------------------------------------------------------------------------
@@ -80,15 +83,11 @@ class RealisticBehaviorEngine:
 
     def __init__(
         self,
-        simulation_start_time: float,
         config: SimulationConfig,
         recorder: RecorderDataSource | None = None,
     ) -> None:
-        self._start_time = simulation_start_time
         self._config = config
         self._recorder = recorder
-        self._circuit_cycle_states: dict[str, dict[str, Any]] = {}
-        self._grid_offline: bool = False
         self._tz = self._resolve_timezone(config)
 
     # ------------------------------------------------------------------
@@ -134,29 +133,8 @@ class RealisticBehaviorEngine:
         """Return a timezone-aware datetime at the panel's location."""
         return datetime.fromtimestamp(timestamp, tz=self._tz)
 
-    def set_grid_offline(self, offline: bool) -> None:
-        """Propagate grid state so battery behaviour overrides schedules."""
-        self._grid_offline = offline
-
-    def capture_mutable_state(self) -> BehaviorEngineMutableState:
-        """Return a deep snapshot of tick-local mutable fields."""
-        return BehaviorEngineMutableState(
-            circuit_cycle_states=copy.deepcopy(self._circuit_cycle_states),
-            grid_offline=self._grid_offline,
-        )
-
-    def restore_mutable_state(self, state: BehaviorEngineMutableState) -> None:
-        """Restore fields previously captured with :meth:`capture_mutable_state`."""
-        self._circuit_cycle_states = copy.deepcopy(state.circuit_cycle_states)
-        self._grid_offline = state.grid_offline
-
-    def copy_mutable_state_from(self, other: RealisticBehaviorEngine) -> None:
-        """Replace this engine's mutable tick state with a copy of *other*'s."""
-        self.restore_mutable_state(other.capture_mutable_state())
-
     def get_circuit_power(
         self,
-        circuit_id: str,
         template: CircuitTemplateExtended,
         current_time: float,
         relay_state: str = "CLOSED",
@@ -164,7 +142,13 @@ class RealisticBehaviorEngine:
         modeling_recorder_baseline: bool = False,
         modeling_deterministic: bool = False,
     ) -> float:
-        """Get realistic power for a circuit based on its template and current conditions."""
+        """Get realistic power for a circuit based on its template and current conditions.
+
+        The behaviour engine keeps no state between calls, so any caller may share
+        one. Besides its arguments it reads the config, the recorder and the
+        process-wide weather cache, and, unless *modeling_deterministic*, draws its
+        noise from ``random``.
+        """
         if relay_state == "OPEN":
             return 0.0
 
@@ -178,7 +162,6 @@ class RealisticBehaviorEngine:
             return rec
 
         return self._synthetic_circuit_power(
-            circuit_id,
             template,
             current_time,
             stochastic_noise=not modeling_deterministic,
@@ -217,7 +200,6 @@ class RealisticBehaviorEngine:
 
     def _synthetic_circuit_power(
         self,
-        circuit_id: str,
         template: CircuitTemplateExtended,
         current_time: float,
         *,
@@ -247,9 +229,7 @@ class RealisticBehaviorEngine:
 
         # Apply cycling behavior
         if "cycling_pattern" in template:
-            base_power = self._apply_cycling_behavior(
-                circuit_id, base_power, template, current_time
-            )
+            base_power = self._apply_cycling_behavior(base_power, template, current_time)
 
         # Apply smart behavior
         if template.get("smart_behavior", {}).get("responds_to_grid", False):
@@ -319,6 +299,11 @@ class RealisticBehaviorEngine:
             return base_power * 0.3
         return base_power
 
+    def solar_output_w(self, nameplate_w: float, timestamp: float) -> float:
+        """What an array rated *nameplate_w* produces at *timestamp*, in watts, by the
+        panel's location and weather, as a PV circuit's does."""
+        return self._apply_solar_day_night_cycle(nameplate_w, timestamp)
+
     def _apply_solar_day_night_cycle(self, base_power: float, current_time: float) -> float:
         """Apply solar day/night cycle using geographic sine model + weather."""
         lat = self._config["panel_config"].get("latitude", 37.7)
@@ -367,7 +352,6 @@ class RealisticBehaviorEngine:
 
     def _apply_cycling_behavior(
         self,
-        circuit_id: str,
         base_power: float,
         template: CircuitTemplateExtended,
         current_time: float,
@@ -383,6 +367,10 @@ class RealisticBehaviorEngine:
         ``duty_cycle``, cycling is skipped because the hour_factors
         already incorporate the on/off behaviour from historical
         observations.  Applying duty_cycle on top would double-count.
+
+        The phase is the simulated time's position in the cycle, counted from
+        the epoch, so a load reads the same at a simulated moment however and
+        whenever the run began, live and in the Model view.
         """
         cycling = template.get("cycling_pattern", {})
 
@@ -406,15 +394,7 @@ class RealisticBehaviorEngine:
         cycle_length = on_duration + off_duration
         if cycle_length <= 0:
             return base_power
-        cycle_position = (current_time - self._start_time) % cycle_length
-
-        if circuit_id not in self._circuit_cycle_states:
-            self._circuit_cycle_states[circuit_id] = {
-                "last_cycle_start": self._start_time,
-                "is_on": True,
-            }
-
-        is_on_phase = cycle_position < on_duration
+        is_on_phase = current_time % cycle_length < on_duration
         return base_power if is_on_phase else 0.0
 
     def _apply_smart_behavior(
@@ -618,6 +598,9 @@ class DynamicSimulationEngine:
         self._clock = SimulationClock()
         self._behavior_engine: RealisticBehaviorEngine | None = None
         self._circuits: dict[str, SimulatedCircuit] = {}
+        # Each circuit's published device id, by its config id: named once the serial
+        # is final, as the panel names it (`instance_ids.circuit_device_id`).
+        self._device_ids: dict[str, str] = {}
         self._energy_system: EnergySystem | None = None
 
         # Dynamic overrides (dispatched to circuits)
@@ -661,7 +644,6 @@ class DynamicSimulationEngine:
 
             self._initialize_tab_synchronizations()
             self._behavior_engine = RealisticBehaviorEngine(
-                self._clock.real_start_time,
                 self._config,
                 recorder=self._recorder,
             )
@@ -735,13 +717,17 @@ class DynamicSimulationEngine:
         if not self._config or not self._behavior_engine:
             raise SimulationConfigurationError("Configuration and behavior engine required")
 
+        from panelbench.emitter_adapter.instance_ids import circuit_device_id
+
         self._circuits = {}
+        self._device_ids = {}
         for circuit_def in self._config["circuits"]:
             template_name = circuit_def["template"]
             template = self._config["circuit_templates"][template_name]
             self._circuits[circuit_def["id"]] = SimulatedCircuit(
                 circuit_def, template, self._behavior_engine
             )
+            self._device_ids[circuit_def["id"]] = circuit_device_id(self._config, circuit_def)
 
     # ------------------------------------------------------------------
     # Clock delegation (preserves public API)
@@ -774,11 +760,8 @@ class DynamicSimulationEngine:
 
         The deterministic path the what-if model takes for its After pass: the
         circuit's template at *ts*, with no noise and no recorder baseline, so a
-        producer scales with its rating. Read-only: the behaviour engine's
-        tick-local state, such as a cycling circuit's phase, is restored after.
-
-        Call it on the engine's event loop. It is not thread-safe: from another
-        thread mid-tick, the restore would undo that tick's cycle updates.
+        producer scales with its rating. Read-only: the behaviour engine keeps no
+        state between calls, and a cycling circuit's phase follows *ts*.
 
         Raises:
             KeyError: the panel has no circuit *circuit_id*.
@@ -789,13 +772,9 @@ class DynamicSimulationEngine:
             raise RuntimeError("The engine is not initialised")
         if circuit_id not in self._circuits:
             raise KeyError(circuit_id)
-        checkpoint = behavior.capture_mutable_state()
-        try:
-            powers = self._collect_circuit_powers_at_ts(
-                ts, behavior, {circuit_id}, use_recorder_baseline=False
-            )
-        finally:
-            behavior.restore_mutable_state(checkpoint)
+        powers = self._collect_circuit_powers_at_ts(
+            ts, behavior, {circuit_id}, use_recorder_baseline=False
+        )
         return powers[circuit_id]
 
     # ------------------------------------------------------------------
@@ -810,8 +789,6 @@ class DynamicSimulationEngine:
     def set_grid_online(self, online: bool) -> None:
         """Force the grid online or offline."""
         self._forced_grid_offline = not online
-        if self._behavior_engine is not None:
-            self._behavior_engine.set_grid_offline(not online)
 
     @property
     def bess_link(self) -> BESSCommunication:
@@ -998,8 +975,6 @@ class DynamicSimulationEngine:
         if not self._config:
             raise SimulationConfigurationError("Configuration not loaded")
 
-        from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
-
         current_time = self._clock.current_time
         for _cid, circuit in self._circuits.items():
             # Tab-sync grouping currently has no override path — the
@@ -1011,19 +986,67 @@ class DynamicSimulationEngine:
         # Apply the v0.3.0 sign convention: producers (PV) report negative
         # power; consumers report positive. SimulatedCircuit stores magnitudes
         # only; the energy_mode tells direction.
-        panel_id = self.serial_number
         circuit_powers: dict[str, float] = {}
         for cid, circuit in self._circuits.items():
+            # A virtual device is modelled but never published, so the emitter has no
+            # circuit to give its power to (`virtual_devices`).
+            if not circuit.on_the_panel:
+                continue
             mag = circuit.instant_power_w
             signed = -mag if circuit.energy_mode == "producer" else mag
-            circuit_powers[stable_circuit_uuid(panel_id, cid)] = signed
+            circuit_powers[self._device_ids[cid]] = signed
 
         return EngineTick(
             current_time=current_time,
             grid_online=self.grid_online,
             circuits=circuit_powers,
             bess_link=self._bess_link,
+            bess_pv_w=self._hybrid_array_w(self._config, current_time),
         )
+
+    def _baseline_array_config(
+        self, baseline: Mapping[str, object] | None
+    ) -> Mapping[str, object] | None:
+        """The config the Before pass takes a hybrid battery's array from.
+
+        The baseline's, or the live config's where there is none. A clone writes a
+        hybrid battery with no array rating, since a panel publishes none, so where
+        the baseline's hybrid battery has none and the live one is rated, rating it
+        filled in what the panel has: the Before pass takes the live rating too.
+        """
+        if not baseline:
+            return self._config
+        bess = baseline.get("bess")
+        live = self._config.get("bess") if self._config else None
+        if (
+            isinstance(bess, dict)
+            and bess.get("inverter_type") == "hybrid"
+            and "pv_array" not in bess
+            and isinstance(live, dict)
+            and live.get("inverter_type") == "hybrid"
+            and "pv_array" in live
+        ):
+            return {**baseline, "bess": {**bess, "pv_array": live["pv_array"]}}
+        return baseline
+
+    def _hybrid_array_w(self, config: Mapping[str, object] | None, ts: float) -> float:
+        """What the hybrid battery *config* describes takes from its own array at *ts*,
+        in watts, positive: 0 for a battery that is off, not hybrid, or has no rated
+        array."""
+        behavior = self._behavior_engine
+        bess = config.get("bess") if config is not None else None
+        if (
+            behavior is None
+            or not isinstance(bess, dict)
+            or not bess.get("enabled")
+            or bess.get("inverter_type") != "hybrid"
+        ):
+            return 0.0
+        array = bess.get("pv_array")
+        nameplate = (
+            float(array.get("nameplate_capacity_w", 0.0)) if isinstance(array, dict) else 0.0
+        )
+        return behavior.solar_output_w(nameplate, ts) if nameplate > 0 else 0.0
 
     # ------------------------------------------------------------------
     # Modeling computation
@@ -1048,7 +1071,6 @@ class DynamicSimulationEngine:
         for cid in circuit_ids:
             circuit = self._circuits[cid]
             power = behavior.get_circuit_power(
-                cid,
                 circuit.template,
                 ts,
                 modeling_recorder_baseline=use_recorder_baseline,
@@ -1127,20 +1149,9 @@ class DynamicSimulationEngine:
         if not timestamps:
             return {"error": "No recorder data available"}
 
-        # Clone behaviour engine for read-only pass.
-        # Cannot deepcopy the entire object because _recorder holds a
-        # HistoryProvider reference that contains unpicklable sockets.
-        # Instead, construct a fresh engine sharing the read-only fields
-        # (config, recorder, timezone) and deepcopy only the mutable state.
-        cloned_behavior: RealisticBehaviorEngine | None = None
-        if self._behavior_engine is not None:
-            be = self._behavior_engine
-            cloned_behavior = RealisticBehaviorEngine(
-                simulation_start_time=be._start_time,
-                config=be._config,
-                recorder=be._recorder,
-            )
-            cloned_behavior.copy_mutable_state_from(be)
+        # The live behaviour engine serves both passes: it keeps no state between
+        # calls, so reading it changes nothing the panel publishes.
+        behavior = self._behavior_engine
 
         # Partition circuits: baseline set (recorder-backed) vs full set
         baseline_circuit_ids = {
@@ -1159,7 +1170,7 @@ class DynamicSimulationEngine:
         )
         after_energy_system = self._build_energy_system()
 
-        if cloned_behavior is None or after_energy_system is None:
+        if behavior is None or after_energy_system is None:
             return {"error": "Simulation not initialised"}
 
         # Modeling-only BESS dispatchers — isolated from the live emitter's
@@ -1180,18 +1191,17 @@ class DynamicSimulationEngine:
         circuit_arrays_after: dict[str, list[float]] = {cid: [] for cid in self._circuits}
 
         for ts in timestamps:
-            # Restore mutable state between passes so cycling
-            # bookkeeping does not cross-contaminate.
-            modeling_checkpoint = cloned_behavior.capture_mutable_state()
-
             # --- Before pass: only recorder-backed circuits ---
             powers_b = self._collect_circuit_powers_at_ts(
                 ts,
-                cloned_behavior,
+                behavior,
                 baseline_circuit_ids,
                 use_recorder_baseline=True,
             )
             inputs_b = self._powers_to_energy_inputs(powers_b)
+            # A hybrid battery's own array, booked as the emitter books its PV: in the
+            # solar, in what the battery's dispatch sees, and off the grid.
+            array_b = self._hybrid_array_w(self._baseline_array_config(baseline_config), ts)
             if before_energy_system is not None:
                 state_b = before_energy_system.tick(ts, inputs_b)
                 pre_grid_before = state_b.grid_power_w
@@ -1204,35 +1214,35 @@ class DynamicSimulationEngine:
                 current_time=ts,
                 grid_online=True,
                 load_demand_w=inputs_b.load_demand_w,
-                pv_available_w=inputs_b.pv_available_w,
+                pv_available_w=inputs_b.pv_available_w + array_b,
             )
-            grid_before = pre_grid_before - batt_before
-
-            cloned_behavior.restore_mutable_state(modeling_checkpoint)
+            grid_before = pre_grid_before - batt_before - array_b
+            pv_before += array_b
 
             # --- After pass: all current circuits ---
             powers_a = self._collect_circuit_powers_at_ts(
                 ts,
-                cloned_behavior,
+                behavior,
                 all_circuit_ids,
                 use_recorder_baseline=False,
             )
             inputs_a = self._powers_to_energy_inputs(powers_a)
 
             state_a = after_energy_system.tick(ts, inputs_a)
+            array_a = self._hybrid_array_w(self._config, ts)
             batt_after = _bess_dispatch(
                 after_bess,
                 current_time=ts,
                 grid_online=True,
                 load_demand_w=inputs_a.load_demand_w,
-                pv_available_w=inputs_a.pv_available_w,
+                pv_available_w=inputs_a.pv_available_w + array_a,
             )
-            grid_after = state_a.grid_power_w - batt_after
+            grid_after = state_a.grid_power_w - batt_after - array_a
 
             site_power_arr.append(round(grid_before, 1))
             pv_before_arr.append(round(pv_before, 1))
             grid_power_arr.append(round(grid_after, 1))
-            pv_after_arr.append(round(state_a.pv_power_w, 1))
+            pv_after_arr.append(round(state_a.pv_power_w + array_a, 1))
             battery_power_arr.append(round(batt_after, 1))
             battery_before_arr.append(round(batt_before, 1))
 
@@ -1249,7 +1259,7 @@ class DynamicSimulationEngine:
                 "power_before": circuit_arrays_before[cid],
             }
 
-        tz_str = str(cloned_behavior.panel_timezone)
+        tz_str = str(behavior.panel_timezone)
 
         return {
             "horizon_start": int(horizon_start),

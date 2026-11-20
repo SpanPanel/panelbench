@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import pytest
 import yaml
@@ -777,6 +777,13 @@ def _sharing(device_id: str, name: str, peer: str) -> DiscoveredDevice:
     return circuit
 
 
+# Each meter register a circuit publishes, and the seed a clone writes it to.
+_REGISTERS: Final = [
+    pytest.param("exported-energy", "initial_consumed_energy_wh", id="consumed"),
+    pytest.param("imported-energy", "initial_produced_energy_wh", id="produced"),
+]
+
+
 class TestCircuitsSharingASpace:
     """Two circuits on one space, as circuits sharing a meter are, stay two circuits."""
 
@@ -800,15 +807,59 @@ class TestCircuitsSharingASpace:
         assert outlets["shared_with"] == ["circuit_44"]
         validate_yaml_config(config)
 
-    def test_a_refresh_updates_each_ones_own_energy(self) -> None:
+    def _seeds(self, config: dict[str, object], seed: str) -> dict[str, object]:
+        templates = _templates(config)
+        return {
+            name: templates[name]["energy_profile"].get(seed)
+            for name in ("clone_44", "clone_44_2")
+        }
+
+    @pytest.mark.parametrize(("register", "seed"), _REGISTERS)
+    def test_a_tandem_read_a_moment_apart_is_cloned_with_its_one_register(
+        self, register: str, seed: str
+    ) -> None:
+        """Its circuits publish its one meter's register, each read a moment apart, so
+        each takes the largest, as the emitter's capture does: the emitter refuses
+        circuits on one breaker whose seeds differ."""
+        devices = self._devices()
+        devices["fff666"].update_property("meter", register, "1000.5")
+        devices["fff777"].update_property("meter", register, "1000.0")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert self._seeds(config, seed) == {"clone_44": 1000.5, "clone_44_2": 1000.5}
+        validate_yaml_config(config)
+
+    @pytest.mark.parametrize(("register", "seed"), _REGISTERS)
+    def test_a_refresh_writes_the_breaker_s_one_register_to_each_circuit(
+        self, register: str, seed: str
+    ) -> None:
         devices = self._devices()
         config = translate_scraped_panel(_make_scraped(devices))
-        devices["fff777"].update_property("meter", "exported-energy", "777.0")
+        devices["fff777"].update_property("meter", register, "777.0")
 
         assert update_config_from_scrape(config, _make_scraped(devices))
 
-        energy = _templates(config)["clone_44_2"]["energy_profile"]
-        assert energy["initial_consumed_energy_wh"] == 777.0
+        assert self._seeds(config, seed) == {"clone_44": 777.0, "clone_44_2": 777.0}
+        validate_yaml_config(config)
+
+    def test_a_refresh_missing_one_circuit_of_a_tandem_still_gives_both_its_register(
+        self,
+    ) -> None:
+        """A partial scrape reads the breaker's one meter through the circuit it has,
+        which is the other's register too."""
+        devices = self._devices()
+        config = translate_scraped_panel(_make_scraped(devices))
+        del devices["fff777"]
+        devices["fff666"].update_property("meter", "exported-energy", "900.0")
+
+        assert update_config_from_scrape(config, _make_scraped(devices))
+
+        assert self._seeds(config, "initial_consumed_energy_wh") == {
+            "clone_44": 900.0,
+            "clone_44_2": 900.0,
+        }
+        validate_yaml_config(config)
 
     def test_sharing_with_no_other_circuit_is_refused(self) -> None:
         config = translate_scraped_panel(_make_scraped(self._devices()))
@@ -931,7 +982,12 @@ class TestCircuitsSharingASpace:
         is on the breaker even where its own list is missing, and the clone loads."""
         devices = self._devices()
         devices["fff777"] = _circuit(
-            "fff777", "Bedroom Outlets", "44", rating="20", priority="NEVER", active_power="0.0"
+            "fff777",
+            "Bedroom Outlets",
+            "44",
+            rating="20",
+            priority="NICE_TO_HAVE",
+            active_power="0.0",
         )
 
         config = translate_scraped_panel(_make_scraped(devices))
@@ -1109,16 +1165,32 @@ class TestPanelSize:
     """The panel's size is the model it publishes, not its highest occupied space."""
 
     def test_the_model_names_the_size(self) -> None:
-        """A MAIN 40 whose circuits stop at space 17 is still a 40-space panel."""
+        """A MAIN 32 whose circuits stop at space 17 is still a 32-space panel."""
+        devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_32")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 32
+        assert config["unmapped_tabs"] == [
+            t for t in range(1, 33) if t not in {1, 3, 5, 7, 9, 11, 13, 15, 17}
+        ]
+        validate_yaml_config(config)
+
+    def test_a_model_numbered_from_9_is_sized_to_its_last_position(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A MAIN 40 numbers its spaces 9 to 48, so its clone takes 48 spaces and lists
+        none below 9 as unmapped. These circuits on 1 to 7 sit outside those spaces,
+        which the clone says, since the MAIN 40's positions are an inference."""
         devices = _base_devices()
         devices[_SERIAL].update_property("info", "model", "MAIN_40")
 
         config = translate_scraped_panel(_make_scraped(devices))
 
-        assert _panel_config(config)["total_tabs"] == 40
-        assert config["unmapped_tabs"] == [
-            t for t in range(1, 41) if t not in {1, 3, 5, 7, 9, 11, 13, 15, 17}
-        ]
+        assert _panel_config(config)["total_tabs"] == 48
+        assert config["unmapped_tabs"] == [t for t in range(9, 49) if t not in {9, 11, 13, 15, 17}]
+        assert "whose spaces are 9 to 48, but has circuits on 1, 3, 5, 7" in caplog.text
         validate_yaml_config(config)
 
     def test_the_model_itself_is_kept(self) -> None:
@@ -1146,13 +1218,26 @@ class TestPanelSize:
     ) -> None:
         """A size the circuits do not fit in would make a clone the panel refuses."""
         devices = _base_devices()
+        devices[_SERIAL].update_property("info", "model", "MAIN_8")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert _panel_config(config)["total_tabs"] == 24
+        assert "MAIN_8" in caplog.text
+        validate_yaml_config(config)
+
+    def test_a_main_16_is_sized_to_its_last_position_without_resizing_from_its_circuits(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A MAIN 16's spaces run to 24, so circuits up to 17 fit its model's size. These
+        on 1 to 7 sit outside its spaces, which is warned of separately."""
+        devices = _base_devices()
         devices[_SERIAL].update_property("info", "model", "MAIN_16")
 
         config = translate_scraped_panel(_make_scraped(devices))
 
         assert _panel_config(config)["total_tabs"] == 24
-        assert "MAIN_16" in caplog.text
-        validate_yaml_config(config)
+        assert "sizing the clone from its circuits" not in caplog.text
 
 
 class TestPanelSiteValues:

@@ -21,10 +21,10 @@ from panelbench.firmware import SPAN_RELEASE_202639, predates
 from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    default_config,
     discharging_bess_meter,
     name_firmware,
     night_panel,
+    panel_config,
 )
 
 if TYPE_CHECKING:
@@ -37,14 +37,14 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _ticked(tmp_path: Path, firmware: str) -> tuple[CloneRuntime, RecordingTransport]:
-    """The default panel at *firmware*, at night, after one tick."""
-    config = default_config()
+    """The working panel at *firmware*, at night, after one tick."""
+    config = panel_config()
     name_firmware(config, firmware)
     return await night_panel(tmp_path / "panel.yaml", config)
 
 
 async def _discharging_bess_meter(tmp_path: Path, firmware: str) -> float:
-    """The BESS meter's `active-power` of the default panel at *firmware*, discharging."""
+    """The BESS meter's `active-power` of the working panel at *firmware*, discharging."""
     return discharging_bess_meter(*await _ticked(tmp_path, firmware))
 
 

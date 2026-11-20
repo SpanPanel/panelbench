@@ -26,10 +26,10 @@ import yaml
 from ebus_panel_sim import Emitter, SetterRegistry, TickInputs
 
 from panelbench.emitter_adapter.spec_generator import build_manifest
+from tests._helpers import PANEL_CONFIG
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _SCHEMA = _ROOT / "src/panelbench/data/homie_schema.json"
-_CONFIG = _ROOT / "configs/default_MAIN_40.yaml"
 
 
 class _Transport:
@@ -64,7 +64,7 @@ def _rest_data_model_version() -> str | None:
 
 def _mqtt_data_model_version() -> str | None:
     """What the panel device publishes on ``info/data-model-version``."""
-    config = yaml.safe_load(_CONFIG.read_text())
+    config = yaml.safe_load(PANEL_CONFIG.read_text())
     transport = _Transport()
     emitter = Emitter(build_manifest(config), SetterRegistry(), mqttc=transport)
     emitter.start()

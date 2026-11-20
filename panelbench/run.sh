@@ -74,15 +74,18 @@ mkdir -p "${CONFIG_DIR}"
 
 # Lay the shipped configs into the config directory.
 #
-# The `default_*` templates belong to PanelBench: the dashboard refuses to save,
+# The `ref_*` templates belong to PanelBench: the dashboard refuses to save,
 # delete or rename them, so a copy here can only ever be one a release laid
-# down. They are refreshed on every start. Seeding them only where they were
-# missing left an upgraded install on the previous release's copy, and a template
-# that names no SPAN firmware release publishes the newest release's conventions,
-# so the old copy silently changed what the panel published.
+# down. The image ships only the tracked, hand-written ones -- the start builds
+# the rest from the emitter's reference captures -- and they are refreshed on
+# every start. Seeding them only where they were missing left an upgraded
+# install on the previous release's copy, and a template that names no SPAN
+# firmware release publishes the newest release's conventions, so the old copy
+# silently changed what the panel published.
 #
-# Every other file here is the user's -- clones live in this directory -- so it is
-# never touched. Any other shipped file is seeded once, where it is missing.
+# Every other file here is the user's -- clones live in this directory, and so
+# does any `default_*` template an earlier release laid down -- so it is never
+# touched. Any other shipped file is seeded once, where it is missing.
 seed_configs() {
     local shipped_dir="$1" config_dir="$2" src name dest
     for src in "${shipped_dir}"/*.yaml "${shipped_dir}"/*.yml; do
@@ -92,7 +95,7 @@ seed_configs() {
         if [ ! -f "${dest}" ]; then
             cp "${src}" "${dest}"
             echo "Seeded config: ${name}"
-        elif [[ "${name}" == default_* ]] && ! cmp -s "${src}" "${dest}"; then
+        elif [[ "${name}" == ref_* ]] && ! cmp -s "${src}" "${dest}"; then
             cp "${src}" "${dest}"
             echo "Refreshed shipped template: ${name}"
         fi

@@ -48,18 +48,16 @@ circuit_templates:
     breaker_rating: 20
     energy_profile:
       mode: consumer
-      power_range:
-        min: 50
-        max: 150
+      power_range: [50, 150]
+      typical_power: 100
   dishwasher:
     relay_behavior: controllable
     priority: NEVER
     breaker_rating: 20
     energy_profile:
       mode: consumer
-      power_range:
-        min: 50
-        max: 150
+      power_range: [50, 150]
+      typical_power: 100
   backup_system:
     relay_behavior: non_controllable
     priority: NEVER
@@ -67,9 +65,8 @@ circuit_templates:
     breaker_rating: 20
     energy_profile:
       mode: consumer
-      power_range:
-        min: 50
-        max: 150
+      power_range: [50, 150]
+      typical_power: 100
 circuits:
 - id: pool_pump
   name: Pool Pump

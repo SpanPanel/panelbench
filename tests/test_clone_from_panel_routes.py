@@ -26,8 +26,8 @@ from panelbench.scraper import ScrapedPanel, registered_client_name
 from tests._fake_span_panel import FakeSpanPanel, install_fake_scrape, running
 from tests._helpers import (
     CAPTURED_MAIN_32_SERIAL,
-    default_config,
     discovered_from_tree,
+    panel_config,
     write_config,
 )
 
@@ -106,9 +106,9 @@ async def test_a_clone_keeps_the_panels_time_zone_over_home_assistants(
             headers=_HTMX,
         )
 
-    panel_config = yaml.safe_load((tmp_path / _CLONE).read_text(encoding="utf-8"))["panel_config"]
-    assert (panel_config["latitude"], panel_config["longitude"]) == (39.74, -104.99)
-    assert panel_config["time_zone"] == "America/Los_Angeles"
+    placed = yaml.safe_load((tmp_path / _CLONE).read_text(encoding="utf-8"))["panel_config"]
+    assert (placed["latitude"], placed["longitude"]) == (39.74, -104.99)
+    assert placed["time_zone"] == "America/Los_Angeles"
 
 
 @pytest.mark.asyncio
@@ -193,7 +193,7 @@ async def test_an_imported_config_drops_its_passphrase_from_everything_written(
 ) -> None:
     """A clone written before the store existed, imported: the passphrase moves to
     the store, and neither an export nor a save carries it again."""
-    config = default_config()
+    config = panel_config()
     config["panel_source"] = {
         "origin_serial": "example-panel-001",
         "host": "192.0.2.10",
@@ -217,7 +217,7 @@ async def test_an_imported_config_drops_its_passphrase_from_everything_written(
 @pytest.mark.asyncio
 async def test_a_restore_that_cannot_reach_the_panel_says_so(tmp_path: Path) -> None:
     """It used to swallow the failure and leave the circuit as it was, silently."""
-    config = default_config()
+    config = panel_config()
     # Nothing listens on port 9 of the loopback address, so the panel is unreachable.
     config["panel_source"] = {"origin_serial": "example-panel-001", "host": "127.0.0.1:9"}
     write_config(tmp_path / "panel.yaml", config)
@@ -279,7 +279,7 @@ async def test_a_restore_whose_panel_the_clone_refuses_says_why(
         return ScrapedPanel(serial_number=panel, devices=devices, mqtts_port=8883, ca_pem=b"ca")
 
     monkeypatch.setattr(scraper, "scrape_panel", scrape)
-    config = default_config()
+    config = panel_config()
     config["panel_source"] = {"origin_serial": panel, "host": "192.0.2.10"}
     write_config(tmp_path / "panel.yaml", config)
     async with TestClient(TestServer(_dashboard(tmp_path, config_filter="panel.yaml"))) as client:

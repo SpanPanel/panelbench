@@ -69,6 +69,13 @@ class PanelConfig(TypedDict):
     service_voltage_v: NotRequired[float]  # service voltage (default 240.0)
     line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
+    # Whether the panel has a feedthrough module (default true). From SPAN release 202645 a
+    # hardware 3.0 panel without one publishes no downstream lugs
+    # (`hardware.publishes_downstream_lugs`); a clone of such a panel writes false.
+    feedthrough: NotRequired[bool]
+    # The 16 hex digits a hardware 3.0 panel's numbered devices are published under
+    # from release 202645, `{serial}-{hex16}-1-16-<n>` (`device_numbers`).
+    device_id_hex: NotRequired[str]
     vendor_name: NotRequired[str]  # info/vendor-name (default "Span"); a clone keeps its panel's
     model: NotRequired[str]  # info/model (default: from total_tabs); a clone keeps its panel's
     # The panel's network configuration, as a clone reads it from its panel. Defaults:
@@ -155,6 +162,12 @@ class CircuitTemplate(TypedDict):
     priority: str  # "MUST_HAVE", "NON_ESSENTIAL"
 
 
+class PVArrayYAML(TypedDict):
+    """The PV array a hybrid battery's own inverter takes, on its DC side."""
+
+    nameplate_capacity_w: float  # the array's rating; it produces by the panel's sun
+
+
 class BESSConfigYAML(TypedDict, total=False):
     """Top-level BESS configuration in the simulator YAML."""
 
@@ -180,6 +193,10 @@ class BESSConfigYAML(TypedDict, total=False):
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
     feed: str  # the `id` of the circuit feeding a battery in the panel
+    # Whether the battery's own inverter also takes PV (default ac-coupled); a hybrid's
+    # array, if rated, produces into power-flows/pv as the emitter's `bess_pv`.
+    inverter_type: Literal["ac-coupled", "hybrid"]
+    pv_array: PVArrayYAML
     nameplate_capacity_kwh: float
     max_charge_w: float
     max_discharge_w: float
@@ -271,6 +288,9 @@ class OutsideMeterYAML(TypedDict):
 
     id: str
     unvalued: NotRequired[list[str]]
+    # SPAN's number for the meter, as a remote CT: `remote-ct-<n>`, or `…-1-42-<n>`
+    # from release 202645 (`device_numbers`).
+    circuit_number: NotRequired[int]
 
 
 class BrokerConfigYAML(TypedDict, total=False):
@@ -334,6 +354,9 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     overrides: dict[str, Any]
     breaker_rating: int  # Per-circuit breaker rating in Amps (overrides template)
     recorder_entity: str  # HA entity for recorder replay (also merged onto resolved template)
+    # SPAN's number for the circuit, kept across releases while the id around it
+    # changes: `circuit-<n>`, then `{serial}-{hex16}-1-16-<n>` (`device_numbers`).
+    circuit_number: int
     # The identity of the device this circuit feeds: a DER's identity belongs to the
     # circuit, not to its position in a list (see `instance_ids.evse_circuit_serial`).
     # Read for a PV circuit's inverter, where the top-level `pv` section is the

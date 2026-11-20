@@ -28,7 +28,7 @@ import yaml
 from panelbench.config_defaults import normalize_config
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.validation import validate_yaml_config
-from tests._helpers import default_config, pv_rating, rating_literal, write_config
+from tests._helpers import panel_config, pv_rating, rating_literal, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,6 +36,9 @@ if TYPE_CHECKING:
     from panelbench.config_types import SimulationConfig
 
 _SOLAR = "solar_inverter"
+# Its template, and the panel's free space, where a test adds a second solar circuit.
+_SOLAR_TEMPLATE = "solar_production"
+_FREE_SPACE = panel_config()["unmapped_tabs"][0]
 
 
 def _panel(
@@ -45,9 +48,9 @@ def _panel(
     override: float | None = None,
     section: float | None = None,
 ) -> dict[str, object]:
-    """The default panel, its solar circuit rated in each place a value is given for."""
-    config: dict[str, object] = copy.deepcopy(dict(default_config()))
-    solar = _template(config, "solar")
+    """The working panel, its solar circuit rated in each place a value is given for."""
+    config: dict[str, object] = copy.deepcopy(dict(panel_config()))
+    solar = _template(config, _SOLAR_TEMPLATE)
     energy_profile = solar["energy_profile"]
     assert isinstance(energy_profile, dict)
     energy_profile.pop("nameplate_capacity_w", None)
@@ -123,14 +126,17 @@ def test_a_pv_section_rating_that_disagrees_with_the_profile_is_refused() -> Non
 
     message = str(refused.value)
     assert "pv.nameplate_capacity_w is 9000.0" in message
-    assert "circuit_templates.solar.energy_profile.nameplate_capacity_w is 3800.0" in message
+    assert (
+        f"circuit_templates.{_SOLAR_TEMPLATE}.energy_profile.nameplate_capacity_w is 3800.0"
+        in message
+    )
 
 
 def test_a_pv_section_rating_that_rates_no_inverter_is_refused() -> None:
     """Several PV circuits and no ``pv.feed``: the section binds none, so its rating
     would rate nothing, and silently dropping it is a guess too."""
     config = _panel(profile=None, section=7600.0)
-    _template(config, "solar")["energy_profile"] = {
+    _template(config, _SOLAR_TEMPLATE)["energy_profile"] = {
         "mode": "producer",
         "power_range": [-10000.0, 0.0],
         "typical_power": -6000.0,
@@ -138,11 +144,11 @@ def test_a_pv_section_rating_that_rates_no_inverter_is_refused() -> None:
     }
     templates = config["circuit_templates"]
     assert isinstance(templates, dict)
-    templates["solar_garage"] = copy.deepcopy(templates["solar"])
+    templates["solar_garage"] = copy.deepcopy(templates[_SOLAR_TEMPLATE])
     circuits = config["circuits"]
     assert isinstance(circuits, list)
     circuits.append(
-        {"id": "solar_garage", "name": "Garage", "template": "solar_garage", "tabs": [24]}
+        {"id": "solar_garage", "name": "Garage", "template": "solar_garage", "tabs": [_FREE_SPACE]}
     )
     config["firmware_version"] = "spanos3/r202639/03"
     normalize_config(config, source="test")
@@ -156,7 +162,9 @@ def test_a_circuit_override_of_a_shared_template_is_refused() -> None:
     config = _panel(profile=None, override=7600.0)
     circuits = config["circuits"]
     assert isinstance(circuits, list)
-    circuits.append({"id": "solar_twin", "name": "Twin", "template": "solar", "tabs": [24]})
+    circuits.append(
+        {"id": "solar_twin", "name": "Twin", "template": _SOLAR_TEMPLATE, "tabs": [_FREE_SPACE]}
+    )
     pv = config["pv"]
     assert isinstance(pv, dict)
     pv["feed"] = _SOLAR
@@ -199,7 +207,7 @@ def test_the_dashboard_saves_a_legacy_rating_in_its_one_place(
     store.save_to_file(path)
 
     saved: SimulationConfig = yaml.safe_load(path.read_text(encoding="utf-8"))
-    solar_template = saved["circuit_templates"]["solar"]
+    solar_template = saved["circuit_templates"][_SOLAR_TEMPLATE]
     assert solar_template["energy_profile"]["nameplate_capacity_w"] == 7600.0
     assert "nameplate_capacity_w" not in solar_template
     assert "nameplate_capacity_w" not in (saved.get("pv") or {})
@@ -230,7 +238,9 @@ def test_a_pv_section_rating_on_a_shared_template_is_told_to_split_it() -> None:
     config = _panel(profile=3800.0, section=9000.0)
     circuits = config["circuits"]
     assert isinstance(circuits, list)
-    circuits.append({"id": "solar_twin", "name": "Twin", "template": "solar", "tabs": [24]})
+    circuits.append(
+        {"id": "solar_twin", "name": "Twin", "template": _SOLAR_TEMPLATE, "tabs": [_FREE_SPACE]}
+    )
     pv = config["pv"]
     assert isinstance(pv, dict)
     pv["feed"] = _SOLAR
@@ -250,7 +260,9 @@ def test_a_disagreeing_override_on_a_shared_template_is_refused() -> None:
     config = _panel(profile=10000.0, override=3800.0)
     circuits = config["circuits"]
     assert isinstance(circuits, list)
-    circuits.append({"id": "solar_twin", "name": "Twin", "template": "solar", "tabs": [24]})
+    circuits.append(
+        {"id": "solar_twin", "name": "Twin", "template": _SOLAR_TEMPLATE, "tabs": [_FREE_SPACE]}
+    )
     pv = config["pv"]
     assert isinstance(pv, dict)
     pv["feed"] = _SOLAR

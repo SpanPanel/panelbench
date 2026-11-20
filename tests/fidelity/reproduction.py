@@ -24,6 +24,26 @@ _FEEDTHROUGH: Final = (
     "and upstream lugs run the other way."
 )
 
+_FED_BY_ENCLOSURE: Final = (
+    "The upstream lugs are fed by another enclosure, which a definition cannot express."
+)
+
+_SHED_FORECAST_KEYS: Final = (
+    "full-charge-time-to-priority-shed",
+    "full-charge-total-time-remaining",
+    "time-to-priority-shed",
+    "total-time-remaining",
+)
+
+
+def _shed_forecast(reason: str) -> dict[str, str]:
+    """The four shed-forecast estimates a panel values and the variant leaves unvalued."""
+    return {
+        f"distribution-enclosure #1: shed-forecast/{key}: valued only by the capture": reason
+        for key in _SHED_FORECAST_KEYS
+    }
+
+
 EMITTER_EXCEPTIONS: Final[dict[str, dict[str, str]]] = {
     "r202639-b": {
         "distribution-enclosure #1: power-flows/site sign": (
@@ -49,10 +69,34 @@ EMITTER_EXCEPTIONS: Final[dict[str, dict[str, str]]] = {
     },
     "main32_r202633": {
         f"lugs UPSTREAM: connection/fed-by-device-{key}: valued only by the capture": (
-            "The upstream lugs are fed by another enclosure, which a definition cannot express."
+            _FED_BY_ENCLOSURE
         )
         for key in ("id", "status", "type")
     },
+    "main32_r202645-cascade": {
+        "distribution-enclosure #1: power-flows/site shape": (
+            "Fed by another panel, with its battery and PV upstream of it, the panel writes "
+            "site as an integer (2873), as main32_r202639-upstream-pv does with its PV and "
+            "battery upstream; the span profile keeps one decimal."
+        ),
+        **{
+            f"lugs UPSTREAM: connection/fed-by-device-{key}: valued only by the capture": (
+                _FED_BY_ENCLOSURE
+            )
+            for key in ("id", "status", "type")
+        },
+    },
+    "r202645-g": _shed_forecast(
+        "On spanos3/r202645/02 the panel values the four shed-forecast estimates, as "
+        "r202639-f on spanos3/r202639/04 does; the variant keeps them unvalued."
+    ),
+    "r202639-f": _shed_forecast(
+        "On spanos3/r202639/04 the panel values four shed-forecast estimates (the total "
+        "and priority-shed times, from now and from a full charge) that both captures "
+        "with a battery on /03 leave unvalued, as the variant does. One capture does not "
+        "show whether that firmware always values them, or how it estimates them, so the "
+        "variant keeps them unvalued."
+    ),
 }
 """What the emitter cannot reproduce from a capture's own definition, by line prefix.
 

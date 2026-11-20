@@ -13,7 +13,7 @@ from panelbench.dashboard import DashboardContext, create_dashboard_app
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.engine import DynamicSimulationEngine
 from panelbench.panel import PanelInstance
-from tests._helpers import DEFAULT_CONFIG, default_config, write_config
+from tests._helpers import PANEL_CONFIG, panel_config, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -45,7 +45,7 @@ circuits:
 
 @pytest.mark.asyncio
 async def test_the_tick_carries_the_requested_link() -> None:
-    engine = DynamicSimulationEngine(config_path=DEFAULT_CONFIG)
+    engine = DynamicSimulationEngine(config_path=PANEL_CONFIG)
     await engine.initialize_async()
 
     assert (await engine.get_tick_inputs()).bess_link == "OK"
@@ -54,7 +54,7 @@ async def test_the_tick_carries_the_requested_link() -> None:
 
 
 def test_an_unknown_link_health_is_refused() -> None:
-    engine = DynamicSimulationEngine(config_path=DEFAULT_CONFIG)
+    engine = DynamicSimulationEngine(config_path=PANEL_CONFIG)
     with pytest.raises(ValueError, match="battery link must be one of"):
         engine.set_bess_link("FLAKY")
 
@@ -63,10 +63,10 @@ def test_an_unknown_link_health_is_refused() -> None:
 async def test_the_summary_reports_the_published_link(
     tmp_path: Path, amqtt_broker: tuple[str, int]
 ) -> None:
-    """The dashboard shows what the wire carries, not what was asked for: a battery
-    disabled mid-run is still published, out of the tick, as ``OK``."""
+    """The dashboard shows what the wire carries, not what was asked for: a link asked
+    for reads as the one last published until a tick publishes it."""
     host, port = amqtt_broker
-    config = default_config()
+    config = panel_config()
     config["broker"] = {"host": host, "port": port}
     panel = PanelInstance(write_config(tmp_path / "panel.yaml", config), tick_interval=3600)
     await panel.start()
@@ -74,17 +74,15 @@ async def test_the_summary_reports_the_published_link(
         assert panel.engine is not None
         assert panel.runtime is not None
         panel.engine.set_bess_link("LOST")
-        await emitter_runtime.publish_tick(panel.runtime)
-        summary = panel.get_power_summary()
-        assert summary is not None
-        assert summary["bess_link"] == "LOST"
-
-        panel.update_bess_config({"enabled": False})
-        await emitter_runtime.publish_tick(panel.runtime)
         summary = panel.get_power_summary()
         assert summary is not None
         assert panel.engine.bess_link == "LOST"
         assert summary["bess_link"] == "OK"
+
+        await emitter_runtime.publish_tick(panel.runtime)
+        summary = panel.get_power_summary()
+        assert summary is not None
+        assert summary["bess_link"] == "LOST"
     finally:
         await panel.stop()
 
