@@ -6,6 +6,8 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 
 ### Added
 
+- **Hardware 3.0 panels publish the device ids a real panel does**, by SPAN's number for each circuit, changing shape at release 202645 as the panel's do.
+  Configs that record no numbers publish as before.
 - **`ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS` and `ref_MLO_48_HYBRID`**: a MAIN 32 fed by another panel, a MAIN 16 with a hybrid battery and an EVSE, and an
   MLO 48 whose battery's inverter takes its solar.
 - **A battery can take its own solar**: set `bess.inverter_type: hybrid` and rate its array with `bess.pv_array.nameplate_capacity_w`, and it produces into the

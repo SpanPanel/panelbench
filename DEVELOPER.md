@@ -366,6 +366,9 @@ panel_config:
   # Whether the panel has a feedthrough module (default: true). false publishes no downstream lugs under hardware 3.0
   # from release 202645 (hardware.publishes_downstream_lugs); a clone of a panel publishing its upstream lugs alone writes it
   feedthrough: bool
+  # The 16 hex digits a hardware 3.0 panel's numbered devices publish under from release 202645, {serial}-{hex16}-1-16-<n>
+  # (instance_ids); absent, one is derived from the serial
+  device_id_hex: str
   registration_limit: # Absent, every registration succeeds
     per_minute: int # Registrations each client may make in a minute; past it, registration answers 429
     retry_after: bool # Whether the refusal carries Retry-After (default: true)
@@ -450,6 +453,9 @@ circuits:
     name: str # Human-readable name
     template: str # References a circuit_templates key
     tabs: [int] # Tab positions ([1] = 120V, [1, 3] = 240V)
+    # SPAN's number for the circuit on hardware 3.0, kept across releases: published as circuit-<n>, then
+    # {serial}-{hex16}-1-16-<n> from release 202645; absent, the circuit keeps its hashed id
+    circuit_number: int
     breaker_rating: int # Per-circuit override (optional)
     pcs_priority:
       int | null # Published as pcs/priority (default: the circuit's position). null records a panel that
@@ -476,6 +482,7 @@ unmapped_tabs: [int] # Tab numbers with no circuit assigned
 outside_meters: # A meter the panel reads that sits outside it, on no breaker space; one at most
   - id: str # Scopes its device id, as a circuit's id does
     unvalued: [str]
+    circuit_number: int # SPAN's number for it as a remote CT: remote-ct-<n>, then {serial}-{hex16}-1-42-<n>
 
 lugs: # Each set of lugs as commissioned, published in its connection node
   upstream: # downstream takes the same keys, and is refused for lugs the panel does not publish (panel_config.feedthrough)

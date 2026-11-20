@@ -6,6 +6,12 @@
 
 ### Added
 
+- **PanelBench publishes the device ids a real panel does.** A hardware 3.0 panel names its circuits, its remote CT and its lugs by SPAN's numbers for them,
+  which it keeps while the ids around them change at release 202645: `circuit-<n>` and `remote-ct-<n>` before it, `{serial}-{hex16}-1-16-<n>`,
+  `-1-42-<n>` and `-1-21-2` from it. A circuit records its number as `circuit_number`, and the panel its segment as `panel_config.device_id_hex`, so the ids
+  follow `firmware_version` across the release. A template of a hardware 3.0 capture and a clone of such a panel record them as the panel publishes them,
+  and a circuit added in the dashboard takes the next number. A MAIN 32, whose ids no release changes, and a config that records no numbers publish as
+  before.
 - **Three templates of real panels**, generated from the emitter's reference captures: `ref_MAIN_32_CASCADE`, a MAIN 32 fed by another panel, with a battery;
   `ref_MAIN_16_BESS`, a MAIN 16 with a hybrid battery and an EVSE; and `ref_MLO_48_HYBRID`, an MLO 48 whose battery's inverter takes its solar.
 - **A battery can take its own solar.** `bess.inverter_type: hybrid` (default `ac-coupled`) says the battery's own inverter also takes PV, on its DC side, and

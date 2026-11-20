@@ -472,6 +472,31 @@ panel_config:
   feedthrough: false
 ```
 
+### Device ids
+
+A hardware 3.0 panel names each circuit by SPAN's number for it, `<n>`, which it keeps across releases while the id around it changes at release 202645, and
+PanelBench publishes the same ids:
+
+| Device | before release 202645 | from release 202645 |
+|---|---|---|
+| circuit | `circuit-<n>` | `{serial}-{hex16}-1-16-<n>` |
+| remote CT (`outside_meters`) | `remote-ct-<n>` | `{serial}-{hex16}-1-42-<n>` |
+| lugs | `{serial}-lugs-up`, `{serial}-lugs-dn` | `{serial}-{hex16}-1-21-2` upstream |
+
+A circuit records its number as `circuit_number`, a remote CT its own, and the panel its 16-hex segment as `panel_config.device_id_hex`; the ids follow
+`firmware_version`, a firmware naming no release taking the later shape. A template of a hardware 3.0 capture, and a clone of such a panel, record them as
+the panel publishes them, and a circuit added in the dashboard takes the lowest number its panel's circuits leave. A MAIN 32 keeps its ids on every release,
+and a config that records no numbers publishes the ids it always has. No capture shows a hardware 3.0 panel's downstream lugs from release 202645, so
+`{serial}-{hex16}-1-21-1` is a guess.
+
+```yaml
+panel_config:
+  device_id_hex: d3c25547dc2d6690
+circuits:
+  - id: circuit_1
+    circuit_number: 1
+```
+
 ### A battery that takes its own solar
 
 A hybrid battery's own inverter also takes PV, on its DC side, as a Powerwall 3's does. Set `bess.inverter_type: hybrid` and rate its array with
