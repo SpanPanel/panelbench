@@ -40,10 +40,10 @@ PANEL_POSITIONS: Final[Mapping[str, tuple[int, int]]] = {
 holds them (span-panel-api, schema-1 ``PANEL_POSITIONS_BY_MODEL``) and warns of a panel
 whose circuits sit outside them.
 
-A panel publishes only which spaces are occupied, so the ranges are the client's. What
-they rest on differs: MAIN_16's 9-24 is forced by its reference capture, whose 16
-circuits sit on 9 to 24; MAIN_40's 9-48 is a choice by analogy, since its capture's
-circuits sit on 9 to 45, which a numbering from 6, 7, 8 or 9 all hold."""
+A panel publishes only which spaces are occupied, so the ranges are the client's. Two
+rest on reference captures: MAIN_16's 9-24 on one whose 16 circuits sit on 9 to 24,
+and MAIN_40's 9-48 on the release 202645 capture of a MAIN 40, whose 38 circuits sit
+on 9 to 48."""
 
 
 def panel_model(config: SimulationConfig) -> str:

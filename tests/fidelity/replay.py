@@ -83,4 +83,5 @@ def replayed(
         evse={drive_ids[i]: power for i, power in recorded.evse.items()},
         envelope=envelope,
         bess_communication=links,
+        bess_pv={batteries[battery]: watts for battery, watts in recorded.bess_pv.items()},
     )

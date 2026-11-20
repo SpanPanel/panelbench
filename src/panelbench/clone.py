@@ -20,7 +20,7 @@ import json
 import logging
 import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
@@ -31,6 +31,7 @@ from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_t
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.breakers import breaker_misfit
+from panelbench.device_numbers import hex_of, number_of
 from panelbench.emitter_adapter import commissioning
 from panelbench.hardware import publishes_shared_breakers, relay_locks_priority, variant_for
 from panelbench.panel_models import model_positions, panel_spaces, reported_model
@@ -213,7 +214,8 @@ def translate_panel_tree(
     bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
     pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
     evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
-    unvalued = _unvalued_by_device(_emitter_reading(devices, panel_device_id))
+    reading = _emitter_reading(devices, panel_device_id)
+    unvalued = _unvalued_by_device(reading)
     hardware = _get_prop(devices, panel_device_id, "info", "hardware-version") or ""
     inferred = variant_for(hardware)
     published = inferred if variant is None else variant
@@ -278,7 +280,9 @@ def translate_panel_tree(
     for node_uuid in sorted(circuit_nodes):
         if _meters_outside_the_panel(devices, node_uuid):
             outside_meters.append(
-                _outside_meter(len(outside_meters) + 1, unvalued.get(node_uuid, []))
+                _outside_meter(
+                    len(outside_meters) + 1, unvalued.get(node_uuid, []), number_of(node_uuid)
+                )
             )
             continue
         result = _translate_circuit(
@@ -317,8 +321,8 @@ def translate_panel_tree(
     unmapped = [space for space in spaces if space not in used_tabs]
     outside = sorted(space for space in used_tabs if space not in spaces)
     if outside:
-        # The positions are the integration's client's, and the MAIN 40's an inference,
-        # so a real panel disagreeing with them is worth saying.
+        # The positions are the integration's client's, and only the MAIN 16's and MAIN
+        # 40's rest on a capture, so a real panel disagreeing with them is worth saying.
         _LOGGER.warning(
             "Panel %s reports model %s, whose spaces are %d to %d, but has circuits on %s",
             panel_device_id,
@@ -347,6 +351,14 @@ def translate_panel_tree(
     lugs = _lugs_config(devices, panel_device_id, unvalued)
     if lugs:
         config["lugs"] = lugs
+    # A panel publishing its upstream lugs alone has no feedthrough, as release 202645
+    # publishes a hardware 3.0 panel without one; earlier releases publish both.
+    if _lugs_directions(devices, panel_device_id) == {"upstream"}:
+        panel_config["feedthrough"] = False
+    # The segment a hardware 3.0 panel's numbered devices publish under from release
+    # 202645, where its ids carry one.
+    if (segment := hex_of(panel_device_id, devices)) is not None:
+        panel_config["device_id_hex"] = segment
 
     # The panel's firmware decides which side of SPAN release 202639 the clone
     # publishes (the BESS meter's sign, the EVSE limit), so a clone of a panel on an
@@ -369,6 +381,8 @@ def translate_panel_tree(
             devices, panel_device_id, bess_id, mid_nodes, circuit_nodes, unvalued, keys
         )
         if bess_cfg is not None:
+            if bess_id in _hybrid_batteries(reading):
+                bess_cfg["inverter_type"] = "hybrid"
             config["bess"] = bess_cfg
 
     if host is not None:
@@ -421,6 +435,8 @@ def update_config_from_scrape(
 
     circuit_nodes = _devices_of_type(scraped.devices, scraped.serial_number, TYPE_CIRCUIT)
     keys = _circuit_keys(scraped.devices, circuit_nodes)
+    shared = _shared_with_by_circuit(config)
+    template_of = _template_by_circuit(config)
 
     changed = False
 
@@ -428,36 +444,25 @@ def update_config_from_scrape(
         if node_uuid not in keys:
             continue
 
-        template_name = _template_name(keys[node_uuid])
-        template = templates.get(template_name)
-        if not isinstance(template, dict):
-            continue
-
-        ep = template.get("energy_profile")
-        if not isinstance(ep, dict):
-            continue
-
         # Update energy seeds. Enclosure frame: `exported-energy` is the
         # enclosure exporting to the circuit (consumption), `imported-energy` is
         # the circuit backfeeding the enclosure (production). See the seeding
-        # comment in `_translate_circuit`.
-        exported = _float_prop(scraped.devices, node_uuid, "meter", "exported-energy")
-        if (
-            exported is not None
-            and exported > 0
-            and ep.get("initial_consumed_energy_wh") != exported
+        # comment in `_translate_circuit`. A breaker the config records takes its one
+        # register on each of its circuits, a circuit the scrape left out included.
+        mates = shared.get(_circuit_id(keys[node_uuid]), [])
+        breaker = _breaker_nodes(node_uuid, keys, mates)
+        exported = _breaker_register(scraped.devices, breaker, "exported-energy")
+        imported = _breaker_register(scraped.devices, breaker, "imported-energy")
+        own = _template_name(keys[node_uuid])
+        for template_name in dict.fromkeys(
+            [own, *(template_of[m] for m in mates if m in template_of)]
         ):
-            ep["initial_consumed_energy_wh"] = exported
-            changed = True
-
-        imported = _float_prop(scraped.devices, node_uuid, "meter", "imported-energy")
-        if (
-            imported is not None
-            and imported > 0
-            and ep.get("initial_produced_energy_wh") != imported
-        ):
-            ep["initial_produced_energy_wh"] = imported
-            changed = True
+            template = templates.get(template_name)
+            ep = template.get("energy_profile") if isinstance(template, dict) else None
+            if not isinstance(ep, dict):
+                continue
+            changed = _seed(ep, "initial_consumed_energy_wh", exported) or changed
+            changed = _seed(ep, "initial_produced_energy_wh", imported) or changed
 
     # Update last_synced timestamp
     panel_source = config.get("panel_source")
@@ -1021,9 +1026,11 @@ def _translate_circuit(
     # (backfeed). The simulator's own accumulators are device-framed, so
     # consumption seeds from `exported-energy` and production from
     # `imported-energy`. Requires ebus-emitter >= 0.2.1, which publishes the
-    # enclosure frame on both power and energy.
-    imported_energy = _float_prop(devices, node_uuid, "meter", "imported-energy")
-    exported_energy = _float_prop(devices, node_uuid, "meter", "exported-energy")
+    # enclosure frame on both power and energy. A tandem's or quad's circuits each
+    # take the breaker's one register (`_breaker_register`).
+    breaker = _breaker_nodes(node_uuid, keys, siblings.get(node_uuid, ()))
+    imported_energy = _breaker_register(devices, breaker, "imported-energy")
+    exported_energy = _breaker_register(devices, breaker, "exported-energy")
 
     # Build template
     energy_profile: dict[str, object] = {
@@ -1076,6 +1083,10 @@ def _translate_circuit(
         "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
         **commissioning.config_values(commissioning.CIRCUIT, _published_by(devices, node_uuid)),
     }
+    # SPAN's number for the circuit, which its id carries on hardware 3.0 and which it
+    # keeps across releases: the clone publishes its ids as the panel does.
+    if (number := number_of(node_uuid)) is not None:
+        circuit_def["circuit_number"] = number
     shared = siblings.get(node_uuid)
     if shared:
         circuit_def["shared_with"] = shared
@@ -1106,16 +1117,27 @@ def _meters_outside_the_panel(devices: Mapping[str, DiscoveredDevice], node_uuid
     return "spaces" not in device.get_node_properties("info")
 
 
-def _outside_meter(ordinal: int, unvalued: list[str]) -> dict[str, object]:
+def _outside_meter(ordinal: int, unvalued: list[str], number: int | None) -> dict[str, object]:
     """A meter outside the panel, as ``outside_meters`` holds it.
 
     Its id is its place among the panel's such meters, as a circuit's is its first
-    space: the panel publishes nothing else to tell them apart.
+    space: the panel publishes nothing else to tell them apart. *number* is SPAN's
+    for it as a remote CT, where its id carries one.
     """
     meter: dict[str, object] = {"id": f"outside_meter_{ordinal}"}
+    if number is not None:
+        meter["circuit_number"] = number
     if unvalued:
         meter["unvalued"] = unvalued
     return meter
+
+
+def _lugs_directions(devices: Mapping[str, DiscoveredDevice], panel_device_id: str) -> set[str]:
+    """The directions of the lugs the panel publishes, ``upstream`` and ``downstream``."""
+    return {
+        (_get_prop(devices, lugs_id, "info", "direction") or "").lower()
+        for lugs_id in _devices_of_type(devices, panel_device_id, TYPE_LUGS)
+    }
 
 
 def _lugs_config(
@@ -1183,7 +1205,7 @@ def _emitter_reading(
         # unreadable to it as a malformed tree.
         _LOGGER.warning(
             "The emitter cannot read panel %s as a definition (%s); cloning it without "
-            "the properties it leaves unvalued",
+            "the properties it leaves unvalued, and its battery as ac-coupled",
             panel_device_id,
             exc,
         )
@@ -1208,6 +1230,23 @@ def _as_tree(devices: Mapping[str, DiscoveredDevice]) -> Tree:
             },
         )
     return tree
+
+
+def _hybrid_batteries(reading: PanelDefinition | None) -> set[str]:
+    """The batteries the emitter's capture writes hybrid, by device id on the panel.
+
+    A panel does not publish its battery's coupling. The emitter's capture reads it
+    from the tree's topology: a panel publishing ``power-flows/pv`` with one battery
+    and nothing else that could bring it solar takes that solar through the battery.
+    The clone takes the emitter's reading rather than keeping a second rule.
+    """
+    if reading is None:
+        return set()
+    return {
+        instance.instance_id
+        for instance in reading.manifest.of_class("bess")
+        if instance.metadata.get("inverter-type") == "hybrid"
+    }
 
 
 def _unvalued_by_device(reading: PanelDefinition | None) -> dict[str, list[str]]:
@@ -1529,6 +1568,62 @@ def _breaker_siblings(
         if ordered:
             siblings[node] = [_circuit_id(keys[peer]) for peer in ordered]
     return siblings
+
+
+def _breaker_nodes(
+    node_uuid: str, keys: Mapping[str, str], shared_with: Collection[str]
+) -> list[str]:
+    """The device ids of *node_uuid*'s breaker: the circuit, then the circuits
+    *shared_with* names by their ids in the clone (``_circuit_id``)."""
+    named = set(shared_with)
+    return [node_uuid, *(node for node, key in keys.items() if _circuit_id(key) in named)]
+
+
+def _breaker_register(
+    devices: Mapping[str, DiscoveredDevice], breaker: Collection[str], register: str
+) -> float | None:
+    """The energy *register* (``meter/`` property) the circuits of one *breaker*, by
+    their device ids, publish.
+
+    A tandem's or quad's circuits publish its one meter's register, each read a moment
+    apart, so the breaker's is the largest any of them publishes, as the emitter's own
+    capture takes it; and the emitter refuses circuits on one breaker whose seeds
+    differ. A circuit on a breaker of its own publishes its own.
+    """
+    values = [
+        value
+        for node in breaker
+        if (value := _float_prop(devices, node, "meter", register)) is not None
+    ]
+    return max(values) if values else None
+
+
+def _seed(energy_profile: dict[str, object], key: str, register: float | None) -> bool:
+    """Seed *key* with a register read above 0, and say whether that changed it."""
+    if register is None or register <= 0 or energy_profile.get(key) == register:
+        return False
+    energy_profile[key] = register
+    return True
+
+
+def _template_by_circuit(config: Mapping[str, object]) -> dict[str, str]:
+    """Each of *config*'s circuits' template, by the circuit's id."""
+    circuits = config.get("circuits")
+    return {
+        str(circuit["id"]): str(circuit["template"])
+        for circuit in (circuits if isinstance(circuits, list) else [])
+        if isinstance(circuit, dict) and "id" in circuit and "template" in circuit
+    }
+
+
+def _shared_with_by_circuit(config: Mapping[str, object]) -> dict[str, list[str]]:
+    """Each of *config*'s circuits' ``shared_with``, by the circuit's id."""
+    circuits = config.get("circuits")
+    return {
+        str(circuit["id"]): [str(peer) for peer in circuit.get("shared_with") or ()]
+        for circuit in (circuits if isinstance(circuits, list) else [])
+        if isinstance(circuit, dict) and "id" in circuit
+    }
 
 
 def _enrich_pv_template(

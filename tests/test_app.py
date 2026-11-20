@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.app import SimulatorApp, _discover_configs, _file_hash
@@ -15,6 +16,7 @@ from panelbench.const import DEFAULT_FIRMWARE_VERSION
 from panelbench.emitter_adapter.runtime import start_clone as _real_start_clone
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.panel import PanelInstance
+from panelbench.reference_templates import reference_template
 from panelbench.schema import load_schema
 from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE
 
@@ -141,15 +143,16 @@ simulation_params:
 
 
 class TestUnsupportedPanelSize:
-    """Configs with total_tabs outside _PANEL_SIZE_TO_MODEL fail loudly at panel-add."""
+    """Configs with total_tabs outside PANEL_SIZE_TO_MODEL fail loudly at panel-add."""
 
     @pytest.mark.asyncio
-    async def test_unsupported_total_tabs_raises_key_error(
+    async def test_unsupported_total_tabs_is_refused(
         self,
         tmp_path: Path,
         amqtt_broker: tuple[str, int],
     ) -> None:
-        """total_tabs=20 has no SPAN model — _start_panel must raise AND not register."""
+        """total_tabs=20 has no SPAN model — _start_panel must refuse it, as validation
+        does when the panel loads, AND not register."""
         host, port = amqtt_broker
         config = tmp_path / "bad_size.yaml"
         config.write_text(_BAD_SIZE_CONFIG.format(broker_host=host, broker_port=port))
@@ -163,7 +166,7 @@ class TestUnsupportedPanelSize:
             ca_cert_path=None,
         )
 
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError, match=r"total_tabs must be the spaces of a SPAN panel"):
             await app._start_panel(config)
 
         assert config not in app._panels
@@ -422,3 +425,83 @@ class TestDuplicateSerial:
             for panel in list(app._panels.values()):
                 with contextlib.suppress(Exception):
                     await panel.stop()
+
+
+async def _reloaded(
+    tmp_path: Path, broker: tuple[str, int], captures: tuple[str, ...]
+) -> tuple[SimulatorApp, dict[str, list[str]]]:
+    """An app reloaded over *captures*' templates, each on the test broker."""
+    host, port = broker
+    for capture in captures:
+        config = reference_template(capture)
+        config["broker"] = {"host": host, "port": port}
+        (tmp_path / f"{capture}.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    app = SimulatorApp(config_dir=tmp_path)
+    app._schema = load_schema(_BUNDLED_SCHEMA)
+    app._certs = MagicMock(
+        ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+        ca_cert_path=None,
+    )
+    mock_server = MagicMock()
+    mock_server.start = AsyncMock()
+    mock_server.stop = AsyncMock()
+    with patch("panelbench.app.BootstrapHttpServer", return_value=mock_server):
+        result = await app.reload()
+    return app, result
+
+
+@pytest.mark.asyncio
+async def test_a_panel_whose_devices_another_running_panel_publishes_is_refused(
+    tmp_path: Path, amqtt_broker: tuple[str, int]
+) -> None:
+    """A hardware 3.0 panel before release 202645 names its circuits ``circuit-<n>``
+    under no serial, as its own broker lets a real one; on one shared broker, two such
+    panels would claim each other's circuits' topics."""
+    app, result = await _reloaded(tmp_path, amqtt_broker, ("r202639-a", "r202639-e"))
+
+    try:
+        assert len(result["started"]) == 1
+        [(refused, error)] = app._get_panel_start_errors().items()
+        assert refused in ("r202639-a.yaml", "r202639-e.yaml")
+        assert "circuit-3" in error
+        assert "already publishes" in error
+    finally:
+        for panel in list(app._panels.values()):
+            with contextlib.suppress(Exception):
+                await panel.stop()
+
+
+@pytest.mark.asyncio
+async def test_panels_that_scope_their_devices_by_serial_run_together(
+    tmp_path: Path, amqtt_broker: tuple[str, int]
+) -> None:
+    app, result = await _reloaded(tmp_path, amqtt_broker, ("r202645-a", "r202645-e"))
+
+    try:
+        assert sorted(result["started"]) == ["sim-r202639-a", "sim-r202639-e"]
+        assert not app._get_panel_start_errors()
+    finally:
+        for panel in list(app._panels.values()):
+            with contextlib.suppress(Exception):
+                await panel.stop()
+
+
+class TestApplyBessConfigLive:
+    """A live battery change the panel cannot take is left to the reload watcher."""
+
+    @pytest.mark.parametrize("applied", [True, False], ids=["applied", "needs a restart"])
+    def test_only_an_applied_change_marks_the_file_current(
+        self, tmp_path: Path, applied: bool
+    ) -> None:
+        path = tmp_path / "panel.yaml"
+        path.write_text("saved: true\n", encoding="utf-8")
+        panel = MagicMock(spec=PanelInstance)
+        panel.runtime = MagicMock()
+        panel.update_bess_config.return_value = applied
+        app = SimulatorApp(config_dir=tmp_path)
+        app._panels[path] = panel
+        app._config_hashes[path] = "before the save"
+
+        assert app.apply_bess_config_live("panel.yaml", {"enabled": True}) is applied
+
+        assert app._config_hashes[path] == (_file_hash(path) if applied else "before the save")

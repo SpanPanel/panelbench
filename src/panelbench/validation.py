@@ -6,10 +6,19 @@ dashboard can validate configs without circular imports.
 
 from __future__ import annotations
 
+import contextvars
+import copy
 import logging
-from typing import TYPE_CHECKING, Any, Final
+import math
+import re
+from collections.abc import Hashable
+from typing import TYPE_CHECKING, Any, Final, cast
+
+from ebus_panel_sim import EmitterError, SetterRegistry
 
 from panelbench.breakers import breaker_misfit, crowded_spaces, crowding
+from panelbench.circuit import effective_settings
+from panelbench.config_defaults import normalize_config
 from panelbench.config_types import PVInverterYAML
 from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
@@ -17,20 +26,25 @@ from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, pre
 from panelbench.hardware import (
     declares_variant,
     panel_variant,
+    publishes_downstream_lugs,
     publishes_outside_meters,
     publishes_pv_devices,
     publishes_shared_breakers,
     relay_locks_priority,
     variant_selection,
 )
+from panelbench.panel_models import PANEL_SIZE_TO_MODEL
 from panelbench.pv_rating import rating_conflicts
 from panelbench.pv_section import bound_pv_circuit_id, pv_circuit_ids
 from panelbench.registration_limit import registration_limit
+from panelbench.virtual_devices import on_the_panel
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from ebus_panel_sim import Variant
+
+    from panelbench.config_types import SimulationConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +60,8 @@ def validate_yaml_config(config_data: Any) -> None:
             raise ValueError(f"Missing required section: {section}")
 
     validate_panel_config(config_data["panel_config"])
+    validate_section_shapes(config_data)
+    validate_battery_settings(config_data)
     # A declared variant must be one PanelBench publishes; panel_variant says which.
     panel_variant(config_data)
     validate_circuit_templates(config_data["circuit_templates"])
@@ -64,8 +80,14 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_unfed_inverters(config_data)
     validate_ratings(config_data)
     validate_outside_meters(config_data)
+    validate_device_numbers(config_data)
     validate_shared_circuits(config_data)
     validate_unvalued_lists(config_data)
+    validate_downstream_lugs(config_data)
+    validate_battery_coupling(config_data)
+    # Every check above has established the shape a SimulationConfig has: each
+    # section the definition reads is the mapping, list or number its type says.
+    validate_emitter_accepts(cast("SimulationConfig", config_data))
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -80,6 +102,45 @@ def validate_panel_config(panel_config: Any) -> None:
     for field in required_panel_fields:
         if field not in panel_config:
             raise ValueError(f"Missing required panel_config field: {field}")
+    serial = panel_config["serial_number"]
+    if not isinstance(serial, str) or not serial:
+        raise ValueError(
+            f"panel_config.serial_number must be the panel's serial, a string, not {serial!r}"
+        )
+    # The time-zone lookup refuses a place off the globe, as a swapped pair often is.
+    for key, bound in (("latitude", 90), ("longitude", 180)):
+        if key in panel_config:
+            degrees = panel_config[key]
+            if not _is_real(degrees) or not -bound <= degrees <= bound:
+                raise ValueError(
+                    f"panel_config.{key} must be degrees from -{bound} to {bound}, not {degrees!r}"
+                )
+    if "soc_shed_threshold" in panel_config and (
+        _as_number(panel_config["soc_shed_threshold"]) is None
+    ):
+        raise ValueError(
+            "panel_config.soc_shed_threshold must be a percentage, not "
+            f"{panel_config['soc_shed_threshold']!r}"
+        )
+    if _as_whole_number(panel_config["total_tabs"]) not in PANEL_SIZE_TO_MODEL:
+        sizes = ", ".join(str(size) for size in PANEL_SIZE_TO_MODEL)
+        raise ValueError(
+            f"panel_config.total_tabs must be the spaces of a SPAN panel, one of {sizes}, "
+            f"not {panel_config['total_tabs']!r}"
+        )
+    main_size = panel_config["main_size"]
+    if main_size is not None and _as_whole_number(main_size) is None:
+        raise ValueError(
+            f"panel_config.main_size must be the main breaker's amps, or null for none, "
+            f"not {main_size!r}"
+        )
+    site = panel_config.get("site")
+    if site is not None and not isinstance(site, dict):
+        raise ValueError(f"panel_config.site must be a mapping of its settings, not {site!r}")
+    if "feedthrough" in panel_config and not isinstance(panel_config["feedthrough"], bool):
+        raise ValueError(
+            f"panel_config.feedthrough must be true or false, not {panel_config['feedthrough']!r}"
+        )
     registration_limit(panel_config)
 
 
@@ -110,6 +171,12 @@ def validate_single_template(template_name: str, template: Any) -> None:
             raise ValueError(
                 f"Missing required field '{field}' in circuit template '{template_name}'"
             )
+    energy_profile = template["energy_profile"]
+    if not isinstance(energy_profile, dict):
+        raise ValueError(
+            f"Circuit template '{template_name}' energy_profile must be a mapping of its "
+            f"settings, not {energy_profile!r}"
+        )
     priority = str(template["priority"]).upper()
     if priority not in SHED_PRIORITIES:
         raise ValueError(
@@ -117,6 +184,156 @@ def validate_single_template(template_name: str, template: Any) -> None:
             f"it must be one of {', '.join(SHED_PRIORITIES)}"
         )
     _validate_commissioned_system(template_name, template)
+
+
+def _validate_as_modelled(
+    index: int, circuit: Mapping[str, object], template_name: str, template: Mapping[str, object]
+) -> None:
+    """Refuse a circuit whose template, as it is read for this circuit, cannot be.
+
+    The engine models it, and the definition publishes it, by its template with the
+    circuit's ``overrides`` and own ``breaker_rating`` over it
+    (``circuit.effective_template``), so that is what is checked. A template no
+    circuit uses is read by nothing, so it is checked for its shape alone.
+    """
+    overrides = circuit.get("overrides", {})
+    if not isinstance(overrides, dict):
+        raise ValueError(f"Circuit {index} overrides must be a mapping, not {overrides!r}")
+    if not isinstance(template.get("energy_profile"), dict):
+        return
+    where = f"Circuit template '{template_name}'"
+    if overrides or "breaker_rating" in circuit:
+        where = f"{where}, as circuit {index} has it,"
+    effective = effective_settings(template, circuit)
+    profile = effective["energy_profile"]
+    if not isinstance(profile, dict):
+        # An override named energy_profile replaces the template's whole profile.
+        raise ValueError(
+            f"{where} energy_profile must be a mapping of its settings, not {profile!r}"
+        )
+    _validate_behaviour(where, effective, profile)
+    _validate_profile_numbers(where, effective, profile)
+
+
+def _validate_behaviour(
+    where: str, template: Mapping[str, object], energy_profile: Mapping[str, object]
+) -> None:
+    """Refuse a template whose behaviour the engine cannot model: each setting the
+    engine reads, taken as it reads it, so a value it converts may be quoted.
+
+    It indexes the profile's ``mode``, ``power_range`` and ``typical_power``, and does
+    arithmetic on those numbers, the variation and a cycling load's durations; it
+    converts a duty cycle and the time-of-day and monthly factors with ``float()``.
+    """
+    for key in ("mode", "power_range", "typical_power"):
+        if key not in energy_profile:
+            raise ValueError(f"{where} energy_profile has no {key}")
+    power_range = energy_profile["power_range"]
+    if not (
+        isinstance(power_range, list)
+        and len(power_range) == 2
+        and all(_is_real(bound) for bound in power_range)
+    ):
+        raise ValueError(
+            f"{where} energy_profile.power_range must be [minimum, maximum] in watts, not "
+            f"{power_range!r}"
+        )
+    for key in ("typical_power", "power_variation"):
+        if key in energy_profile and not _is_real(energy_profile[key]):
+            raise ValueError(
+                f"{where} energy_profile.{key} must be a number, not {energy_profile[key]!r}"
+            )
+    if "cycling_pattern" in template:
+        cycling = template["cycling_pattern"]
+        if not isinstance(cycling, dict):
+            raise ValueError(f"{where} cycling_pattern must be a mapping, not {cycling!r}")
+        for key in ("on_duration", "off_duration"):
+            if key in cycling and not _is_real(cycling[key]):
+                raise ValueError(
+                    f"{where} cycling_pattern.{key} must be a number of seconds, not "
+                    f"{cycling[key]!r}"
+                )
+        duty = cycling.get("duty_cycle")
+        if duty is not None and _as_number(duty) is None:
+            raise ValueError(
+                f"{where} cycling_pattern.duty_cycle must be a fraction, not {duty!r}"
+            )
+    smart = template.get("smart_behavior", {})
+    if not isinstance(smart, dict):
+        raise ValueError(f"{where} smart_behavior must be a mapping, not {smart!r}")
+    if "max_power_reduction" in smart and not _is_real(smart["max_power_reduction"]):
+        raise ValueError(
+            f"{where} smart_behavior.max_power_reduction must be a fraction, not "
+            f"{smart['max_power_reduction']!r}"
+        )
+    profile = template.get("time_of_day_profile", {})
+    if not isinstance(profile, dict):
+        raise ValueError(f"{where} time_of_day_profile must be a mapping, not {profile!r}")
+    for key in ("hourly_multipliers", "hour_factors"):
+        factors = profile.get(key)
+        if factors and not _maps_to_factors(factors):
+            raise ValueError(
+                f"{where} time_of_day_profile.{key} must map each hour to a factor, not "
+                f"{factors!r}"
+            )
+    days = profile.get("active_days")
+    if days and (not isinstance(days, list) or not all(_is_whole(day) for day in days)):
+        raise ValueError(
+            f"{where} time_of_day_profile.active_days must list the days it runs, 0 for "
+            f"Monday, not {days!r}"
+        )
+    monthly = template.get("monthly_factors")
+    if monthly and not _maps_to_factors(monthly):
+        raise ValueError(
+            f"{where} monthly_factors must map each month to a factor, not {monthly!r}"
+        )
+    hvac = template.get("hvac_type")
+    if hvac and not isinstance(hvac, Hashable):
+        raise ValueError(f"{where} hvac_type must name an HVAC type, not {hvac!r}")
+
+
+def _maps_to_factors(factors: object) -> bool:
+    """A mapping whose every factor ``float()`` reads."""
+    return isinstance(factors, dict) and all(_as_number(f) is not None for f in factors.values())
+
+
+def _validate_profile_numbers(
+    where: str, template: Mapping[str, object], energy_profile: Mapping[str, object]
+) -> None:
+    """Refuse a rating or energy seed the definition or the engine cannot read.
+
+    The definition converts each with ``float()``, so it may be quoted, but the engine
+    takes ``abs()`` of a producer's nameplate. Left empty, a nameplate states none,
+    which only a PV circuit's template cannot do without: its inverter's device
+    publishes the rating.
+    """
+    nameplate = energy_profile.get("nameplate_capacity_w")
+    producer = energy_profile.get("mode") == "producer"
+    if nameplate is None:
+        unrated_pv = (
+            "nameplate_capacity_w" in energy_profile and template.get("device_type") == "pv"
+        )
+    else:
+        unrated_pv = not (_is_real(nameplate) if producer else _as_number(nameplate) is not None)
+    if unrated_pv:
+        raise ValueError(
+            f"{where} energy_profile.nameplate_capacity_w must be a number of watts, not "
+            f"{nameplate!r}"
+        )
+    for key in ("initial_consumed_energy_wh", "initial_produced_energy_wh"):
+        seed = energy_profile.get(key)
+        if seed and _as_number(seed) is None:
+            raise ValueError(
+                f"{where} energy_profile.{key} must be a number of watt-hours, not {seed!r}"
+            )
+    for key in ("breaker_rating_a", "breaker_rating"):
+        rating = template.get(key)
+        amps = _as_number(rating)
+        if rating is not None and (amps is None or amps <= 0):
+            raise ValueError(
+                f"{where} {key} must be the breaker's amps, above 0, or null where the panel "
+                f"publishes none, not {rating!r}"
+            )
 
 
 _COMMISSIONED_SYSTEMS = ("pv", "backup")
@@ -262,16 +479,20 @@ def validate_single_circuit(index: int, circuit: Any, circuit_templates: dict[st
     for field in required_circuit_fields:
         if field not in circuit:
             raise ValueError(f"Missing required field '{field}' in circuit {index}")
+    circuit_id = circuit["id"]
+    if isinstance(circuit_id, bool) or not isinstance(circuit_id, (str, int, float)):
+        raise ValueError(f"Circuit {index} id must be a name or a number, not {circuit_id!r}")
 
     template_name = circuit["template"]
-    if template_name not in circuit_templates:
+    if not isinstance(template_name, str) or template_name not in circuit_templates:
         raise ValueError(f"Circuit {index} references unknown template '{template_name}'")
 
     template = circuit_templates.get(template_name, {})
+    _validate_as_modelled(index, circuit, template_name, template)
 
     tabs = circuit.get("tabs", [])
-    if not isinstance(tabs, list):
-        raise ValueError(f"Circuit {index} ('tabs') must be a list")
+    if not isinstance(tabs, list) or not all(_is_whole(tab) for tab in tabs):
+        raise ValueError(f"Circuit {index} ('tabs') must be a list of space numbers, not {tabs!r}")
 
     # Infrastructure entities (PV, EVSE) may have empty tabs
     # when added as virtual devices for "what-if" modeling.
@@ -467,6 +688,46 @@ def validate_outside_meters(config_data: Mapping[str, object]) -> None:
         )
 
 
+def validate_device_numbers(config_data: Mapping[str, object]) -> None:
+    """SPAN's number for each circuit and meter outside the panel, and the panel's id
+    segment, as ``device_numbers`` reads them: a whole number above 0, used once among
+    the panel's circuits and once among its remote CTs, which SPAN numbers apart, and
+    16 lowercase hex digits."""
+    for kind, section in (("circuit", "circuits"), ("outside meter", "outside_meters")):
+        taken: dict[int, str] = {}
+        for entry in _listed(config_data.get(section)):
+            if not isinstance(entry, dict) or "circuit_number" not in entry:
+                continue
+            where = f"{kind} {entry.get('id')!r}"
+            number = _positive_whole(entry["circuit_number"])
+            if number is None:
+                raise ValueError(
+                    f"{where} circuit_number must be SPAN's number for the circuit, a whole "
+                    f"number above 0, not {entry['circuit_number']!r}"
+                )
+            if number in taken:
+                raise ValueError(
+                    f"{where} circuit_number {number} is taken by {taken[number]}: SPAN "
+                    f"numbers each {kind} of a panel once"
+                )
+            taken[number] = where
+    panel = config_data.get("panel_config")
+    segment = panel.get("device_id_hex") if isinstance(panel, dict) else None
+    if segment is not None and not (
+        isinstance(segment, str) and re.fullmatch(r"[0-9a-f]{16}", segment)
+    ):
+        raise ValueError(
+            f"panel_config.device_id_hex must be 16 lowercase hex digits, not {segment!r}"
+        )
+
+
+def _positive_whole(value: object) -> int | None:
+    """*value* as a whole YAML number above 0, never a bool; None where it is not one."""
+    if _is_whole(value) and isinstance(value, (int, float)) and value > 0:
+        return int(value)
+    return None
+
+
 def validate_shared_circuits(config_data: Mapping[str, object]) -> None:
     """Circuits list one breaker space only as the circuits of one multi-load breaker.
 
@@ -610,6 +871,288 @@ def validate_unvalued_lists(config_data: Mapping[str, object]) -> None:
             isinstance(path, str) and "/" in path for path in paths
         ):
             raise ValueError(f"{where} must be a list of node/property paths, got {paths!r}")
+
+
+def validate_downstream_lugs(config_data: dict[str, object]) -> None:
+    """Refuse what hangs from downstream lugs the panel does not publish.
+
+    A hardware 3.0 panel with ``feedthrough: false`` publishes none from release
+    202645, so a ``lugs.downstream`` section would describe nothing, and a battery
+    placed ``DOWNSTREAM`` would hang from no lugs; on an earlier release both still
+    describe the downstream lugs that release publishes.
+    """
+    if publishes_downstream_lugs(config_data):
+        return
+    bess = config_data.get("bess")
+    if isinstance(bess, dict) and bess.get("relative_position") == "DOWNSTREAM":
+        raise ValueError(
+            "bess.relative_position DOWNSTREAM places the battery past downstream lugs this "
+            "panel does not publish: from SPAN release 202645 a hardware 3.0 panel with "
+            "panel_config.feedthrough false has none. Place it UPSTREAM or IN_PANEL, or set "
+            "feedthrough to true."
+        )
+    lugs = config_data.get("lugs")
+    if isinstance(lugs, dict) and "downstream" in lugs:
+        raise ValueError(
+            "lugs.downstream commissions downstream lugs this panel does not publish: "
+            "from SPAN release 202645 a hardware 3.0 panel with panel_config.feedthrough "
+            "false publishes none. Remove lugs.downstream, or set feedthrough to true."
+        )
+
+
+_BATTERY_INVERTER_TYPES: Final = ("ac-coupled", "hybrid")
+
+
+def validate_battery_coupling(config_data: dict[str, object]) -> None:
+    """A battery's inverter type, and the array only a hybrid battery's inverter takes."""
+    bess = config_data.get("bess")
+    if not isinstance(bess, dict):
+        return
+    inverter_type = bess.get("inverter_type", "ac-coupled")
+    if inverter_type not in _BATTERY_INVERTER_TYPES:
+        raise ValueError(
+            f"bess.inverter_type must be one of {', '.join(_BATTERY_INVERTER_TYPES)}, "
+            f"not {inverter_type!r}"
+        )
+    if "pv_array" not in bess:
+        return
+    array = bess["pv_array"]
+    if inverter_type != "hybrid":
+        raise ValueError(
+            "bess.pv_array is the array a hybrid battery's own inverter takes; set "
+            "bess.inverter_type to hybrid, or remove it"
+        )
+    if not isinstance(array, dict):
+        raise ValueError(
+            f"bess.pv_array must be a section naming nameplate_capacity_w, not {array!r}"
+        )
+    nameplate = array.get("nameplate_capacity_w")
+    if (
+        isinstance(nameplate, bool)
+        or not isinstance(nameplate, int | float)
+        or not math.isfinite(nameplate)
+        or nameplate < 0
+    ):
+        raise ValueError(
+            "bess.pv_array.nameplate_capacity_w must be a finite number of watts, 0 or "
+            f"more, not {nameplate!r}"
+        )
+
+
+# Sections a config may leave out or set null, each otherwise a mapping of settings.
+_MAPPING_SECTIONS: Final = ("bess", "pv", "evse", "lugs", "broker")
+
+
+def validate_section_shapes(config_data: Mapping[str, object]) -> None:
+    """Refuse a section that is not the mapping of settings it must be.
+
+    Each is read setting by setting when the panel's definition is built, so a scalar
+    or a list there would otherwise fail there, with an error naming nothing.
+    """
+    for section in _MAPPING_SECTIONS:
+        value = config_data.get(section)
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(f"{section} must be a mapping of its settings, not {value!r}")
+    # Read as a mapping wherever the key is present, so null is no way to leave it out.
+    params = config_data.get("simulation_params", {})
+    if not isinstance(params, dict):
+        raise ValueError(f"simulation_params must be a mapping of its settings, not {params!r}")
+    for key in ("noise_factor", "time_acceleration"):
+        if key in params and not _is_real(params[key]):
+            raise ValueError(f"simulation_params.{key} must be a number, not {params[key]!r}")
+    syncs = config_data.get("tab_synchronizations", [])
+    if not isinstance(syncs, list) or not all(
+        isinstance(sync, dict)
+        and "behavior" in sync
+        and isinstance(sync.get("tabs"), list)
+        and all(isinstance(tab, (str, int, float)) for tab in sync["tabs"])
+        for sync in syncs
+    ):
+        raise ValueError(
+            "tab_synchronizations must list groups, each a mapping with its behavior and "
+            f"the tabs it syncs, not {syncs!r}"
+        )
+    lugs = config_data.get("lugs")
+    if isinstance(lugs, dict):
+        for direction in ("upstream", "downstream"):
+            value = lugs.get(direction)
+            if value is not None and not isinstance(value, dict):
+                raise ValueError(
+                    f"lugs.{direction} must be a mapping of its commissioning, not {value!r}"
+                )
+
+
+_BATTERY_NUMBERS: Final = (
+    "nameplate_capacity_kwh",
+    "max_charge_w",
+    "max_discharge_w",
+    "charge_efficiency",
+    "discharge_efficiency",
+    "backup_reserve_pct",
+    "initial_soe_kwh",
+)
+_BATTERY_HOURS: Final = ("charge_hours", "discharge_hours")
+
+
+def validate_battery_settings(config_data: Mapping[str, object]) -> None:
+    """Refuse a ``bess`` setting that is not the number, or list of hours, it must be."""
+    bess = config_data.get("bess")
+    if not isinstance(bess, dict):
+        return
+    for key in _BATTERY_NUMBERS:
+        if key in bess and _as_number(bess[key]) is None:
+            raise ValueError(f"bess.{key} must be a finite number, not {bess[key]!r}")
+    capacity = _as_number(bess.get("nameplate_capacity_kwh", 13.5))
+    if capacity is not None and capacity <= 0:
+        raise ValueError(
+            "bess.nameplate_capacity_kwh must be above 0, not "
+            f"{bess['nameplate_capacity_kwh']!r}: a battery's charge is its energy over it"
+        )
+    discharge = _as_number(bess.get("discharge_efficiency", 0.95))
+    if discharge is not None and discharge <= 0:
+        raise ValueError(
+            "bess.discharge_efficiency must be above 0, not "
+            f"{bess['discharge_efficiency']!r}: a battery's discharge is divided by it"
+        )
+    for key in _BATTERY_HOURS:
+        hours = bess.get(key, [])
+        if not isinstance(hours, list) or not all(_is_whole(hour) for hour in hours):
+            raise ValueError(f"bess.{key} must be a list of hours of the day, not {hours!r}")
+    if "feed" in bess:
+        _validate_battery_feed(str(bess["feed"]), config_data.get("circuits"))
+
+
+def _validate_battery_feed(feed: str, circuits: object) -> None:
+    """Refuse a ``bess.feed`` naming no circuit the panel publishes.
+
+    The emitter takes a feed naming nothing as it is, and a circuit on no breaker space
+    is a what-if device the panel does not publish, so no battery can hang from it.
+    """
+    named = [
+        circuit
+        for circuit in (circuits if isinstance(circuits, list) else [])
+        if isinstance(circuit, dict) and str(circuit.get("id")) == feed
+    ]
+    if not named:
+        raise ValueError(
+            f"bess.feed {feed!r} names no circuit: set it to the id of the circuit feeding "
+            "the battery, or remove it for a battery no circuit feeds"
+        )
+    if not on_the_panel(named[0]):
+        raise ValueError(
+            f"bess.feed names circuit {feed!r}, which sits on no breaker space: a what-if "
+            "device, which the panel does not publish, so no battery hangs from it"
+        )
+
+
+# These take a setting as the code reading it does, so a config that ran before keeps
+# running: a number may be quoted where its reader converts it.
+
+
+def _as_number(value: object) -> float | None:
+    """*value* as ``float()`` reads a number: a YAML number, or a string of one. None
+    where it reads none, or none that is finite."""
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _as_whole_number(value: object) -> int | None:
+    """*value* as ``int()`` reads a whole number: a YAML number, or a string of a whole
+    one. None where it reads none."""
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return int(value)
+    except (ValueError, OverflowError):
+        return None
+
+
+def _is_real(value: object) -> bool:
+    """A finite YAML number, for a reader that does arithmetic on it rather than
+    converting it: never a string, nor a bool."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _is_whole(value: object) -> bool:
+    """A space or hour as its readers compare it: a whole YAML number, ``1`` or ``1.0``,
+    never a bool or a string, which equals no space or hour."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and float(value).is_integer()
+    )
+
+
+# Set while validation builds an emitter it then discards.
+_VALIDATING: Final = contextvars.ContextVar("panelbench_validating", default=False)
+
+
+class _QuietWhileValidating(logging.Filter):
+    """Drops the SDK's records below WARNING while validation builds its emitter.
+
+    They describe a device tree no one will see, about 19,000 records on 48 circuits
+    at DEBUG, for every edit. A context variable marks the build, so a running
+    panel's own records, in its own task or thread, still pass; a warning always does.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= logging.WARNING or not _VALIDATING.get()
+
+
+logging.getLogger("homie").addFilter(_QuietWhileValidating())
+
+
+def validate_emitter_accepts(config_data: SimulationConfig) -> None:
+    """Refuse a config the emitter refuses to start a panel on, with its reason.
+
+    PanelBench's own rules say why in its terms. This asks the emitter by building
+    it, as a panel's start does (``construct_emitter``), on a transport that records
+    what it would publish and is then dropped: every rule the emitter applies to a
+    definition then
+    applies here, such as a breaker's circuits agreeing in priority, relay lock,
+    never-backup, placement and energy seed, and a PV rating above 0. So a config
+    PanelBench accepts is one the panel starts on, and the dashboard refuses an edit
+    the emitter would. The definition is built from a normalised copy, as the engine
+    builds it, and the reason names each circuit by its config ``id``.
+    """
+    from panelbench.emitter_adapter.definition import build_definition, construct_emitter
+    from panelbench.emitter_adapter.instance_ids import (
+        circuit_device_id,
+        outside_meter_device_id,
+    )
+    from panelbench.emitter_adapter.wire_capture import RecordingTransport
+
+    config: SimulationConfig = copy.deepcopy(config_data)
+    normalize_config(config, source="validation")
+    definition = build_definition(config)
+    validating = _VALIDATING.set(True)
+    try:
+        construct_emitter(definition, SetterRegistry(), RecordingTransport())
+    except EmitterError as exc:
+        reason = str(exc)
+        published = [
+            *((circuit_device_id(config, c), c["id"]) for c in config.get("circuits") or []),
+            *(
+                (outside_meter_device_id(config, m), m["id"])
+                for m in config.get("outside_meters") or []
+            ),
+        ]
+        # One pass over whole ids, longest first: `circuit-1` begins `circuit-12`, as
+        # `…-1-16-1` begins `…-1-16-12`, so replacing one id at a time would misname.
+        names = {device_id: str(config_id) for device_id, config_id in published}
+        if names:
+            ids = "|".join(re.escape(i) for i in sorted(names, key=len, reverse=True))
+            whole = re.compile(rf"(?<![\w-])(?:{ids})(?![\w-])")
+            reason = whole.sub(lambda match: names[match.group(0)], reason)
+        raise ValueError(f"The emitter refuses this panel: {reason}") from exc
+    finally:
+        _VALIDATING.reset(validating)
 
 
 def _listed(value: object) -> list[object]:

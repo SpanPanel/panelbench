@@ -12,14 +12,16 @@ import fnmatch
 import logging
 import subprocess
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar, Final, cast
 
 import pytest
 import yaml
 from ebus_panel_sim import load_reference_capture, reference_capture_names
 
 from panelbench import __main__ as panelbench_main
+from panelbench.config_defaults import normalize_config
 from panelbench.dashboard.config_store import ConfigStore
+from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.reference_templates import (
     FIRST_TEMPLATE,
     TEMPLATE_PREFIX,
@@ -34,6 +36,9 @@ from panelbench.reference_templates import (
 from tests._helpers import CONFIGS, SHIPPED_TEMPLATES, lay_every_template
 from tests.fidelity.reproduction import assert_reproduces
 
+if TYPE_CHECKING:
+    from panelbench.config_types import SimulationConfig
+
 
 def test_every_reference_capture_is_written_as_a_template(tmp_path: Path) -> None:
     written = write_reference_templates(tmp_path)
@@ -44,20 +49,41 @@ def test_every_reference_capture_is_written_as_a_template(tmp_path: Path) -> Non
     assert all(is_template(path.name) for path in written)
 
 
-def test_a_retired_capture_is_written_as_no_template(tmp_path: Path) -> None:
-    """The r202633 capture would take the r202639 one's name, so it gets none."""
-    assert "main32_r202633" in reference_capture_names()
-    assert "main32_r202633" not in template_capture_names()
+# Each capture retired for a later one of the same panel, that later capture, and the
+# name it takes.
+_SUCCESSORS: Final = {
+    "main32_r202639": ("main32_r202645", "ref_MAIN_32.yaml"),
+    "r202639-a": ("r202645-a", "ref_UNKNOWN_16.yaml"),
+    "r202639-c": ("r202645-c", "ref_MAIN_40.yaml"),
+    "r202639-e": ("r202645-e", "ref_MLO_48.yaml"),
+}
 
+
+def _panel_serial(name: str) -> str:
+    """The masked serial *name*'s panel publishes, which it keeps from one capture to
+    the next."""
+    tree = load_reference_capture(name).tree
+    (panel,) = [d for d in tree.values() if d.type == "distribution-enclosure"]
+    return str(panel.value("info/serial-number"))
+
+
+def test_a_retired_capture_is_written_as_no_template(tmp_path: Path) -> None:
+    """A capture of a panel the emitter also ships a later capture of gets no template:
+    the later capture of the same panel, which keeps its masked serial, takes its name.
+    ``main32_r202633``, masked before panels kept theirs, is a MAIN 32 on a release
+    before 202639, whose name the later MAIN 32 capture takes."""
     write_reference_templates(tmp_path)
 
-    assert (tmp_path / "ref_MAIN_32.yaml").exists()
-    assert (
-        yaml.safe_load((tmp_path / "ref_MAIN_32.yaml").read_text(encoding="utf-8"))[
-            "panel_config"
-        ]["serial_number"]
-        == "sim-main32_r202639"
-    )
+    assert "main32_r202633" in reference_capture_names()
+    assert "main32_r202633" not in template_capture_names()
+    for retired, (successor, filename) in _SUCCESSORS.items():
+        assert retired in reference_capture_names(), retired
+        assert retired not in template_capture_names(), retired
+        assert _panel_serial(retired) == _panel_serial(successor), retired
+        written = yaml.safe_load((tmp_path / filename).read_text(encoding="utf-8"))
+        # A panel keeps its serial through the upgrade, so the template keeps the
+        # serial it had while it ran the earlier capture.
+        assert written["panel_config"]["serial_number"] == f"sim-{retired}", retired
 
 
 @pytest.mark.parametrize("name", template_capture_names())
@@ -274,3 +300,36 @@ def test_a_generated_template_never_takes_a_shipped_name() -> None:
     generated = {template_filename(n) for n in template_capture_names()}
 
     assert generated.isdisjoint(SHIPPED_TEMPLATES)
+
+
+# The hardware 3.0 captures whose trees carry their panels' own device ids: every one
+# but `r202639-f`, captured before captures kept them, whose ids are all masked.
+_NUMBERED_CAPTURES: Final = tuple(
+    name
+    for name in template_capture_names()
+    if load_reference_capture(name).definition.variant == "span-alpha-test-b2"
+    and name != "r202639-f"
+)
+
+
+@pytest.mark.parametrize("name", _NUMBERED_CAPTURES)
+def test_a_hardware_3_template_publishes_its_capture_s_device_ids(name: str) -> None:
+    """Its circuits, remote CT and lugs under the ids its panel published, the panel's
+    root id replaced by the template's serial."""
+    tree = load_reference_capture(name).tree
+    (root,) = [i for i, d in tree.items() if d.type == "distribution-enclosure"]
+    config = cast("SimulationConfig", reference_template(name))
+    serial = config["panel_config"]["serial_number"]
+    normalize_config(config, source="test")
+
+    manifest = build_manifest(config)
+
+    published = {
+        device.instance_id
+        for kind in ("circuit", "remote-ct", "lugs")
+        for device in manifest.of_class(kind)
+    }
+    expected = {
+        i.replace(root, serial, 1) for i, d in tree.items() if d.type in ("circuit", "lugs")
+    }
+    assert published == expected

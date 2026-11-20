@@ -1,8 +1,23 @@
 # Changelog
 
-## Unreleased
+## 2.9.0 — 2026-11-20
 
-The shipped templates are now all `ref_` templates, and the three `default_MAIN_` templates are removed.
+Runs on `ebus-panel-sim` 0.11.0: the generated templates are each panel's latest capture, on SPAN release 202645 where there is one, and hardware 3.0
+panels publish the device ids real ones do. The shipped templates are now all `ref_` templates, and the three `default_MAIN_` templates are removed.
+
+### Added
+
+- **Hardware 3.0 panels publish the device ids a real panel does**, by SPAN's number for each circuit, changing shape at release 202645 as the panel's do.
+  Configs that record no numbers publish as before. The circuits of `ref_UNKNOWN_16`, `ref_MAIN_16`, `ref_MAIN_40`, `ref_MLO_24` and `ref_MLO_48` come back
+  to Home Assistant as new devices, since they now publish their panels' own ids; the SpanPanel/span integration carries a panel's entities across the
+  change of ids at release 202645 from v2.3.3 (in pre-release as v2.3.3b1). A panel whose device ids another running panel publishes is refused at start.
+- **`ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS` and `ref_MLO_48_HYBRID`**: a MAIN 32 fed by another panel, a MAIN 16 with a hybrid battery and an EVSE, and an
+  MLO 48 whose battery's inverter takes its solar.
+- **A battery can take its own solar**: set `bess.inverter_type: hybrid` and rate its array with `bess.pv_array.nameplate_capacity_w`, and it produces into the
+  panel's solar, live and in the Model view. A clone of a panel with such a battery writes it hybrid. Changing a running battery's coupling restarts its
+  panel.
+- **`panel_config.feedthrough: false`** for a panel without a feedthrough module: on SPAN release 202645 a hardware 3.0 one publishes no downstream lugs. A
+  clone writes it.
 
 ### Changed
 
@@ -15,6 +30,13 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
   integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.yaml` or `default_MLO_48_TANDEMS.yaml` keeps its `ref_` twin's serial
   (`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one and the other shows an `error` badge naming the serial. Delete the leftover
   `default_*` files, or clone the `ref_` equivalent.
+- **Runs on `ebus-panel-sim` 0.11.0**: the lugs' per-leg currents net each leg by the panel's rows; on hardware 3.0 a tandem's or quad's circuits each
+  publish the breaker's one reading and share its relay over MQTT, and a battery's nameplate capacity has one decimal place.
+- **The dashboard switches and edits a tandem or quad as one breaker**: a relay toggle, or a priority or relay-behaviour change, on one of its circuits
+  applies to all of them. A config 0.11.0 refuses, such as a PV rating of 0, is refused with its reason when edited or loaded, and a clone gives a tandem's
+  circuits its one energy register.
+- **`ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48` are their panels' later captures, on release 202645.** `ref_MAIN_40` now has 38
+  circuits and no battery, and `ref_UNKNOWN_16` an EVSE. Each keeps its serial, so Home Assistant keeps the panel.
 - **A `pv` section listing `inverters` must set `enabled`, to `true` or `false`**: without it they published nothing, and a quoted `"false"` published them;
   now the config is refused, saying so.
 
@@ -22,16 +44,18 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 
 - **A clone of a MAIN 16 or MAIN 40 offers only its model's spaces**, 9 to 24 or 9 to 48, where a circuit added to it could land on space 1 and the integration
   warned about its breaker positions.
+- **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
+  next.
+- **A PV inverter or SPAN Drive added in the dashboard no longer stops the panel starting**: it is modelled in the Model view and not published.
+- **A breaker rating edited in the dashboard is published**, where the panel went on publishing the template's.
+- **A config the panel cannot start on is refused when loaded, edited or saved, saying why**, where it was saved and the panel then failed to start.
 
 ### Removed
 
 - **`default_MAIN_16`, `default_MAIN_32` and `default_MAIN_40`**; use `ref_MAIN_16`, `ref_MAIN_32` and `ref_MAIN_40`. The first and last numbered their spaces
-  from 1, where the SpanPanel integration's client places those models at 9 to 24 and 9 to 48, so the integration warned about their breaker positions.
+  from 1, where the SpanPanel integration's client places those models at 9 to 24 and 9 to 48, as their reference captures show, so the integration warned
+  about their breaker positions.
 
-### Fixed
-
-- **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
-  next.
 
 ## 2.8.0 — 2026-11-15
 

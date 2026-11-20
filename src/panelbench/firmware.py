@@ -5,8 +5,9 @@ publishes it as ``info/firmware-version``, reports it from its HTTP status endpo
 and advertises it over mDNS, because a consumer reading any two of those must see
 one panel.
 
-The emitter decides the BESS meter's sign and the EVSE user limit from the string
-itself. PanelBench needs the same release for what the emitter does not derive,
+The emitter decides the BESS meter's sign, the EVSE user limit and, from release
+202645 under ``span-alpha-test-b2``, the circuits' ``connection/connection-point``
+from the string itself. PanelBench needs the same release for what the emitter does not derive,
 the per-inverter PV devices and the REST status, so it reads it here by the same
 rule: SPAN firmware strings are ``/``-separated, and the segment ``r`` plus six
 digits names the release as year and week (``spanos2/r202639/03`` is release
@@ -33,6 +34,11 @@ unpublished until set, published one PV device per inverter, and added
 Its panels also name each circuit's device after its id, keeping the circuit's own
 name in ``info/name``, as the emitter's captured MAIN 32 on the release shows.
 """
+
+SPAN_RELEASE_202645: Final = 202645
+"""The SPAN release from which a hardware 3.0 panel publishes each circuit's
+``connection/connection-point``, and one without a feedthrough module publishes its
+upstream lugs alone, as the emitter's r202645 captures show."""
 
 _RELEASE_SEGMENT: Final = re.compile(r"r(\d{6})")
 

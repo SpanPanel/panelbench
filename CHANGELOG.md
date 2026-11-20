@@ -1,8 +1,33 @@
 # Changelog
 
-## Unreleased
+## 2.9.0 — SPAN release 202645, and the device ids real panels publish
 
-**The shipped templates are all `ref_` templates: the two tandem templates are renamed, and the three `default_MAIN_` templates are removed.**
+**PanelBench runs on `ebus-panel-sim` 0.11.0. Its generated templates are each panel's latest capture, on SPAN release 202645 where the emitter has one,
+and a hardware 3.0 panel publishes the device ids a real one does.** The shipped templates are all `ref_` templates: the two tandem templates are renamed,
+and the three `default_MAIN_` templates are removed. The `span-panel` integration carries a hardware 3.0 panel's entities across the change of ids at
+release 202645 from v2.3.3 (in pre-release as v2.3.3b1).
+
+### Added
+
+- **PanelBench publishes the device ids a real panel does.** A hardware 3.0 panel names its circuits, its remote CT and its lugs by SPAN's numbers for them,
+  which it keeps while the ids around them change at release 202645: `circuit-<n>` and `remote-ct-<n>` before it, `{serial}-{hex16}-1-16-<n>`,
+  `-1-42-<n>` and `-1-21-2` from it. A circuit records its number as `circuit_number`, and the panel its segment as `panel_config.device_id_hex`, so the ids
+  follow `firmware_version` across the release. A template of a hardware 3.0 capture that keeps its panel's ids and a clone of such a panel record them as
+  the panel publishes them, and a circuit added in the dashboard takes the lowest number its panel's circuits leave. A MAIN 32, whose ids no release
+  changes, and a config that records no numbers publish as before. Since nothing scopes those ids to the panel before release 202645, a panel whose
+  device ids another running panel already publishes is refused at start, as one with a running serial is. The `span-panel` integration carries a panel's
+  entities across the change from v2.3.3 (in pre-release as v2.3.3b1).
+- **Three templates of real panels**, generated from the emitter's reference captures: `ref_MAIN_32_CASCADE`, a MAIN 32 fed by another panel, with a battery;
+  `ref_MAIN_16_BESS`, a MAIN 16 with a hybrid battery and an EVSE; and `ref_MLO_48_HYBRID`, an MLO 48 whose battery's inverter takes its solar.
+- **A battery can take its own solar.** `bess.inverter_type: hybrid` (default `ac-coupled`) says the battery's own inverter also takes PV, on its DC side, and
+  `bess.pv_array.nameplate_capacity_w` rates the array; it produces by the panel's location and weather and joins `power-flows/pv` and the solar the battery's
+  dispatch sees, live and in the Model view. A clone writes a battery hybrid where the emitter's capture reads it so: the panel publishes `power-flows/pv`
+  and nothing but its one battery could bring it solar. An imported definition keeps its battery's coupling. A battery change the running panel cannot
+  take, a coupling changed or the battery enabled, disabled or replaced, restarts the panel, since the emitter builds its battery at start. Off grid the
+  array is not yet curtailed to what the load and battery can take, as the PV circuits are not.
+- **`panel_config.feedthrough`** (default `true`). With `false`, a hardware 3.0 panel on SPAN release 202645, or on a firmware naming none, publishes no
+  downstream lugs, as such a panel without a feedthrough module does; release 202639 and a MAIN 32 publish both. A clone of a panel publishing its upstream
+  lugs alone writes `false`. A `lugs.downstream` section for lugs the panel does not publish is refused, and so is a battery placed `DOWNSTREAM` of them.
 
 ### Changed
 
@@ -20,6 +45,23 @@
   badge naming the serial. Delete the leftover `default_*` files, or clone the `ref_` equivalent.
 - **The README lists every template in one table**, and the conformance profile in `DEVELOPER.md` is the regenerated one: 452 match, 4 divergence, 69 extension
   and 1327 omission.
+- **PanelBench runs on `ebus-panel-sim` 0.11.0**, which publishes some things differently, as its CHANGELOG records. The lugs' `meter/current-a` and
+  `meter/current-b` take each space's leg from its row and net each leg's current. On hardware 3.0 the circuits of one tandem or quad each publish the
+  breaker's one reading, and a relay or priority set on one over MQTT reaches them all. A battery's `info/nameplate-capacity` has one decimal place there (`27.0`).
+  A hardware 3.0 panel on release 202645, or on a firmware naming none, publishes each circuit's `connection/connection-point`.
+- **0.11.0 refuses the circuits of one tandem or quad differing in priority, relay lock, never-backup or energy seed, and a PV rating that is not above 0**,
+  both of which 0.10.0 started on, and PanelBench refuses them when it loads, edits or saves a config, as it does all the emitter refuses (see Fixed). The
+  dashboard applies a relay toggle, or a priority or relay-behaviour edit, on one circuit of a tandem or quad to every circuit on it, since the breaker has
+  one relay; only a circuit whose own value changes leaves recorder replay. A clone, and a refresh of its energy from the source panel, writes a tandem's or
+  quad's one register to each of its circuits: the largest any of them publishes, as the emitter's capture takes it, since they read one meter a moment
+  apart.
+- **Four generated templates are their panels' later captures, on release 202645**: `ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48`, where
+  they were the release 202639 captures of the same panels. `ref_MAIN_40` is that panel recommissioned, with 38 circuits and no battery, where it had 5 and
+  a battery fed by a circuit, and `ref_UNKNOWN_16` adds an EVSE. Each keeps its serial (`sim-main32_r202639`, `sim-r202639-a`, `sim-r202639-c` and
+  `sim-r202639-e`), as a panel keeps its serial through a firmware upgrade, so Home Assistant keeps a panel run from one of them across the upgrade of
+  PanelBench. `ref_MAIN_32` keeps its devices' ids too. The hardware 3.0 templates (`ref_UNKNOWN_16`, `ref_MAIN_16`, `ref_MAIN_40`, `ref_MLO_24` and
+  `ref_MLO_48`) now publish their panels' own ids for their circuits and remote CT, and on release 202645 for their lugs, where they published hashed and
+  serial-scoped ones, so Home Assistant sees those devices as new.
 - **A `pv` section listing `inverters` must set `enabled`, and `pv.enabled` must be `true` or `false`.** The inverters no circuit feeds publish only while
   `pv.enabled` is `true`, and a config listing them without it loaded and published none of them; it is now refused, saying to set `enabled` to `true` to
   publish them or `false` to keep them off. An `enabled` that is empty or quoted, such as `"false"`, which published the opposite of what it says, is refused
@@ -37,20 +79,33 @@
   generated `ref_` templates, clones, history databases, and `configs/.secrets/` and `configs/rates/`, which hold credentials and API keys. `.dockerignore` now
   keeps all but the presets and the two tracked templates out, as a build from git has it, and leaves local state and caches out of the build context; images
   built by CI were not affected.
+- **A PV inverter or SPAN Drive added in the dashboard no longer stops its panel starting.** It sits on no breaker space, and the emitter refuses a circuit
+  with none, so a panel with one would not start; it is now a what-if device, which the Model view models and the panel does not publish, nor anything it
+  would feed. A `pv.feed` or `bess.feed` naming one is refused.
+- **A breaker rating edited in the dashboard is published.** The edit writes the circuit's own rating, which the dashboard showed while the panel went on
+  publishing its template's. The engine, the panel's definition, validation and the dashboard's view of a circuit now all read it by its template with
+  the circuit's overrides and own rating over it, so what is checked is what is modelled, published and shown. A hand-written override outside the
+  energy profile, such as `relay_behavior`, which only the engine applied, is published too, and a rating must be above 0.
+- **A config the panel cannot start on is refused when PanelBench loads, edits or saves it, saying why**, where it loaded and saved and the panel then
+  failed to start. PanelBench builds the emitter as a panel's start does, so whatever the emitter refuses, such as an `unvalued` path the device's profile
+  declares none of, is refused with its reason, each circuit and meter named by its `id`. A section or setting of the wrong shape, such as `lugs: x`,
+  `bess.charge_hours: 5` or a template's `power_range: {min: 50, max: 150}`, is refused by name, a circuit's `overrides` as they leave its template, where
+  the panel failed to start or tick with an error naming nothing; a number may still be quoted where it is read as one.
+  A `total_tabs` that is no SPAN panel's size, or a latitude or longitude off the globe, which the dashboard's form allowed, and a battery of 0 kWh or a
+  discharge efficiency of 0, which failed on its first tick, are refused. A template no circuit uses is read by nothing, so it is checked for its shape
+  alone. A `bess.feed` naming no circuit, which published a battery fed by nothing, is refused, and deleting the circuit it names in the dashboard drops
+  it, as it drops a `pv.feed`.
+- **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
+  ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
+  a panel no longer starts every cycling load at the start of its on phase.
 
 ### Removed
 
 - **`default_MAIN_16.yaml`, `default_MAIN_32.yaml` and `default_MAIN_40.yaml`**, which `ref_MAIN_16`, `ref_MAIN_32` and `ref_MAIN_40` cover. The SpanPanel
   integration's client, span-panel-api, places MAIN 16 at spaces 9 to 24 and MAIN 40 at 9 to 48, and `default_MAIN_16` and `default_MAIN_40` numbered their
-  spaces from 1, so the integration logged "Panel model ... has breaker positions ..., but its circuits occupy spaces ..." for both. The MAIN 16 range is the
-  one its reference capture shows, with circuits on spaces 9 to 24; the MAIN 40 range is the client's own choice, and its capture's circuits sit on spaces 9
-  to 45.
+  spaces from 1, so the integration logged "Panel model ... has breaker positions ..., but its circuits occupy spaces ..." for both. Each range is the one a
+  reference capture of that model shows: a MAIN 16's circuits on spaces 9 to 24, and a MAIN 40's on 9 to 48.
 
-### Fixed
-
-- **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
-  ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
-  a panel no longer starts every cycling load at the start of its on phase.
 
 ## 2.8.0 — Tandem and quad breakers, and several panels on one broker
 

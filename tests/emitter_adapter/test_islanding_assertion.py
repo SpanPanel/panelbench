@@ -76,19 +76,16 @@ async def test_a_link_set_without_a_battery_is_not_sent(tmp_path: Path) -> None:
     assert not [topic for topic in recorder.retained if topic.endswith(f"/{_LINK}")]
 
 
-async def test_a_battery_disabled_mid_run_stops_receiving_the_link() -> None:
+async def test_a_battery_disabled_mid_run_keeps_its_link_until_the_restart() -> None:
+    """The emitter builds its battery at start, so disabling it live is not applied:
+    the panel goes on running the battery it started with, its link with it, until
+    the caller restarts it on the saved config."""
     runtime, recorder = await recorded_panel(PANEL_CONFIG)
     battery = bess_config_from_engine(runtime.engine)
     assert battery is not None
     runtime.engine.set_bess_link("LOST")
+
+    assert update_bess_config_live(runtime, {"enabled": False}) is False
+
     await emitter_runtime.publish_tick(runtime)
     assert published(recorder, battery.instance_id, _LINK) == "LOST"
-
-    update_bess_config_live(runtime, {"enabled": False})
-
-    # The link is keyed from the live config, so the disabled battery gets nothing.
-    # The emitter keeps the battery it was built with, and one left out of the tick
-    # reads as OK.
-    assert emitter_runtime._bess_communication(runtime.engine, "LOST") == {}
-    await emitter_runtime.publish_tick(runtime)
-    assert published(recorder, battery.instance_id, _LINK) == "OK"

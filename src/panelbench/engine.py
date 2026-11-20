@@ -33,6 +33,8 @@ from panelbench.exceptions import SimulationConfigurationError
 from panelbench.inverter import template_is_hybrid
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from ebus_panel_sim import BESSCommunication, BESSDevice
 
     from panelbench.config_types import (
@@ -65,6 +67,8 @@ class EngineTick:
     """Signed instant power per circuit, keyed by emitter instance id."""
     bess_link: BESSCommunication
     """The requested health of the panel's link to its battery."""
+    bess_pv_w: float
+    """What a hybrid battery's own array produces, in watts, positive; 0 for any other."""
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +298,11 @@ class RealisticBehaviorEngine:
         if current_hour >= 22 or current_hour <= 6:
             return base_power * 0.3
         return base_power
+
+    def solar_output_w(self, nameplate_w: float, timestamp: float) -> float:
+        """What an array rated *nameplate_w* produces at *timestamp*, in watts, by the
+        panel's location and weather, as a PV circuit's does."""
+        return self._apply_solar_day_night_cycle(nameplate_w, timestamp)
 
     def _apply_solar_day_night_cycle(self, base_power: float, current_time: float) -> float:
         """Apply solar day/night cycle using geographic sine model + weather."""
@@ -589,6 +598,9 @@ class DynamicSimulationEngine:
         self._clock = SimulationClock()
         self._behavior_engine: RealisticBehaviorEngine | None = None
         self._circuits: dict[str, SimulatedCircuit] = {}
+        # Each circuit's published device id, by its config id: named once the serial
+        # is final, as the panel names it (`instance_ids.circuit_device_id`).
+        self._device_ids: dict[str, str] = {}
         self._energy_system: EnergySystem | None = None
 
         # Dynamic overrides (dispatched to circuits)
@@ -705,13 +717,17 @@ class DynamicSimulationEngine:
         if not self._config or not self._behavior_engine:
             raise SimulationConfigurationError("Configuration and behavior engine required")
 
+        from panelbench.emitter_adapter.instance_ids import circuit_device_id
+
         self._circuits = {}
+        self._device_ids = {}
         for circuit_def in self._config["circuits"]:
             template_name = circuit_def["template"]
             template = self._config["circuit_templates"][template_name]
             self._circuits[circuit_def["id"]] = SimulatedCircuit(
                 circuit_def, template, self._behavior_engine
             )
+            self._device_ids[circuit_def["id"]] = circuit_device_id(self._config, circuit_def)
 
     # ------------------------------------------------------------------
     # Clock delegation (preserves public API)
@@ -959,8 +975,6 @@ class DynamicSimulationEngine:
         if not self._config:
             raise SimulationConfigurationError("Configuration not loaded")
 
-        from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
-
         current_time = self._clock.current_time
         for _cid, circuit in self._circuits.items():
             # Tab-sync grouping currently has no override path — the
@@ -972,19 +986,67 @@ class DynamicSimulationEngine:
         # Apply the v0.3.0 sign convention: producers (PV) report negative
         # power; consumers report positive. SimulatedCircuit stores magnitudes
         # only; the energy_mode tells direction.
-        panel_id = self.serial_number
         circuit_powers: dict[str, float] = {}
         for cid, circuit in self._circuits.items():
+            # A virtual device is modelled but never published, so the emitter has no
+            # circuit to give its power to (`virtual_devices`).
+            if not circuit.on_the_panel:
+                continue
             mag = circuit.instant_power_w
             signed = -mag if circuit.energy_mode == "producer" else mag
-            circuit_powers[stable_circuit_uuid(panel_id, cid)] = signed
+            circuit_powers[self._device_ids[cid]] = signed
 
         return EngineTick(
             current_time=current_time,
             grid_online=self.grid_online,
             circuits=circuit_powers,
             bess_link=self._bess_link,
+            bess_pv_w=self._hybrid_array_w(self._config, current_time),
         )
+
+    def _baseline_array_config(
+        self, baseline: Mapping[str, object] | None
+    ) -> Mapping[str, object] | None:
+        """The config the Before pass takes a hybrid battery's array from.
+
+        The baseline's, or the live config's where there is none. A clone writes a
+        hybrid battery with no array rating, since a panel publishes none, so where
+        the baseline's hybrid battery has none and the live one is rated, rating it
+        filled in what the panel has: the Before pass takes the live rating too.
+        """
+        if not baseline:
+            return self._config
+        bess = baseline.get("bess")
+        live = self._config.get("bess") if self._config else None
+        if (
+            isinstance(bess, dict)
+            and bess.get("inverter_type") == "hybrid"
+            and "pv_array" not in bess
+            and isinstance(live, dict)
+            and live.get("inverter_type") == "hybrid"
+            and "pv_array" in live
+        ):
+            return {**baseline, "bess": {**bess, "pv_array": live["pv_array"]}}
+        return baseline
+
+    def _hybrid_array_w(self, config: Mapping[str, object] | None, ts: float) -> float:
+        """What the hybrid battery *config* describes takes from its own array at *ts*,
+        in watts, positive: 0 for a battery that is off, not hybrid, or has no rated
+        array."""
+        behavior = self._behavior_engine
+        bess = config.get("bess") if config is not None else None
+        if (
+            behavior is None
+            or not isinstance(bess, dict)
+            or not bess.get("enabled")
+            or bess.get("inverter_type") != "hybrid"
+        ):
+            return 0.0
+        array = bess.get("pv_array")
+        nameplate = (
+            float(array.get("nameplate_capacity_w", 0.0)) if isinstance(array, dict) else 0.0
+        )
+        return behavior.solar_output_w(nameplate, ts) if nameplate > 0 else 0.0
 
     # ------------------------------------------------------------------
     # Modeling computation
@@ -1137,6 +1199,9 @@ class DynamicSimulationEngine:
                 use_recorder_baseline=True,
             )
             inputs_b = self._powers_to_energy_inputs(powers_b)
+            # A hybrid battery's own array, booked as the emitter books its PV: in the
+            # solar, in what the battery's dispatch sees, and off the grid.
+            array_b = self._hybrid_array_w(self._baseline_array_config(baseline_config), ts)
             if before_energy_system is not None:
                 state_b = before_energy_system.tick(ts, inputs_b)
                 pre_grid_before = state_b.grid_power_w
@@ -1149,9 +1214,10 @@ class DynamicSimulationEngine:
                 current_time=ts,
                 grid_online=True,
                 load_demand_w=inputs_b.load_demand_w,
-                pv_available_w=inputs_b.pv_available_w,
+                pv_available_w=inputs_b.pv_available_w + array_b,
             )
-            grid_before = pre_grid_before - batt_before
+            grid_before = pre_grid_before - batt_before - array_b
+            pv_before += array_b
 
             # --- After pass: all current circuits ---
             powers_a = self._collect_circuit_powers_at_ts(
@@ -1163,19 +1229,20 @@ class DynamicSimulationEngine:
             inputs_a = self._powers_to_energy_inputs(powers_a)
 
             state_a = after_energy_system.tick(ts, inputs_a)
+            array_a = self._hybrid_array_w(self._config, ts)
             batt_after = _bess_dispatch(
                 after_bess,
                 current_time=ts,
                 grid_online=True,
                 load_demand_w=inputs_a.load_demand_w,
-                pv_available_w=inputs_a.pv_available_w,
+                pv_available_w=inputs_a.pv_available_w + array_a,
             )
-            grid_after = state_a.grid_power_w - batt_after
+            grid_after = state_a.grid_power_w - batt_after - array_a
 
             site_power_arr.append(round(grid_before, 1))
             pv_before_arr.append(round(pv_before, 1))
             grid_power_arr.append(round(grid_after, 1))
-            pv_after_arr.append(round(state_a.pv_power_w, 1))
+            pv_after_arr.append(round(state_a.pv_power_w + array_a, 1))
             battery_power_arr.append(round(batt_after, 1))
             battery_before_arr.append(round(batt_before, 1))
 

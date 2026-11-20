@@ -363,6 +363,12 @@ panel_config:
   ethernet_link: bool # status/ethernet
   wifi_ssid: str | null # status/wifi-ssid (default: sim-wifi while Wi-Fi is up); null publishes none
   unvalued: [str] # node/property paths the panel declares and leaves unvalued, as a clone reads them
+  # Whether the panel has a feedthrough module (default: true). false publishes no downstream lugs under hardware 3.0
+  # from release 202645 (hardware.publishes_downstream_lugs); a clone of a panel publishing its upstream lugs alone writes it
+  feedthrough: bool
+  # The 16 hex digits a hardware 3.0 panel's numbered devices publish under from release 202645, {serial}-{hex16}-1-16-<n>
+  # (instance_ids); absent, one is derived from the serial
+  device_id_hex: str
   registration_limit: # Absent, every registration succeeds
     per_minute: int # Registrations each client may make in a minute; past it, registration answers 429
     retry_after: bool # Whether the refusal carries Retry-After (default: true)
@@ -447,6 +453,9 @@ circuits:
     name: str # Human-readable name
     template: str # References a circuit_templates key
     tabs: [int] # Tab positions ([1] = 120V, [1, 3] = 240V)
+    # SPAN's number for the circuit on hardware 3.0, kept across releases: published as circuit-<n>, then
+    # {serial}-{hex16}-1-16-<n> from release 202645; absent, the circuit keeps its hashed id
+    circuit_number: int
     breaker_rating: int # Per-circuit override (optional)
     pcs_priority:
       int | null # Published as pcs/priority (default: the circuit's position). null records a panel that
@@ -473,9 +482,10 @@ unmapped_tabs: [int] # Tab numbers with no circuit assigned
 outside_meters: # A meter the panel reads that sits outside it, on no breaker space; one at most
   - id: str # Scopes its device id, as a circuit's id does
     unvalued: [str]
+    circuit_number: int # SPAN's number for it as a remote CT: remote-ct-<n>, then {serial}-{hex16}-1-42-<n>
 
 lugs: # Each set of lugs as commissioned, published in its connection node
-  upstream: # downstream takes the same keys
+  upstream: # downstream takes the same keys, and is refused for lugs the panel does not publish (panel_config.feedthrough)
     feeds_role: str # What the lugs feed where it is not a device of its own
     service_rating_a: int # The utility service rating at a service entrance
     overcurrent_protection_a: int
@@ -611,7 +621,10 @@ ebus/5/{serial}/{node}/{property}
 | `power-flows`     | Aggregated: PV, battery, grid, site power                              |
 
 `{circuit-uuid}` is a UUID v5 over `{panel-serial}/{circuit-id}`. It is scoped to the panel because the shipped configs reuse circuit ids such as
-`solar_inverter` across panel sizes, and two panels in one add-on publish to one broker.
+`solar_inverter` across panel sizes, and two panels in one add-on publish to one broker. A hardware 3.0 panel whose config numbers its circuits
+(`circuit_number`) names them instead as such a panel does: `circuit-<n>` before release 202645 and `{panel-serial}-{hex16}-1-16-<n>` from it (see the
+README's Device ids). Before 202645 nothing scopes those ids to the panel, as a real panel's own broker needs nothing to, so PanelBench refuses to start a
+panel whose device ids another running panel already publishes.
 
 ### Settable Properties
 
@@ -728,6 +741,10 @@ The Battery Storage Energy Equipment tracks real state-of-energy by integrating 
 - **Discharging**: `SOE -= power * dt / discharge_efficiency`
 - **Backup reserve**: Normal discharge stops at `backup_reserve_pct` (default 20%); only grid-disconnect emergencies drain to the 5% hard floor
 - **Charge modes**: Custom (hour-based schedule), Solar Generation (tracks PV curve), Solar Excess (surplus after loads)
+- **A hybrid battery's own array**: `bess.inverter_type: hybrid` (default `ac-coupled`), with `bess.pv_array.nameplate_capacity_w`, gives the battery's
+  inverter an array. The engine produces it with the PV circuits' solar model (`RealisticBehaviorEngine.solar_output_w`), and the runtime hands it to the
+  emitter as the battery's `TickInputs.bess_pv`, which the emitter adds to `power-flows/pv`, its dispatch's solar and the grid. The Model view books it the
+  same way. A clone takes the coupling from the emitter's own reading of the tree (`clone._hybrid_batteries`); an import keeps its definition's.
 
 ### Energy Accumulation
 

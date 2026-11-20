@@ -48,7 +48,7 @@ Click a simulator configuration to view it. Templates are read-only. A running s
 ## Home Assistant App
 
 PanelBench installs as a Home Assistant app from this repository. Images are published for `amd64` and `aarch64`, and the app is not distributed through HACS.
-It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the shipped templates publish. The
+It requires the `span-panel` integration **v2.1.2 or later**, which reads the SPAN firmware release 202639 the two tracked templates publish. The
 [reference panels](#templates), and `ref_MLO_48_TANDEMS.yaml`, which is built from one, need **v2.2.0 or later**; its tandem-quad is drawn and judged correctly
 from **v2.3.0**.
 
@@ -110,7 +110,7 @@ Each panel has a unique serial number, so there is no conflict between the auto-
 ## Rehearsing a SPAN firmware upgrade
 
 A SPAN panel reads its firmware once, when it starts, and an over-the-air upgrade takes it offline and brings it back reporting the new release. PanelBench
-rehearses an upgrade the same way: two configs for one panel, run one after the other. The upgrade rehearsed here is to SPAN release 202639. The shipped
+rehearses an upgrade the same way: two configs for one panel, run one after the other. The upgrade rehearsed here is to SPAN release 202639. The tracked
 templates name `spanos3/r202639/03` (see [Firmware Version](#firmware-version)) and so are panels after it, which is why the first config names an earlier
 release.
 
@@ -292,6 +292,9 @@ The dashboard adds one PV circuit per panel, and a panel has one battery. A pane
 config's YAML, as [Rehearsing a SPAN firmware upgrade](#rehearsing-a-span-firmware-upgrade) shows. Recorder-sourced entities preserve their original panel
 settings (priority, relay behavior) as read-only.
 
+A PV inverter or SPAN Drive the dashboard adds sits on no breaker space: it is a what-if device, which the Model view models and the panel does not publish,
+since a panel publishes only the circuits on its spaces. Give it spaces in the config's YAML to publish it.
+
 ### Relay Control and Load Shedding
 
 - Click status dots to toggle circuit relays
@@ -390,15 +393,20 @@ leftover `default_*` files, or clone the `ref_` equivalent.
 | `ref_MAIN_32_TANDEMS.yaml`     | 1-32   | tracked   | MAIN 32 with solar, battery, 1 EVSE, 20-20 and 15-20 tandems and a 20-30 package |
 | `ref_MLO_48_TANDEMS.yaml`      | 1-48   | tracked   | Main-lug-only on hardware 3.0, 1 EVSE, four tandems, a quad and a tandem-quad    |
 | `ref_MAIN_32.yaml`             | 1-32   | generated | MAIN 32 with a battery                                                           |
+| `ref_MAIN_32_CASCADE.yaml`     | 1-32   | generated | MAIN 32 fed by another panel, with a battery                                     |
 | `ref_MAIN_32_UPSTREAM_PV.yaml` | 1-32   | generated | MAIN 32 with two inverters and a battery upstream of the panel                   |
 | `ref_MAIN_16.yaml`             | 9-24   | generated | MAIN 16 with a meter outside the panel                                           |
-| `ref_MAIN_40.yaml`             | 9-48   | generated | MAIN 40 with a battery fed by a circuit                                          |
+| `ref_MAIN_16_BESS.yaml`        | 9-24   | generated | MAIN 16 with a hybrid battery and 1 EVSE                                         |
+| `ref_MAIN_40.yaml`             | 9-48   | generated | MAIN 40 with 38 circuits and no battery                                          |
 | `ref_MLO_24.yaml`              | 1-24   | generated | MLO 24, with no main breaker and a battery fed by a circuit                      |
 | `ref_MLO_48.yaml`              | 1-48   | generated | MLO 48, with no main breaker and circuits sharing a meter and relay              |
-| `ref_UNKNOWN_16.yaml`          | 1-16   | generated | 16-space panel that publishes no model, with a meter outside it                  |
+| `ref_MLO_48_HYBRID.yaml`       | 1-48   | generated | MLO 48, with no main breaker, 1 EVSE and a hybrid battery                        |
+| `ref_UNKNOWN_16.yaml`          | 1-16   | generated | 16-space panel that publishes no model, with 1 EVSE and a meter outside it       |
 
-Each generated template is that panel as it published itself on `spanos3/r202639/03`, with serials, ids and site details masked. Read them with the `span-panel`
-integration v2.2.0 or later.
+Each generated template is that panel as it published itself, with serials, ids and site details masked, on the firmware it reports as `firmware_version`:
+`spanos3/r202645/02` for `ref_MAIN_32`, `ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS`, `ref_MAIN_40` and `ref_UNKNOWN_16`, `spanos3/r202645/01` for `ref_MLO_48`,
+`spanos3/r202639/04` for `ref_MLO_48_HYBRID`, and `spanos3/r202639/03` for the rest. Where a panel was captured on both releases, the template is its later
+capture. Read them with the `span-panel` integration v2.2.0 or later.
 
 #### Tandem and quad breakers
 
@@ -411,6 +419,10 @@ two `_TANDEMS` templates show one each:
   15-20" on space 32 past its 15 A to 24 A, well under the 35 A its two breakers carry.
 - **MAIN 16, MLO 24, MAIN 40 and MLO 48** publish one circuit per protected circuit, each with its own rating, and name each other in `meter/` and
   `switch/shared-with-device-ids`, which a circuit's `shared_with` sets. A single-pole circuit lists its own space and a two-pole circuit lists both.
+  The circuits of one breaker share its one reading and relay: each publishes the breaker's reading, and a relay or priority set on one over MQTT reaches them
+  all. In the dashboard a relay toggle, or an edit of the priority or relay behaviour, on one applies to every circuit on the breaker, and a config whose
+  circuits on one breaker differ in priority, relay lock, never-backup or energy seed is refused, as the emitter refuses it. A clone gives each circuit the
+  breaker's one energy register, the largest any of them publishes, since they read one meter a moment apart.
   `ref_MLO_48_TANDEMS.yaml` is the reference MLO 48 with synthetic names and loads. It keeps that panel's three tandems and adds a 15-20 tandem on space 37, a
   quad on 27 and 29, and a tandem-quad on 31 and 33.
 
@@ -428,9 +440,11 @@ leaves out. Each circuit still publishes its own reading, where a panel publishe
 
 `firmware_version` is the firmware string a panel reports over MQTT, its HTTP status endpoint and mDNS. It also decides which side of SPAN release 202639 the
 panel emulates: the battery's power sign, whether a SPAN Drive's user charge limit is published before a user sets one, one solar device per inverter, the
-status endpoint's hardware version, and commissioned-system circuits.
+status endpoint's hardware version, and commissioned-system circuits. From release 202645 a hardware 3.0 panel also publishes each circuit's
+`connection/connection-point`, and one without a feedthrough publishes no downstream lugs ([A panel without a feedthrough](#a-panel-without-a-feedthrough)).
 
-The shipped templates name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639.
+The two tracked templates name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639;
+each template of a real panel names the release it was captured on ([Templates](#templates)).
 `ref_MAIN_32_TANDEMS.yaml`'s solar circuit is the locked "Commissioned PV System" circuit, and it reports hardware version `1.2`. Read it with the `span-panel`
 integration v2.1.2 or later; v2.1.1 shows the battery's Meter Power with its sign flipped. `ref_MLO_48_TANDEMS.yaml` reports hardware version `3.0`, as the
 reference MLO 48 does, and has no solar circuit; read it with v2.2.0 or later, and with v2.3.0 or later for its tandem-quad to be drawn and judged correctly.
@@ -442,8 +456,68 @@ remove `commissioned_system` from its solar template, which PanelBench refuses o
 firmware_version: spanos3/r202633/02
 ```
 
-A config naming no firmware reports `sim/v<package version>`, which names no SPAN release, and publishes r202639's conventions. A clone keeps its source panel's
-firmware.
+A config naming no firmware reports `sim/v<package version>`, which names no SPAN release, and publishes the conventions of the latest release, 202645. A
+clone keeps its source panel's firmware.
+
+### A panel without a feedthrough
+
+`panel_config.feedthrough` says whether the panel has a feedthrough module (default `true`). From SPAN release 202645 a hardware 3.0 panel without one
+publishes its upstream lugs alone, so with `feedthrough: false` such a panel, on that release or on a firmware naming none, publishes no downstream lugs. On
+release 202639 it publishes both, as panels on that release do, and a MAIN 32 publishes both whatever its feedthrough, since no capture shows one leaving them
+out. A clone of a panel that publishes its upstream lugs alone writes `feedthrough: false`, and a `lugs.downstream` section for lugs the panel does not
+publish is refused.
+
+```yaml
+panel_config:
+  feedthrough: false
+```
+
+### Device ids
+
+A hardware 3.0 panel names each circuit by SPAN's number for it, `<n>`, which it keeps across releases while the id around it changes at release 202645, and
+PanelBench publishes the same ids:
+
+| Device | before release 202645 | from release 202645 |
+|---|---|---|
+| circuit | `circuit-<n>` | `{serial}-{hex16}-1-16-<n>` |
+| remote CT (`outside_meters`) | `remote-ct-<n>` | `{serial}-{hex16}-1-42-<n>` |
+| lugs | `{serial}-lugs-up`, `{serial}-lugs-dn` | `{serial}-{hex16}-1-21-2` upstream |
+
+A circuit records its number as `circuit_number`, a remote CT its own, and the panel its 16-hex segment as `panel_config.device_id_hex`; the ids follow
+`firmware_version`, a firmware naming no release taking the later shape. A template of a hardware 3.0 capture that keeps its panel's ids, and a clone of
+such a panel, record them as the panel publishes them, and a circuit added in the dashboard takes the lowest number its panel's circuits leave. A MAIN 32 keeps its ids on every release,
+and a config that records no numbers publishes the ids it always has. No capture shows a hardware 3.0 panel's downstream lugs from release 202645, so
+`{serial}-{hex16}-1-21-1` is a guess. Before release 202645 nothing scopes these ids to the panel, as a real panel's own broker needs nothing to, so
+PanelBench refuses to start a panel whose device ids another panel it runs already publishes. The `span-panel` integration carries a panel's entities across
+the change of ids from **v2.3.3** (in pre-release as v2.3.3b1).
+
+```yaml
+panel_config:
+  device_id_hex: d3c25547dc2d6690
+circuits:
+  - id: circuit_1
+    circuit_number: 1
+```
+
+### A battery that takes its own solar
+
+A hybrid battery's own inverter also takes PV, on its DC side, as a Powerwall 3's does. Set `bess.inverter_type: hybrid` and rate its array with
+`bess.pv_array.nameplate_capacity_w`. The array produces by the panel's location and weather, as a PV circuit does, and its production joins `power-flows/pv`
+and the solar the battery's dispatch sees, live and in the Model view; the emitter still dispatches the battery. Without a rating the array produces nothing,
+as a clone writes it, since a panel does not publish one. A clone writes `inverter_type: hybrid` where the emitter's capture reads the panel's battery as
+hybrid: the panel publishes `power-flows/pv`, and nothing but its one battery could bring it solar. An imported definition keeps its own battery's coupling.
+This `hybrid` is the battery's; a PV template's `inverter_type: hybrid` is a grid-forming inverter, which keeps producing off-grid. Off grid the array is not
+yet curtailed to what the panel's load and the battery can take, as PanelBench's PV circuits are not: only the emitter knows which circuits it sheds and
+how much the battery can still charge, so its dispatch is where that belongs. A change to the battery that the running panel cannot take, making it hybrid
+or ac-coupled, or enabling, disabling or replacing it, restarts the panel, since the emitter builds its battery at start.
+
+```yaml
+bess:
+  enabled: true
+  inverter_type: hybrid
+  pv_array:
+    nameplate_capacity_w: 7600
+```
 
 ## Environment Variables
 

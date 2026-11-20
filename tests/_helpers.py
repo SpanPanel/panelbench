@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -29,11 +31,13 @@ from panelbench.emitter_adapter.wire_capture import (
     recorded_panel,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, predates
+from panelbench.recorder import RecorderDataSource
 from panelbench.reference_templates import (
     template_capture_names,
     template_filename,
     write_reference_templates,
 )
+from panelbench.sqlite_history import SCHEMA_SQL, SqliteHistoryProvider
 from tests.fidelity.tree_diff import retained_topics
 
 if TYPE_CHECKING:
@@ -328,3 +332,30 @@ def rehearsal_after(before: SimulationConfig, second: str) -> SimulationConfig:
     assert pv is not None
     pv["feed"] = REHEARSAL_ORIGINAL_INVERTER
     return config
+
+
+async def recorder_history(tmp_path: Path, entity: str) -> RecorderDataSource:
+    """A recorder holding 25 hourly means of *entity*, the last a week ago, as a
+    panel's history database gives them."""
+    db_path = tmp_path / "panel_history.db"
+    con = sqlite3.connect(str(db_path))
+    con.executescript(SCHEMA_SQL)
+    con.execute(
+        "INSERT INTO statistics_meta (id, statistic_id, unit_of_measurement) VALUES (1, ?, 'W')",
+        (entity,),
+    )
+    end = time.time() - 7 * 86400
+    end -= end % 3600
+    for hour in range(25):
+        ts = end - (24 - hour) * 3600
+        mean = 100.0 + 5.0 * hour
+        con.execute(
+            "INSERT INTO statistics (metadata_id, created_ts, start_ts, mean, min, max) "
+            "VALUES (1, ?, ?, ?, ?, ?)",
+            (ts, ts, mean, mean * 0.9, mean * 1.1),
+        )
+    con.commit()
+    con.close()
+    recorder = RecorderDataSource()
+    assert await recorder.load(SqliteHistoryProvider(db_path), [entity], lookback_days=365) == 1
+    return recorder

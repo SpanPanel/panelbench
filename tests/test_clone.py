@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import pytest
 import yaml
@@ -777,6 +777,13 @@ def _sharing(device_id: str, name: str, peer: str) -> DiscoveredDevice:
     return circuit
 
 
+# Each meter register a circuit publishes, and the seed a clone writes it to.
+_REGISTERS: Final = [
+    pytest.param("exported-energy", "initial_consumed_energy_wh", id="consumed"),
+    pytest.param("imported-energy", "initial_produced_energy_wh", id="produced"),
+]
+
+
 class TestCircuitsSharingASpace:
     """Two circuits on one space, as circuits sharing a meter are, stay two circuits."""
 
@@ -800,15 +807,59 @@ class TestCircuitsSharingASpace:
         assert outlets["shared_with"] == ["circuit_44"]
         validate_yaml_config(config)
 
-    def test_a_refresh_updates_each_ones_own_energy(self) -> None:
+    def _seeds(self, config: dict[str, object], seed: str) -> dict[str, object]:
+        templates = _templates(config)
+        return {
+            name: templates[name]["energy_profile"].get(seed)
+            for name in ("clone_44", "clone_44_2")
+        }
+
+    @pytest.mark.parametrize(("register", "seed"), _REGISTERS)
+    def test_a_tandem_read_a_moment_apart_is_cloned_with_its_one_register(
+        self, register: str, seed: str
+    ) -> None:
+        """Its circuits publish its one meter's register, each read a moment apart, so
+        each takes the largest, as the emitter's capture does: the emitter refuses
+        circuits on one breaker whose seeds differ."""
+        devices = self._devices()
+        devices["fff666"].update_property("meter", register, "1000.5")
+        devices["fff777"].update_property("meter", register, "1000.0")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert self._seeds(config, seed) == {"clone_44": 1000.5, "clone_44_2": 1000.5}
+        validate_yaml_config(config)
+
+    @pytest.mark.parametrize(("register", "seed"), _REGISTERS)
+    def test_a_refresh_writes_the_breaker_s_one_register_to_each_circuit(
+        self, register: str, seed: str
+    ) -> None:
         devices = self._devices()
         config = translate_scraped_panel(_make_scraped(devices))
-        devices["fff777"].update_property("meter", "exported-energy", "777.0")
+        devices["fff777"].update_property("meter", register, "777.0")
 
         assert update_config_from_scrape(config, _make_scraped(devices))
 
-        energy = _templates(config)["clone_44_2"]["energy_profile"]
-        assert energy["initial_consumed_energy_wh"] == 777.0
+        assert self._seeds(config, seed) == {"clone_44": 777.0, "clone_44_2": 777.0}
+        validate_yaml_config(config)
+
+    def test_a_refresh_missing_one_circuit_of_a_tandem_still_gives_both_its_register(
+        self,
+    ) -> None:
+        """A partial scrape reads the breaker's one meter through the circuit it has,
+        which is the other's register too."""
+        devices = self._devices()
+        config = translate_scraped_panel(_make_scraped(devices))
+        del devices["fff777"]
+        devices["fff666"].update_property("meter", "exported-energy", "900.0")
+
+        assert update_config_from_scrape(config, _make_scraped(devices))
+
+        assert self._seeds(config, "initial_consumed_energy_wh") == {
+            "clone_44": 900.0,
+            "clone_44_2": 900.0,
+        }
+        validate_yaml_config(config)
 
     def test_sharing_with_no_other_circuit_is_refused(self) -> None:
         config = translate_scraped_panel(_make_scraped(self._devices()))
@@ -931,7 +982,12 @@ class TestCircuitsSharingASpace:
         is on the breaker even where its own list is missing, and the clone loads."""
         devices = self._devices()
         devices["fff777"] = _circuit(
-            "fff777", "Bedroom Outlets", "44", rating="20", priority="NEVER", active_power="0.0"
+            "fff777",
+            "Bedroom Outlets",
+            "44",
+            rating="20",
+            priority="NICE_TO_HAVE",
+            active_power="0.0",
         )
 
         config = translate_scraped_panel(_make_scraped(devices))

@@ -140,15 +140,21 @@ System, light, or dark theme via the header selector.
 
 ## Firmware version
 
-The shipped templates are SPAN panels on firmware release 202639 and
-report `spanos3/r202639/03`. On `ref_MAIN_32_TANDEMS` the battery's
+The two tracked templates report `spanos3/r202639/03`. Each template
+from a real panel reports the firmware it was captured on: release
+202645 for `ref_MAIN_32`, `ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS`,
+`ref_MAIN_40`, `ref_MLO_48` and `ref_UNKNOWN_16`, and 202639 for the
+rest. On `ref_MAIN_32_TANDEMS` the battery's
 power reading is positive while discharging, the solar circuit is the
 locked "Commissioned PV System" circuit, and the status endpoint
 reports hardware version `1.2`. Read it with the SpanPanel/span
 integration **v2.1.2 or later**. `ref_MLO_48_TANDEMS` reports hardware version `3.0`,
 as the reference MLO 48 it is built from does; read it, and the `ref_`
 templates, with **v2.2.0 or later**. Its tandem-quad is drawn and
-judged correctly from **v2.3.0**.
+judged correctly from **v2.3.0**. A hardware 3.0 panel publishes the
+device ids a real one does, which change at SPAN release 202645; the
+integration carries its entities across that change from **v2.3.3** (in
+pre-release as v2.3.3b1).
 
 To emulate a panel before the upgrade to release 202639, clone a
 config from the dashboard, then in the clone's YAML name a 202633
@@ -166,6 +172,12 @@ set the `config_file` option to the filename. The config controls panel
 size, circuit names, solar/battery presence, and load profiles. Or
 simply clone your real panel from the dashboard — no manual config
 needed.
+
+A panel without a feedthrough module sets `panel_config.feedthrough:
+false`, and on SPAN release 202645 a hardware 3.0 one then publishes no
+downstream lugs. A battery whose own inverter takes solar, as a
+Powerwall 3's does, sets `bess.inverter_type: hybrid` and rates its
+array with `bess.pv_array.nameplate_capacity_w`. The README has both.
 
 ## Full documentation
 

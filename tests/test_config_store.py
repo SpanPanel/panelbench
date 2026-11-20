@@ -5,7 +5,11 @@ from __future__ import annotations
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
+import pytest
+import yaml
+
 from panelbench.dashboard.config_store import ConfigStore
+from tests._helpers import PANEL_CONFIG, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -156,3 +160,23 @@ class TestSaveToFile:
         store2.load_from_file(out)
         assert store2.get_panel_config()["serial_number"] == "SAVED"
         assert store2.dirty is False
+
+
+@pytest.mark.parametrize(
+    ("section", "fed"), [("pv", "solar_inverter"), ("bess", "garage_outlets")], ids=["pv", "bess"]
+)
+def test_deleting_the_circuit_a_feed_names_drops_the_feed(
+    tmp_path: Path, section: str, fed: str
+) -> None:
+    """A feed naming a deleted circuit would name nothing, which the panel refuses."""
+    config: dict[str, object] = yaml.safe_load(PANEL_CONFIG.read_text(encoding="utf-8"))
+    fed_section = config[section]
+    assert isinstance(fed_section, dict)
+    fed_section["feed"] = fed
+    store = ConfigStore()
+    store.load_from_file(write_config(tmp_path / "panel.yaml", config))
+
+    store.delete_entity(fed)
+
+    exported = yaml.safe_load(store.export_yaml())
+    assert "feed" not in exported[section]

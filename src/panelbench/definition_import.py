@@ -16,7 +16,6 @@ from pathlib import Path
 
 import yaml
 from ebus_panel_sim import (
-    Emitter,
     EmitterError,
     PanelDefinition,
     SetterRegistry,
@@ -25,7 +24,11 @@ from ebus_panel_sim import (
 )
 
 from panelbench.clone import translate_panel_tree
-from panelbench.emitter_adapter.definition import bess_dispatch_yaml, load_shedding_yaml
+from panelbench.emitter_adapter.definition import (
+    bess_dispatch_yaml,
+    construct_emitter,
+    load_shedding_yaml,
+)
 from panelbench.emitter_adapter.wire_capture import RecordingTransport, discovered_devices
 from panelbench.hardware import published_variant
 
@@ -86,14 +89,32 @@ def config_from_definition(definition: PanelDefinition) -> dict[str, object]:
     config = translate_panel_tree(
         panels[0].instance_id, discovered_devices(_render(definition)), variant=variant
     )
+    _drop_device_numbers(config)
     _overlay_emitter_options(config, definition)
     return config
+
+
+def _drop_device_numbers(config: dict[str, object]) -> None:
+    """Forget the device numbers the translation read from the rendered tree.
+
+    A definition's ids are its own, masked and renumbered in space order where it
+    was captured from a panel, so the numbers they carry are no panel's: an import
+    publishes the hashed ids a config with none does.
+    """
+    for section in ("circuits", "outside_meters"):
+        entries = config.get(section)
+        for entry in entries if isinstance(entries, list) else []:
+            if isinstance(entry, dict):
+                entry.pop("circuit_number", None)
+    panel = config.get("panel_config")
+    if isinstance(panel, dict):
+        panel.pop("device_id_hex", None)
 
 
 def _render(definition: PanelDefinition) -> dict[str, bytes]:
     """The retained tree upstream's emitter publishes for *definition*."""
     transport = RecordingTransport()
-    emitter = Emitter.from_definition(definition, SetterRegistry(), mqttc=transport)
+    emitter = construct_emitter(definition, SetterRegistry(), transport)
     emitter.start()
     emitter.publish_tick(TickInputs(current_time=0.0, grid_online=True, circuits={}))
     return transport.retained
@@ -108,6 +129,15 @@ def _overlay_emitter_options(config: dict[str, object], definition: PanelDefinit
                 "would silently drop the battery"
             )
         bess.update(bess_dispatch_yaml(definition.bess_configs[0], definition.manifest))
+        # The definition says what the panel is, so its battery's coupling outranks the
+        # one the clone reads from the tree's topology.
+        if any(
+            battery.metadata.get("inverter-type") == "hybrid"
+            for battery in definition.manifest.of_class("bess")
+        ):
+            bess["inverter_type"] = "hybrid"
+        else:
+            bess.pop("inverter_type", None)
     if definition.load_shedding is not None:
         panel = config["panel_config"]
         if not isinstance(panel, dict):

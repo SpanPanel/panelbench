@@ -99,9 +99,9 @@ def test_evse_tick_inputs_include_each_evse_feed() -> None:
             "lighting": {},
         },
         "circuits": [
-            {"id": "span_drive_garage", "template": "span_drive"},
-            {"id": "span_drive_driveway", "template": "span_drive"},
-            {"id": "kitchen", "template": "lighting"},
+            {"id": "span_drive_garage", "template": "span_drive", "tabs": [1, 3]},
+            {"id": "span_drive_driveway", "template": "span_drive", "tabs": [5, 7]},
+            {"id": "kitchen", "template": "lighting", "tabs": [2]},
         ],
     }
     circuit_powers = {
@@ -115,6 +115,22 @@ def test_evse_tick_inputs_include_each_evse_feed() -> None:
         "abc-sim-evse-abc": 7200.0,
         "abc-sim-evse-abc-2": 3600.0,
     }
+
+
+def test_a_virtual_span_drive_takes_no_published_drive_s_reading() -> None:
+    """SPAN Drive ids follow the published drives' order, so a what-if drive on no
+    space listed first must not take the first id, and the real drive's reading."""
+    config = {
+        "panel_config": {"serial_number": "abc"},
+        "circuit_templates": {"span_drive": {"device_type": "evse"}},
+        "circuits": [
+            {"id": "span_drive_what_if", "template": "span_drive"},
+            {"id": "span_drive_garage", "template": "span_drive", "tabs": [1, 3]},
+        ],
+    }
+    circuit_powers = {stable_circuit_uuid("abc", "span_drive_garage"): 7200.0}
+
+    assert _evse_tick_inputs(config, circuit_powers) == {"abc-sim-evse-abc": 7200.0}
 
 
 def test_panel_envelope_publishes_the_configured_ssid() -> None:

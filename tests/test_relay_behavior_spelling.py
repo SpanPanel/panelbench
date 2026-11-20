@@ -125,7 +125,11 @@ async def test_a_commissioned_circuit_accepts_its_relay_back_in_either_spelling(
 
 def test_the_validation_message_asks_for_the_shipped_spelling() -> None:
     template = {
-        "energy_profile": {"mode": "consumer"},
+        "energy_profile": {
+            "mode": "producer",
+            "power_range": [-5000.0, 0.0],
+            "typical_power": -3000.0,
+        },
         "relay_behavior": "controllable",
         "priority": "NEVER",
         "commissioned_system": "pv",
