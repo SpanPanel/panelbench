@@ -76,7 +76,9 @@ def test_a_retired_capture_is_written_as_no_template(tmp_path: Path) -> None:
         assert retired not in template_capture_names(), retired
         assert _panel_serial(retired) == _panel_serial(successor), retired
         written = yaml.safe_load((tmp_path / filename).read_text(encoding="utf-8"))
-        assert written["panel_config"]["serial_number"] == f"sim-{successor}", retired
+        # A panel keeps its serial through the upgrade, so the template keeps the
+        # serial it had while it ran the earlier capture.
+        assert written["panel_config"]["serial_number"] == f"sim-{retired}", retired
 
 
 @pytest.mark.parametrize("name", template_capture_names())

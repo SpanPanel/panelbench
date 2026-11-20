@@ -326,9 +326,10 @@ def _validate_profile_numbers(
             )
     for key in ("breaker_rating_a", "breaker_rating"):
         rating = template.get(key)
-        if rating is not None and _as_number(rating) is None:
+        amps = _as_number(rating)
+        if rating is not None and (amps is None or amps <= 0):
             raise ValueError(
-                f"{where} {key} must be the breaker's amps, or null where the panel "
+                f"{where} {key} must be the breaker's amps, above 0, or null where the panel "
                 f"publishes none, not {rating!r}"
             )
 

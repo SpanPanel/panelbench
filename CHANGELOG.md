@@ -46,8 +46,9 @@
   apart.
 - **Four generated templates are their panels' later captures, on release 202645**: `ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48`, where
   they were the release 202639 captures of the same panels. `ref_MAIN_40` is that panel recommissioned, with 38 circuits and no battery, where it had 5 and
-  a battery fed by a circuit, and `ref_UNKNOWN_16` adds an EVSE. Their serials follow the captures: `sim-main32_r202645`, `sim-r202645-a`, `sim-r202645-c` and
-  `sim-r202645-e`, where they were `sim-main32_r202639`, `sim-r202639-a`, `sim-r202639-c` and `sim-r202639-e`.
+  a battery fed by a circuit, and `ref_UNKNOWN_16` adds an EVSE. Each keeps its serial (`sim-main32_r202639`, `sim-r202639-a`, `sim-r202639-c` and
+  `sim-r202639-e`), as a panel keeps its serial through a firmware upgrade: a panel run from one of them before upgrading PanelBench and after it is one
+  panel upgraded, as Home Assistant sees it.
 - **A `pv` section listing `inverters` must set `enabled`, and `pv.enabled` must be `true` or `false`.** The inverters no circuit feeds publish only while
   `pv.enabled` is `true`, and a config listing them without it loaded and published none of them; it is now refused, saying to set `enabled` to `true` to
   publish them or `false` to keep them off. An `enabled` that is empty or quoted, such as `"false"`, which published the opposite of what it says, is refused
@@ -69,8 +70,9 @@
   with none, so a panel with one would not start; it is now a what-if device, which the Model view models and the panel does not publish, nor anything it
   would feed. A `pv.feed` or `bess.feed` naming one is refused.
 - **A breaker rating edited in the dashboard is published.** The edit writes the circuit's own rating, which the dashboard showed while the panel went on
-  publishing its template's. The engine, the panel's definition and validation now all read a circuit by its template with the circuit's overrides and own
-  rating over it, so what is checked is what is modelled and published.
+  publishing its template's. The engine, the panel's definition, validation and the dashboard's view of a circuit now all read it by its template with
+  the circuit's overrides and own rating over it, so what is checked is what is modelled, published and shown. A hand-written override outside the
+  energy profile, such as `relay_behavior`, which only the engine applied, is published too, and a rating must be above 0.
 - **A config the panel cannot start on is refused when PanelBench loads, edits or saves it, saying why**, where it loaded and saved and the panel then
   failed to start. PanelBench builds the emitter as a panel's start does, so whatever the emitter refuses, such as an `unvalued` path the device's profile
   declares none of, is refused with its reason, each circuit and meter named by its `id`. A section or setting of the wrong shape, such as `lugs: x`,

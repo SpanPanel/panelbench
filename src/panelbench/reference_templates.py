@@ -13,7 +13,8 @@ PanelBench's own definition import, as the dashboard's Import reads one, and wri
 into the config directory where it is missing or stale, as ``run.sh`` refreshes the
 shipped templates. So no copy of a capture lives in this repository, and a new emitter
 release brings its captures' templates with it. Each takes a serial of its own, so
-several can run on one broker.
+several can run on one broker, and a later capture of a panel takes its earlier one's
+(``_SUCCEEDS``), as a panel keeps its serial through a firmware upgrade.
 
 A template is named for the panel it is, not for its capture's handle, so the
 dashboard's list reads as hardware (``_TEMPLATE_NAMES``). A capture the release has
@@ -63,9 +64,18 @@ name: the template carries it as ``firmware_version``. Written out rather than r
 from the capture, so publishing a capture again never renames the template a
 ``--config`` names."""
 
-_RETIRED_CAPTURES: Final = frozenset(
-    {"main32_r202633", "main32_r202639", "r202639-a", "r202639-c", "r202639-e"}
-)
+_SUCCEEDS: Final[Mapping[str, str]] = {
+    "main32_r202645": "main32_r202639",
+    "r202645-a": "r202639-a",
+    "r202645-c": "r202639-c",
+    "r202645-e": "r202639-e",
+}
+"""Each later capture of a panel, with the earlier capture of it whose template name
+and serial it takes. A panel keeps its serial through a firmware upgrade, so a config
+running the earlier capture, from a PanelBench release that had it, and one running
+the later are one panel upgraded, as Home Assistant sees it."""
+
+_RETIRED_CAPTURES: Final = frozenset({"main32_r202633", *_SUCCEEDS.values()})
 """Captures written as no template, whose names later captures take.
 
 ``main32_r202633`` is a MAIN 32 on a release before 202639, whose name would be
@@ -125,7 +135,7 @@ def reference_template(name: str) -> dict[str, object]:
     panel = config["panel_config"]
     if not isinstance(panel, dict):
         raise ValueError(f"reference capture {name!r} imported with no panel_config")
-    panel["serial_number"] = f"sim-{name}"
+    panel["serial_number"] = f"sim-{_SUCCEEDS.get(name, name)}"
     validate_yaml_config(config)
     return config
 

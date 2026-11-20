@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Concatenate, cast
 
 import yaml
 
+from panelbench.circuit import effective_settings
 from panelbench.inverter import AC_COUPLED, normalise_inverter_type, template_inverter_type
 from panelbench.pv_section import UNFED_INVERTER_POSITION, unfed_inverter_entries
 
@@ -535,17 +536,16 @@ class ConfigStore:
         return not current
 
     def _merge_entity(self, circuit: dict[str, Any]) -> EntityView:
-        """Build an EntityView by merging template + circuit overrides."""
+        """An EntityView of *circuit* as the panel has it: its template with the
+        circuit's overrides and own rating over it (``circuit.effective_settings``),
+        which the engine models and the panel publishes, so the dashboard shows, and
+        its lock guards judge, the same."""
         template_name = circuit["template"]
-        template = deepcopy(self._templates().get(template_name, {}))
-
+        template: dict[str, Any] = effective_settings(
+            self._templates().get(template_name, {}), circuit
+        )
         overrides = circuit.get("overrides", {})
         energy_profile = dict(template.get("energy_profile", {}))
-        for k, v in overrides.items():
-            if k == "power_range":
-                energy_profile["power_range"] = v
-            elif k in energy_profile:
-                energy_profile[k] = v
 
         return EntityView(
             id=circuit["id"],
@@ -561,7 +561,8 @@ class ConfigStore:
             time_of_day_profile=template.get("time_of_day_profile"),
             smart_behavior=template.get("smart_behavior"),
             hvac_type=template.get("hvac_type"),
-            breaker_rating=circuit.get("breaker_rating") or template.get("breaker_rating"),
+            # As the definition reads it: the legacy key first.
+            breaker_rating=template.get("breaker_rating_a") or template.get("breaker_rating"),
             overrides=dict(overrides),
             recorder_entity=template.get("recorder_entity"),
             user_modified=bool(template.get("user_modified")),
