@@ -15,8 +15,11 @@ from typing import TYPE_CHECKING, Final, cast
 
 import pytest
 import yaml
+from ebus_panel_sim import load_reference_capture
 
+from panelbench.clone import translate_panel_tree
 from panelbench.config_defaults import normalize_config
+from panelbench.definition_import import config_from_definition
 from panelbench.device_numbers import hex_of, next_number, number_of
 from panelbench.emitter_adapter import runtime as emitter_runtime
 from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
@@ -24,7 +27,7 @@ from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.wire_capture import recorded_panel
 from panelbench.reference_templates import reference_template
 from panelbench.validation import validate_yaml_config
-from tests._helpers import CONFIGS, PANEL_CONFIG, write_config
+from tests._helpers import CONFIGS, PANEL_CONFIG, discovered_from_tree, write_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -57,23 +60,27 @@ def test_a_device_number_must_be_a_whole_number_above_0(number: object) -> None:
         validate_yaml_config(config)
 
 
-@pytest.mark.parametrize("on", ["circuit", "outside meter"])
-def test_device_numbers_are_unique_on_a_panel(on: str) -> None:
+def test_a_circuit_number_is_used_once_among_a_panel_s_circuits() -> None:
     config = _raw(_MLO_48)
     first, second = _circuits(config)[:2]
     first["circuit_number"] = 12
-    if on == "circuit":
-        second["circuit_number"] = 12
-        other = str(second["id"])
-    else:
-        config["outside_meters"] = [{"id": "service_ct", "circuit_number": 12}]
-        other = "service_ct"
+    second["circuit_number"] = 12
 
     with pytest.raises(ValueError, match=r"circuit_number 12 is taken by") as refused:
         validate_yaml_config(config)
 
     assert str(first["id"]) in str(refused.value)
-    assert other in str(refused.value)
+    assert str(second["id"]) in str(refused.value)
+
+
+def test_a_circuit_and_a_remote_ct_may_share_a_number() -> None:
+    """SPAN numbers a panel's circuits and its remote CTs apart: a MAIN 16 has both
+    ``circuit-3`` and ``remote-ct-3``."""
+    config = _raw(_MLO_48)
+    _circuits(config)[0]["circuit_number"] = 3
+    config["outside_meters"] = [{"id": "service_ct", "circuit_number": 3}]
+
+    validate_yaml_config(config)
 
 
 @pytest.mark.parametrize("segment", ["ABCDEF0123456789", "abcdef012345678"])
@@ -130,6 +137,9 @@ def test_the_next_number_is_the_lowest_unused() -> None:
 
     assert next_number(config) == 3
     assert next_number(_raw(_MLO_48)) is None
+    # A remote CT's number is no circuit's, so a circuit added may take it.
+    config["outside_meters"] = [{"id": "service_ct", "circuit_number": 3}]
+    assert next_number(config) == 3
 
 
 _HEX: Final = "d3c25547dc2d6690"
@@ -312,3 +322,84 @@ async def test_ids_embed_the_serial_the_panel_publishes(tmp_path: Path) -> None:
     numbered = [c for c in children if re.fullmatch(r".+-1-(16|42|21)-\d+", c)]
     assert numbered
     assert all(c.startswith(f"sim-abc-123-{_HEX}-1-") for c in numbered)
+
+
+def _cloned(capture: str) -> dict[str, object]:
+    """A clone of the panel *capture* records, as cloning that panel writes it."""
+    tree = load_reference_capture(capture).tree
+    (panel,) = [i for i, d in tree.items() if d.type == "distribution-enclosure"]
+    return translate_panel_tree(panel, discovered_from_tree(tree))
+
+
+# A circuit by its spaces and name: a tandem's circuits share their spaces.
+_Key = tuple[tuple[int, ...], str]
+
+
+def _tree_numbers(capture: str) -> dict[_Key, int]:
+    """Each circuit's number in the capture's tree, by its spaces and name."""
+    tree = load_reference_capture(capture).tree
+    numbers: dict[_Key, int] = {}
+    for device_id, device in tree.items():
+        number = number_of(device_id)
+        spaces = device.value("info/spaces")
+        if device.type == "circuit" and number is not None and spaces:
+            key = (tuple(int(s) for s in str(spaces).split(",")), str(device.value("info/name")))
+            numbers[key] = number
+    return numbers
+
+
+def _cloned_numbers(config: dict[str, object]) -> dict[_Key, int]:
+    numbers: dict[_Key, int] = {}
+    for circuit in _circuits(config):
+        tabs = circuit.get("tabs")
+        number = circuit.get("circuit_number")
+        if isinstance(tabs, list) and isinstance(number, int):
+            numbers[(tuple(tabs), str(circuit["name"]))] = number
+    return numbers
+
+
+@pytest.mark.parametrize(
+    ("capture", "segment"),
+    [("r202645-e", _HEX), ("r202639-e", None)],
+    ids=["from release 202645", "before it"],
+)
+def test_a_clone_records_the_numbers_its_panel_publishes(
+    capture: str, segment: str | None
+) -> None:
+    config = _cloned(capture)
+
+    numbers = _cloned_numbers(config)
+    assert len(numbers) == 46
+    assert numbers == _tree_numbers("r202645-e")
+    panel = config["panel_config"]
+    assert isinstance(panel, dict)
+    assert panel.get("device_id_hex") == segment
+    validate_yaml_config(config)
+
+
+def test_a_main_32_clone_records_no_numbers() -> None:
+    config = _cloned("main32_r202645")
+
+    assert not _cloned_numbers(config)
+    panel = config["panel_config"]
+    assert isinstance(panel, dict)
+    assert "device_id_hex" not in panel
+
+
+def test_a_clone_records_its_remote_ct_s_number() -> None:
+    config = _cloned("r202645-a")
+
+    meters = config["outside_meters"]
+    assert isinstance(meters, list)
+    assert [m.get("circuit_number") for m in meters] == [3]
+    validate_yaml_config(config)
+
+
+def test_an_import_records_no_numbers() -> None:
+    """A definition's ids are masked and renumbered in space order: no panel's."""
+    config = config_from_definition(load_reference_capture("r202645-e").definition)
+
+    assert not _cloned_numbers(config)
+    panel = config["panel_config"]
+    assert isinstance(panel, dict)
+    assert "device_id_hex" not in panel

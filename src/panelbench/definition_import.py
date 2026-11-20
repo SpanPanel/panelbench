@@ -89,8 +89,26 @@ def config_from_definition(definition: PanelDefinition) -> dict[str, object]:
     config = translate_panel_tree(
         panels[0].instance_id, discovered_devices(_render(definition)), variant=variant
     )
+    _drop_device_numbers(config)
     _overlay_emitter_options(config, definition)
     return config
+
+
+def _drop_device_numbers(config: dict[str, object]) -> None:
+    """Forget the device numbers the translation read from the rendered tree.
+
+    A definition's ids are its own, masked and renumbered in space order where it
+    was captured from a panel, so the numbers they carry are no panel's: an import
+    publishes the hashed ids a config with none does.
+    """
+    for section in ("circuits", "outside_meters"):
+        entries = config.get(section)
+        for entry in entries if isinstance(entries, list) else []:
+            if isinstance(entry, dict):
+                entry.pop("circuit_number", None)
+    panel = config.get("panel_config")
+    if isinstance(panel, dict):
+        panel.pop("device_id_hex", None)
 
 
 def _render(definition: PanelDefinition) -> dict[str, bytes]:

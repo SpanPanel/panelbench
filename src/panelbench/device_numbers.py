@@ -43,16 +43,19 @@ def hex_of(root_id: str, device_ids: Iterable[str]) -> str | None:
 
 
 def next_number(config: Mapping[str, object]) -> int | None:
-    """The lowest number above 0 no circuit or meter outside the panel of *config*
-    uses, for a circuit added to it; None where none is numbered, since a panel's
-    circuits are numbered all or none."""
+    """The lowest number above 0 none of *config*'s circuits uses, for a circuit added
+    to it; None on a panel that numbers none of its devices. A remote CT's number is
+    no circuit's: SPAN numbers the two apart."""
     used = {
         number
-        for section in ("circuits", "outside_meters")
-        for entry in _listed(config.get(section))
+        for entry in _listed(config.get("circuits"))
         if isinstance(number := entry.get("circuit_number"), int)
     }
-    if not used:
+    numbered = used or any(
+        isinstance(entry.get("circuit_number"), int)
+        for entry in _listed(config.get("outside_meters"))
+    )
+    if not numbered:
         return None
     number = 1
     while number in used:

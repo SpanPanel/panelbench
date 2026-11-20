@@ -31,6 +31,7 @@ from ebus_panel_sim.capture import CaptureError, Device, Tree, definition_from_t
 from ebus_sdk import DiscoveredDevice
 
 from panelbench.breakers import breaker_misfit
+from panelbench.device_numbers import hex_of, number_of
 from panelbench.emitter_adapter import commissioning
 from panelbench.hardware import publishes_shared_breakers, relay_locks_priority, variant_for
 from panelbench.panel_models import model_positions, panel_spaces, reported_model
@@ -279,7 +280,9 @@ def translate_panel_tree(
     for node_uuid in sorted(circuit_nodes):
         if _meters_outside_the_panel(devices, node_uuid):
             outside_meters.append(
-                _outside_meter(len(outside_meters) + 1, unvalued.get(node_uuid, []))
+                _outside_meter(
+                    len(outside_meters) + 1, unvalued.get(node_uuid, []), number_of(node_uuid)
+                )
             )
             continue
         result = _translate_circuit(
@@ -352,6 +355,10 @@ def translate_panel_tree(
     # publishes a hardware 3.0 panel without one; earlier releases publish both.
     if _lugs_directions(devices, panel_device_id) == {"upstream"}:
         panel_config["feedthrough"] = False
+    # The segment a hardware 3.0 panel's numbered devices publish under from release
+    # 202645, where its ids carry one.
+    if (segment := hex_of(panel_device_id, devices)) is not None:
+        panel_config["device_id_hex"] = segment
 
     # The panel's firmware decides which side of SPAN release 202639 the clone
     # publishes (the BESS meter's sign, the EVSE limit), so a clone of a panel on an
@@ -1076,6 +1083,10 @@ def _translate_circuit(
         "pcs_priority": _int_prop(devices, node_uuid, "pcs", "priority"),
         **commissioning.config_values(commissioning.CIRCUIT, _published_by(devices, node_uuid)),
     }
+    # SPAN's number for the circuit, which its id carries on hardware 3.0 and which it
+    # keeps across releases: the clone publishes its ids as the panel does.
+    if (number := number_of(node_uuid)) is not None:
+        circuit_def["circuit_number"] = number
     shared = siblings.get(node_uuid)
     if shared:
         circuit_def["shared_with"] = shared
@@ -1106,13 +1117,16 @@ def _meters_outside_the_panel(devices: Mapping[str, DiscoveredDevice], node_uuid
     return "spaces" not in device.get_node_properties("info")
 
 
-def _outside_meter(ordinal: int, unvalued: list[str]) -> dict[str, object]:
+def _outside_meter(ordinal: int, unvalued: list[str], number: int | None) -> dict[str, object]:
     """A meter outside the panel, as ``outside_meters`` holds it.
 
     Its id is its place among the panel's such meters, as a circuit's is its first
-    space: the panel publishes nothing else to tell them apart.
+    space: the panel publishes nothing else to tell them apart. *number* is SPAN's
+    for it as a remote CT, where its id carries one.
     """
     meter: dict[str, object] = {"id": f"outside_meter_{ordinal}"}
+    if number is not None:
+        meter["circuit_number"] = number
     if unvalued:
         meter["unvalued"] = unvalued
     return meter

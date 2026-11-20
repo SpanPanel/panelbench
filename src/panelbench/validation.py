@@ -690,10 +690,11 @@ def validate_outside_meters(config_data: Mapping[str, object]) -> None:
 
 def validate_device_numbers(config_data: Mapping[str, object]) -> None:
     """SPAN's number for each circuit and meter outside the panel, and the panel's id
-    segment, as ``device_numbers`` reads them: a whole number above 0, used once on a
-    panel, and 16 lowercase hex digits."""
-    taken: dict[int, str] = {}
+    segment, as ``device_numbers`` reads them: a whole number above 0, used once among
+    the panel's circuits and once among its remote CTs, which SPAN numbers apart, and
+    16 lowercase hex digits."""
     for kind, section in (("circuit", "circuits"), ("outside meter", "outside_meters")):
+        taken: dict[int, str] = {}
         for entry in _listed(config_data.get(section)):
             if not isinstance(entry, dict) or "circuit_number" not in entry:
                 continue
@@ -707,7 +708,7 @@ def validate_device_numbers(config_data: Mapping[str, object]) -> None:
             if number in taken:
                 raise ValueError(
                     f"{where} circuit_number {number} is taken by {taken[number]}: SPAN "
-                    "numbers each circuit of a panel once"
+                    f"numbers each {kind} of a panel once"
                 )
             taken[number] = where
     panel = config_data.get("panel_config")
