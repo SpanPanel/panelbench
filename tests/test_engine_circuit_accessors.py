@@ -2,7 +2,8 @@
 
 A circuit's production scaling with its rating is a public contract, so the tests
 that hold it read it through these rather than through the engine's internals.
-Both are read-only: reading changes nothing the running panel does next.
+Both are read-only: one returns a copy, and the other reads a behaviour engine that
+keeps no state.
 """
 
 from __future__ import annotations
@@ -32,25 +33,18 @@ async def test_a_circuit_template_is_the_one_the_engine_runs_and_a_copy(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_modelled_power_is_deterministic_and_reads_nothing_into_the_panel(
-    tmp_path: Path,
-) -> None:
-    """Read for the solar inverter and for the cycling pool pump, whose cycle the
-    behaviour engine starts tracking the first time its power is computed."""
+async def test_modelled_power_is_deterministic(tmp_path: Path) -> None:
+    """Read twice for the solar inverter and for the cycling pool pump: each reads
+    the same both times."""
     runtime, _ = await recorded_panel(write_config(tmp_path / "panel.yaml", default_config()))
     engine = runtime.engine
-    # The live behaviour state is the engine's own; it is read here only to show the
-    # accessor leaves it as it was.
-    behavior = engine._behavior_engine
-    assert behavior is not None
-    state = behavior.capture_mutable_state()
 
     first = engine.modelled_circuit_power("solar_inverter", NOON)
     second = engine.modelled_circuit_power("solar_inverter", NOON)
-    engine.modelled_circuit_power("pool_pump", NOON)
+    pump = engine.modelled_circuit_power("pool_pump", NOON)
 
     assert first == second > 0
-    assert behavior.capture_mutable_state() == state
+    assert engine.modelled_circuit_power("pool_pump", NOON) == pump
 
 
 @pytest.mark.asyncio

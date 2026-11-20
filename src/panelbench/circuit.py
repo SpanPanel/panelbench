@@ -107,7 +107,6 @@ class SimulatedCircuit:
             base_power = power_override
         else:
             base_power = self._behavior_engine.get_circuit_power(
-                self._circuit_def["id"],
                 self._template,
                 current_time,
                 self._relay_state,

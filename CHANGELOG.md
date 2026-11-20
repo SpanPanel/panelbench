@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
+  ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
+  a panel no longer starts every cycling load at the start of its on phase.
+
 ## 2.8.0 — Tandem and quad breakers, and several panels on one broker
 
 **Two new templates model panels with tandem and quad breakers, circuits may share a breaker space only as one such breaker's, and several panels on one broker
