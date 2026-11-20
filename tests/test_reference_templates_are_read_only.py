@@ -1,6 +1,6 @@
-"""The dashboard keeps a reference capture's ``ref_*`` template read-only, as it keeps
-the shipped ``default_*`` ones: it is rebuilt at every start, so an edit to it would
-be lost. A user clones it to run a panel of their own."""
+"""The dashboard keeps a file named as a ``ref_*`` template read-only, whatever it holds:
+a reference capture's is rebuilt at every start, and a tracked one refreshed, so an
+edit to either would be lost. A user clones it to run a panel of their own."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.dashboard import DashboardContext, create_dashboard_app
-from tests._helpers import default_config, write_config
+from tests._helpers import panel_config, write_config
 
 _TEMPLATE = "ref_MAIN_32.yaml"
 
 
 def _app(tmp_path: Path) -> web.Application:
     """The dashboard viewing a ``ref_*`` template."""
-    write_config(tmp_path / _TEMPLATE, default_config())
+    write_config(tmp_path / _TEMPLATE, panel_config())
     return create_dashboard_app(
         DashboardContext(
             config_dir=tmp_path,

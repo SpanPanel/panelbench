@@ -16,12 +16,12 @@ import pytest
 
 from panelbench.config_types import SimulationConfig
 from panelbench.validation import validate_yaml_config
-from tests._helpers import default_config
+from tests._helpers import panel_config
 
 
 def _with_solar_tabs(tabs: list[int], *, commissioned: bool = False) -> SimulationConfig:
-    """The default panel, its solar circuit on *tabs*."""
-    config = default_config()
+    """The working panel, its solar circuit on *tabs*."""
+    config = panel_config()
     [solar] = [c for c in config["circuits"] if c["id"] == "solar_inverter"]
     solar["tabs"] = tabs
     if commissioned:
@@ -42,14 +42,14 @@ def test_a_pv_circuit_on_one_tab_loads_with_a_warning(
     caplog: pytest.LogCaptureFixture, *, commissioned: bool
 ) -> None:
     with caplog.at_level(logging.WARNING):
-        validate_yaml_config(_with_solar_tabs([36], commissioned=commissioned))
+        validate_yaml_config(_with_solar_tabs([28], commissioned=commissioned))
 
     assert any(
         "'solar_inverter'" in message and "two-pole" in message for message in _warnings(caplog)
     ), _warnings(caplog)
 
 
-@pytest.mark.parametrize("tabs", [[36, 38], []], ids=["two-pole", "virtual"])
+@pytest.mark.parametrize("tabs", [[28, 30], []], ids=["two-pole", "virtual"])
 def test_a_two_pole_or_virtual_pv_circuit_is_not_warned_about(
     caplog: pytest.LogCaptureFixture, tabs: list[int]
 ) -> None:

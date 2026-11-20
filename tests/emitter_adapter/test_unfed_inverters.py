@@ -12,7 +12,7 @@ one aggregate inverter.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import pytest
 from ebus_panel_sim import DeviceInstance
@@ -24,14 +24,14 @@ from panelbench.validation import validate_yaml_config
 from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    default_config,
     name_firmware,
+    panel_config,
     source_and_clone,
 )
 
 from .test_pv_inverters import _pv_info
 
-_SERIAL = default_config()["panel_config"]["serial_number"]
+_SERIAL = panel_config()["panel_config"]["serial_number"]
 _FIRMWARE = "sim-pv/v0.1.0"
 
 
@@ -51,11 +51,13 @@ def _inverter(vendor: str, model: str, rating: float, **more: str) -> PVInverter
 
 
 def _unfed_panel(*inverters: PVInverterYAML, firmware: str = CURRENT_FIRMWARE) -> SimulationConfig:
-    """The default panel with no PV circuit, its inverters the section's `inverters`."""
-    config = default_config()
+    """The working panel with no PV circuit, its inverters the section's `inverters`."""
+    config = panel_config()
     name_firmware(config, firmware)
-    solar = [c for c in config["circuits"] if c["template"] == "solar"]
-    config["circuits"] = [c for c in config["circuits"] if c["template"] != "solar"]
+    templates = config["circuit_templates"]
+    pv_templates = {name for name, t in templates.items() if t.get("device_type") == "pv"}
+    solar = [c for c in config["circuits"] if c["template"] in pv_templates]
+    config["circuits"] = [c for c in config["circuits"] if c["template"] not in pv_templates]
     config["unmapped_tabs"] = sorted(
         [*config["unmapped_tabs"], *(tab for c in solar for tab in c["tabs"])]
     )
@@ -130,7 +132,10 @@ def test_a_listed_inverter_serial_names_its_device() -> None:
 
 def test_a_listed_inverter_beside_a_pv_circuit_is_numbered_after_it() -> None:
     """The section's own keys describe the inverter its PV circuit feeds, as before."""
-    config = default_config()
+    config = panel_config()
+    # The template's section only names its circuit's inverter, so it states no
+    # `enabled`, which a listed inverter needs to be published.
+    _section(config)["enabled"] = True
     _section(config)["inverters"] = [_inverter("Fronius", "Primo 7.6", 7600.0)]
     validate_yaml_config(config)
 
@@ -204,7 +209,7 @@ def test_two_listed_inverters_may_not_share_an_identifier() -> None:
 
 
 def test_a_listed_inverter_may_not_share_the_fed_inverter_identifier() -> None:
-    config = default_config()
+    config = panel_config()
     _section(config)["serial_number"] = "7E1A-01"
     _section(config)["inverters"] = [
         _inverter("Fronius", "Primo 7.6", 7600.0, serial_number="7E1A-01")
@@ -233,4 +238,41 @@ def test_listed_inverters_are_refused_by_a_variant_publishing_no_inverter() -> N
         template.pop("commissioned_system", None)
 
     with pytest.raises(ValueError, match="publishes no inverter device"):
+        validate_yaml_config(config)
+
+
+def test_inverters_listed_without_pv_enabled_are_refused() -> None:
+    """`pv.enabled` gates every inverter no circuit feeds. Left out, the inverters
+    `pv.inverters` lists would silently publish nothing, so the config is refused
+    naming the key."""
+    config = _two_unfed()
+    del _section(config)["enabled"]
+    with pytest.raises(ValueError, match=r"pv\.enabled"):
+        validate_yaml_config(config)
+
+
+@pytest.mark.parametrize("enabled", [None, "false", "true", 1])
+def test_a_pv_enabled_that_is_not_true_or_false_is_refused(enabled: object) -> None:
+    """YAML's `enabled:` is null, which would publish nothing, and a quoted `"false"`
+    is truthy, which would publish the inverters it means to keep off."""
+    config = _two_unfed()
+    cast("dict[str, object]", _section(config))["enabled"] = enabled
+    with pytest.raises(ValueError, match=r"pv\.enabled must be true or false"):
+        validate_yaml_config(config)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_pv_enabled_true_or_false_is_accepted(enabled: bool) -> None:
+    """True publishes the listed inverters; false keeps them off, as the config says."""
+    config = _two_unfed()
+    _section(config)["enabled"] = enabled
+    validate_yaml_config(config)
+
+
+def test_a_section_pv_enabled_that_is_not_true_or_false_is_refused() -> None:
+    """The rule is the section's, so it holds where a PV circuit's inverter is what the
+    section describes, too."""
+    config = panel_config()
+    cast("dict[str, object]", config.setdefault("pv", {}))["enabled"] = "false"
+    with pytest.raises(ValueError, match=r"pv\.enabled must be true or false"):
         validate_yaml_config(config)

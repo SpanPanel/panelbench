@@ -38,33 +38,32 @@ from panelbench.validation import validate_yaml_config
 from tests._helpers import (
     CURRENT_FIRMWARE,
     EARLIER_FIRMWARE,
-    default_config,
+    free_two_spaces,
     name_firmware,
+    panel_config,
     source_and_clone,
     write_config,
 )
 
-_SERIAL = default_config()["panel_config"]["serial_number"]
+_SERIAL = panel_config()["panel_config"]["serial_number"]
 
 
 def _panel(
     firmware: str, *, two_inverters: bool = False, pv_feed: str | None = "solar_inverter"
 ) -> SimulationConfig:
-    """The default panel at *firmware*, plus a second inverter's circuit if asked.
+    """The working panel at *firmware*, plus a second inverter's circuit if asked.
 
     A second inverter's config sets `pv.feed` to *pv_feed*, the original inverter's
     circuit, as the README's rehearsal tells a user adding one to; `None` leaves the
     section bound to no circuit.
     """
-    config = default_config()
+    config = panel_config()
     name_firmware(config, firmware)
     if two_inverters:
-        used = {tab for circuit in config["circuits"] for tab in circuit["tabs"]}
-        free = [tab for tab in config["unmapped_tabs"] if tab not in used][:2]
-        assert len(free) == 2, "the default config needs two unmapped tabs for this test"
+        free = free_two_spaces(config)
         config["unmapped_tabs"] = [t for t in config["unmapped_tabs"] if t not in free]
         templates = config["circuit_templates"]
-        templates["solar_garage"] = copy.deepcopy(templates["solar"])
+        templates["solar_garage"] = copy.deepcopy(templates["solar_production"])
         config["circuits"].append(
             {
                 "id": "solar_garage",
@@ -305,19 +304,20 @@ def test_pv_feed_must_name_a_pv_circuit(feed: str, reason: str) -> None:
 @pytest.mark.parametrize(
     ("identifier", "expected"),
     [
-        ("IQ8PLUS-72-2-US", "sim-40t-001-iq8plus-72-2-us-c1"),
-        ("SE 3800H/US", "sim-40t-001-se-3800h-us-c1"),
-        (None, "sim-40t-001-pv-c1"),
+        ("IQ8PLUS-72-2-US", f"{_SERIAL}-iq8plus-72-2-us-c1"),
+        ("SE 3800H/US", f"{_SERIAL}-se-3800h-us-c1"),
+        (None, f"{_SERIAL}-pv-c1"),
     ],
 )
 def test_the_inverter_id_is_slugged(identifier: str | None, expected: str) -> None:
-    assert pv_inverter_device_id("sim-40t-001", identifier, "c1") == expected
+    assert pv_inverter_device_id(_SERIAL, identifier, "c1") == expected
 
 
 def test_only_the_identifier_is_slugged() -> None:
     """The panel and circuit ids are device ids already, and keep their case."""
-    expected = "SIM-40T-001-se-3800h-cAfE01"
-    assert pv_inverter_device_id("SIM-40T-001", "SE 3800H", "cAfE01") == expected
+    panel = _SERIAL.upper()
+    expected = f"{panel}-se-3800h-cAfE01"
+    assert pv_inverter_device_id(panel, "SE 3800H", "cAfE01") == expected
 
 
 @pytest.mark.asyncio

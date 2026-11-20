@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir . \
 # Copy Mosquitto directory (for fallback use; run.sh generates config at runtime)
 COPY mosquitto/ mosquitto/
 
-# Copy default panel configs (run.sh seeds /config/panelbench/ from these)
+# Copy the shipped templates (run.sh seeds /config/panelbench/ from these)
 COPY configs/ configs/
 
 # Create directories

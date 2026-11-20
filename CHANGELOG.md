@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+**The shipped templates are all `ref_` templates: the two tandem templates are renamed, and the three `default_MAIN_` templates are removed.**
+
+### Changed
+
+- **The tandem templates are now `ref_MAIN_32_TANDEMS.yaml` and `ref_MLO_48_TANDEMS.yaml`**, formerly `default_MAIN_32_TANDEMS.yaml` and
+  `default_MLO_48_TANDEMS.yaml`. They are the two tracked templates; the others are generated at every start from the emitter's reference captures.
+- **`ref_MAIN_32_TANDEMS` names its panel `SPAN Panel eBus Adapter`** with `display_name`, and every working-panel test now runs on it.
+- **The dashboard opens `ref_MAIN_32.yaml` first**, else the first `ref_*.yaml`.
+- **Only a `ref_` file is a template.** A `default_*.yaml` left in a config directory by an earlier release is editable, and `run.sh` neither refreshes nor
+  deletes it; `run.sh` refreshes the shipped `ref_` files.
+- **Saving with no config open is refused, saying no config is open**, where it said a default template could not be saved; a template's refusal reads
+  "template".
+- **Upgrading leaves your `default_*` files as they were.** An install whose `.last_config` names `default_MAIN_16.yaml` or `default_MAIN_40.yaml` still has
+  that file and resumes it, and the integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.yaml` or `default_MLO_48_TANDEMS.yaml`
+  keeps the serial its `ref_` twin has (`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one and the other is refused with an `error`
+  badge naming the serial. Delete the leftover `default_*` files, or clone the `ref_` equivalent.
+- **The README lists every template in one table**, and the conformance profile in `DEVELOPER.md` is the regenerated one: 452 match, 4 divergence, 69 extension
+  and 1327 omission.
+- **A `pv` section listing `inverters` must set `enabled`, and `pv.enabled` must be `true` or `false`.** The inverters no circuit feeds publish only while
+  `pv.enabled` is `true`, and a config listing them without it loaded and published none of them; it is now refused, saying to set `enabled` to `true` to
+  publish them or `false` to keep them off. An `enabled` that is empty or quoted, such as `"false"`, which published the opposite of what it says, is refused
+  too.
+
+### Fixed
+
+- **A clone of a MAIN 16 or MAIN 40 offers only its model's spaces**, 9 to 24 or 9 to 48, as the SpanPanel integration expects. The dashboard offered spaces
+  from 1, so the first circuit added to a clone of `ref_MAIN_40`, or to one of `ref_MAIN_16` once a circuit was removed, landed on space 1 and drew the
+  integration's positions warning. A clone or imported definition lists only those spaces as unmapped, and a clone of a MAIN 16 or MAIN 40 takes the model's
+  last space, 24 or 48, as its `total_tabs`, where it took 16 or 40 and resized itself from its circuits, with a warning, when one sat higher. A clone whose
+  circuits sit outside its model's spaces says so in the log. The spaces follow a config's `model` wherever it names one, so a clone an earlier release sized
+  40 starts at 9 too; a config with no `model`, such as one sized 16 or 40 by its count of spaces, keeps spaces 1 to `total_tabs`, as before.
+- **A local image build leaves the untracked configs out.** The add-on image copies `configs/` whole, so one built from a working checkout carried the
+  generated `ref_` templates, clones, history databases, and `configs/.secrets/` and `configs/rates/`, which hold credentials and API keys. `.dockerignore` now
+  keeps all but the presets and the two tracked templates out, as a build from git has it, and leaves local state and caches out of the build context; images
+  built by CI were not affected.
+
+### Removed
+
+- **`default_MAIN_16.yaml`, `default_MAIN_32.yaml` and `default_MAIN_40.yaml`**, which `ref_MAIN_16`, `ref_MAIN_32` and `ref_MAIN_40` cover. The SpanPanel
+  integration's client, span-panel-api, places MAIN 16 at spaces 9 to 24 and MAIN 40 at 9 to 48, and `default_MAIN_16` and `default_MAIN_40` numbered their
+  spaces from 1, so the integration logged "Panel model ... has breaker positions ..., but its circuits occupy spaces ..." for both. The MAIN 16 range is the
+  one its reference capture shows, with circuits on spaces 9 to 24; the MAIN 40 range is the client's own choice, and its capture's circuits sit on spaces 9
+  to 45.
+
 ### Fixed
 
 - **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they

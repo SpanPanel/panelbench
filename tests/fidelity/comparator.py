@@ -64,15 +64,15 @@ from panelbench.emitter_adapter.wire_capture import (
     as_capture,
     capture_retained,
 )
-from tests._helpers import DEFAULT_CONFIG, captured_main_32, write_config
+from tests._helpers import PANEL_CONFIG, captured_main_32, write_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 UPSTREAM = FIXTURES / "upstream"
 REFERENCE_DEFINITION = UPSTREAM / "forty_tab_minimal.yaml"
 REFERENCE_TICKS = UPSTREAM / "forty_tab_minimal.ticks.yaml"
 
-PANELBENCH_CONFIG = DEFAULT_CONFIG
-"""The tracked 40-tab template, PanelBench's own richest config: the one `tests._helpers` names."""
+PANELBENCH_CONFIG = PANEL_CONFIG
+"""PanelBench's working panel, the tracked MAIN 32 tandems template `tests._helpers` names."""
 
 IDENTITY_NODE = "info"
 """The catalog node carrying manifest-derived identity, per ``wire/catalogs/info.json``.

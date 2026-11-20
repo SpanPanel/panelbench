@@ -2,22 +2,22 @@
 
 The conformance suite next door answers a different question. It asks whether
 everything panelbench publishes is *legal*, and the specification permits
-omission — which is why it can report ``conformant: true`` alongside 1,486
+omission — which is why it can report ``conformant: true`` alongside 1,327
 omissions without contradicting itself. Nothing measured fidelity until this.
 
 The two producers no longer read one input, so each cell hands both of them the
 same *panel* by a different route:
 
-==============  ==============================  ==================================
+==============  ==============================  ====================================
 cell            reference (upstream's emitter)  subject (PanelBench)
-==============  ==============================  ==================================
+==============  ==============================  ====================================
 ``example``     upstream's shipped definition   PanelBench's import of that
                 and ticks                       definition, run as a clone
-``panelbench``  upstream's capture reading      ``configs/default_MAIN_40.yaml``
+``panelbench``  upstream's capture reading      ``configs/ref_MAIN_32_TANDEMS.yaml``
                 PanelBench's published tree
 ``captured``    upstream's reading of a real    PanelBench's import of that
                 panel's masked capture          definition, run as a clone
-==============  ==============================  ==================================
+==============  ==============================  ====================================
 
 The **example** cell is the sharpest claim: upstream's own definition, read both
 ways, so any asymmetry is a producer difference rather than a difference in what
@@ -28,9 +28,10 @@ translator it reads a live panel with, so the cell also measures the clone: that
 it keeps the panel's firmware and hardware, commissions both circuits, gives each
 inverter its own device and identity, and keeps the battery's identity.
 
-The **panelbench** cell runs PanelBench's own richest config — every circuit
-template, both EVSEs, PV, tandem breakers — and lets upstream's capture read the
-published tree back into a definition, which upstream's emitter then publishes.
+The **panelbench** cell runs PanelBench's working panel — modelled loads, PV, a
+battery with its MID, a SPAN Drive, tandem breakers and a two-pole package — and lets
+upstream's capture read the published tree back into a definition, which upstream's
+emitter then publishes.
 It is the only cell that exercises PanelBench's PV path from a PanelBench config.
 
 The **captured** cell measures the clone path against a real panel on SPAN
@@ -277,13 +278,15 @@ def test_the_panelbench_config_still_exercises_pv() -> None:
     """The panelbench cell is the only one that publishes PanelBench's PV path from a
     PanelBench config, so the keys that drive it are load-bearing.
 
-    Drop ``pv.enabled`` *and* every pv-typed circuit and PanelBench silently stops
-    publishing PV, so the cell agrees perfectly about a device tree with no solar in
-    it: upstream's reading of that tree has no inverter either. ``nameplate_capacity_w``
-    is the quietest of the keys: without it PanelBench falls back to a default, which
-    upstream then reads back, so losing it changes a published value with nothing,
-    anywhere, disagreeing. ``display_name`` names the panel device both sides align
-    by.
+    The config's PV device comes from its pv-typed circuit alone, as its ``pv``
+    section says: the section states no ``enabled``, which only ever publishes an
+    inverter no circuit feeds, so nothing else stands in for that circuit. Drop it and
+    PanelBench silently stops publishing PV, so the cell agrees perfectly about a
+    device tree with no solar in it: upstream's reading of that tree has no inverter
+    either. ``nameplate_capacity_w`` is the quietest of the keys: without it PanelBench
+    falls back to a default, which upstream then reads back, so losing it changes a
+    published value with nothing, anywhere, disagreeing. ``display_name`` names the
+    panel device both sides align by.
 
     A YAML comment cannot carry this warning: every config writer round-trips
     through ``yaml.dump``, which preserves unknown keys but drops comments.
@@ -294,10 +297,6 @@ def test_the_panelbench_config_still_exercises_pv() -> None:
         "both producers default the panel name differently, so an absent "
         "display_name makes the panel device fail to align by role"
     )
-    assert (config.get("pv") or {}).get("enabled") is True, (
-        "pv.enabled gates panelbench's PV device; without it PV survives only as "
-        "long as a pv-typed circuit does"
-    )
     templates = config.get("circuit_templates") or {}
     referenced = {c.get("template") for c in (config.get("circuits") or [])}
     solar = [
@@ -306,8 +305,8 @@ def test_the_panelbench_config_still_exercises_pv() -> None:
         if template.get("device_type") == "pv" and name in referenced
     ]
     assert solar, (
-        "no circuit resolves to a template with device_type: pv, so the panelbench "
-        "cell would stop measuring solar"
+        "no circuit resolves to a template with device_type: pv, which is all that "
+        "instantiates panelbench's PV device here, so the cell would stop measuring solar"
     )
     assert all(
         "nameplate_capacity_w" in (templates[name].get("energy_profile") or {}) for name in solar

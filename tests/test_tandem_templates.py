@@ -5,13 +5,13 @@ SPAN describes both ways on spanio/SPAN-API-Client-Docs#21:
 - A **MAIN 32** publishes each breaker space as one circuit with one rating, the first
   of the package's, so a 20-20 tandem and a 20-30 package both publish ``20``. The
   space's one sensor reads both breakers together, and a two-pole circuit's
-  ``meter/current`` is the average of its two legs. ``default_MAIN_32_TANDEMS.yaml``
+  ``meter/current`` is the average of its two legs. ``ref_MAIN_32_TANDEMS.yaml``
   holds a 20-20 tandem, a 15-20 tandem published at 15 A, and a 20-30 package across
   two spaces, each loaded past the rating it publishes, as a consumer judging the
   reading against that rating would see it.
 - A **MAIN 16, MLO 24, MAIN 40 or MLO 48** publishes one circuit per protected
   circuit, each with its own rating, naming its siblings in ``meter/`` and
-  ``switch/shared-with-device-ids``. ``default_MLO_48_TANDEMS.yaml`` is the pinned
+  ``switch/shared-with-device-ids``. ``ref_MLO_48_TANDEMS.yaml`` is the pinned
   emitter's reference MLO 48 imported, with its three tandems, plus a 15-20 tandem, a
   quad and a tandem-quad.
 
@@ -42,17 +42,16 @@ from panelbench.emitter_adapter.wire_capture import (
 from panelbench.hardware import panel_variant, publishes_shared_breakers
 from panelbench.reference_templates import reference_template, template_capture_names
 from panelbench.validation import validate_yaml_config
-from tests._helpers import published, write_config
+from tests._helpers import CONFIGS, SHIPPED_TEMPLATES, published, write_config
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from panelbench.config_types import CircuitDefinitionExtended, SimulationConfig
 
-_CONFIGS: Final = Path(__file__).resolve().parents[1] / "configs"
-_SHIPPED: Final = sorted(_CONFIGS.glob("default_*.yaml"))
-_MAIN_32: Final = _CONFIGS / "default_MAIN_32_TANDEMS.yaml"
-_MLO_48: Final = _CONFIGS / "default_MLO_48_TANDEMS.yaml"
+_SHIPPED: Final = [CONFIGS / n for n in SHIPPED_TEMPLATES]
+_MAIN_32: Final = CONFIGS / "ref_MAIN_32_TANDEMS.yaml"
+_MLO_48: Final = CONFIGS / "ref_MLO_48_TANDEMS.yaml"
 
 # Where the shipped panels sit, so a day of their loads is a day there.
 _LOCAL: Final = ZoneInfo("America/Los_Angeles")

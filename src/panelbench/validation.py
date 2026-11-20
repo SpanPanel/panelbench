@@ -300,7 +300,14 @@ def validate_pv_section(config_data: Mapping[str, object]) -> None:
     Refused here, naming the circuits, rather than when the panel builds its
     manifest; ``pv_section.bound_pv_circuit_id`` states the rule. *config_data*'s
     templates and circuits have already passed validation.
+
+    ``enabled``, where given, must be a boolean: ``pv_section.unfed_inverters`` reads its
+    truth, so YAML's null (``enabled:``) would publish nothing and a quoted ``"false"``
+    would publish what it means to keep off.
     """
+    pv_cfg = config_data.get("pv")
+    if isinstance(pv_cfg, dict) and not isinstance(pv_cfg.get("enabled", False), bool):
+        raise ValueError(f"pv.enabled must be true or false, not {pv_cfg['enabled']!r}")
     bound_pv_circuit_id(config_data)
 
 
@@ -360,6 +367,14 @@ def validate_unfed_inverters(config_data: Mapping[str, object]) -> None:
         raise ValueError(
             f"pv.inverters are not published here: {variant_selection(config_data)}, which "
             "publishes no inverter device, only the circuit feeding one"
+        )
+    # They publish only while the section is enabled (`pv_section.unfed_inverters`), so a
+    # list with no `enabled` beside it would publish nothing and say nothing.
+    if "enabled" not in pv_cfg:
+        raise ValueError(
+            "pv.inverters lists inverters no circuit feeds, which publish only while "
+            "pv.enabled is true, and pv.enabled is not set: set it to true to publish "
+            "them, or to false to keep them off"
         )
 
 
@@ -557,7 +572,7 @@ def _one_circuit_per_space_fix(config_data: Mapping[str, object]) -> str:
     return (
         "to publish each of a tandem's or quad's circuits separately, as newer SPAN hardware "
         f"does, {to_gen3} and name them to each other in shared_with, or start from a ref_ "
-        "template or default_MLO_48_TANDEMS; to publish the breaker as a MAIN 32 does, make it "
+        "template or ref_MLO_48_TANDEMS; to publish the breaker as a MAIN 32 does, make it "
         "one circuit on its space, or one two-pole circuit across its two spaces, with no "
         "shared_with"
     )

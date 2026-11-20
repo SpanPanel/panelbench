@@ -42,15 +42,11 @@ regressed.
 
 from __future__ import annotations
 
-import pathlib
-
 import pytest
 import pytest_asyncio
 
 from panelbench.emitter_adapter.wire_capture import capture
-
-_REPO = pathlib.Path(__file__).resolve().parent.parent.parent
-_CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
+from tests._helpers import PANEL_CONFIG
 
 _NODE = "power-flows"
 _TERMS = ("grid", "pv", "battery", "site")
@@ -103,7 +99,7 @@ def _flows(captured: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def flows() -> dict[str, dict[str, str]]:
-    return _flows(await capture(_CONFIG))
+    return _flows(await capture(PANEL_CONFIG))
 
 
 def test_a_term_may_be_off_by_half_its_last_place() -> None:

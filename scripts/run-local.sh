@@ -28,7 +28,7 @@ Options:
 Environment variables:
   ADVERTISE_ADDRESS Override mDNS advertised IP (auto-detected from en0/en1)
   CONFIG_DIR        Config directory (default: ./configs)
-  CONFIG_NAME       Specific config file to load (e.g., default_MAIN_16.yaml). Each
+  CONFIG_NAME       Specific config file to load (e.g., ref_MAIN_32.yaml). Each
                     CONFIG_NAME runs as its own simulator, so several run side by
                     side given their own HTTP_PORT and DASHBOARD_PORT and one broker.
   UV_NO_SYNC        Set to 1 to run in the current .venv as it is, without syncing it

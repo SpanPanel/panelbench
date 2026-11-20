@@ -9,6 +9,7 @@ string in SPAN's MQTT topic reference) and, from release 202639, reported as
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 import pytest
 import yaml
@@ -26,19 +27,33 @@ from panelbench.hardware import (
 from panelbench.validation import validate_yaml_config
 from tests._helpers import (
     CURRENT_FIRMWARE,
-    DEFAULT_CONFIG,
     EARLIER_FIRMWARE,
-    default_config,
+    EVERY_TEMPLATE,
     name_firmware,
+    panel_config,
     write_config,
 )
 
-_SERIAL = default_config()["panel_config"]["serial_number"]
+_SERIAL = panel_config()["panel_config"]["serial_number"]
+
+# The hardware each template states: 1.2 on a MAIN 32 and 3.0 on every other model, as
+# the reference captures' panels publish.
+_TEMPLATE_HARDWARE: Final = {
+    "ref_MAIN_32_TANDEMS.yaml": "1.2",
+    "ref_MLO_48_TANDEMS.yaml": "3.0",
+    "ref_MAIN_32.yaml": "1.2",
+    "ref_MAIN_32_UPSTREAM_PV.yaml": "1.2",
+    "ref_UNKNOWN_16.yaml": "3.0",
+    "ref_MAIN_16.yaml": "3.0",
+    "ref_MAIN_40.yaml": "3.0",
+    "ref_MLO_24.yaml": "3.0",
+    "ref_MLO_48.yaml": "3.0",
+}
 
 
 def _panel(*, firmware: str, hardware: str | None) -> SimulationConfig:
-    """The default panel at *firmware*, with *hardware* as its hardware version or none."""
-    config = default_config()
+    """The working panel at *firmware*, with *hardware* as its hardware version or none."""
+    config = panel_config()
     name_firmware(config, firmware)
     config.pop("hardware_version", None)
     if hardware is not None:
@@ -61,16 +76,20 @@ def test_an_unquoted_yaml_hardware_version_reads_as_written() -> None:
     assert status_hardware_version(config) == "1.2"
 
 
-@pytest.mark.parametrize("model", ["MAIN_16", "MAIN_32", "MAIN_40"])
-def test_every_shipped_template_reports_a_documented_hardware_version(model: str) -> None:
+@pytest.mark.parametrize("template", EVERY_TEMPLATE)
+def test_every_shipped_template_reports_its_hardware_version_on_mqtt_and_rest_alike(
+    template_dir: Path, template: str
+) -> None:
     """Stated in the template, and reported over MQTT and, on the release 202639 the
     template names, over REST, the same value on both."""
+    assert template in _TEMPLATE_HARDWARE, f"state the hardware {template} is expected to have"
+    hardware = _TEMPLATE_HARDWARE[template]
     shipped: SimulationConfig = yaml.safe_load(
-        DEFAULT_CONFIG.with_name(f"default_{model}.yaml").read_text(encoding="utf-8")
+        (template_dir / template).read_text(encoding="utf-8")
     )
 
-    assert shipped.get("hardware_version") == "1.2"
-    assert status_hardware_version(shipped) == panel_hardware_version(shipped) == "1.2"
+    assert shipped.get("hardware_version") == hardware
+    assert status_hardware_version(shipped) == panel_hardware_version(shipped) == hardware
 
 
 def test_a_panel_that_names_none_reports_one_on_mqtt_and_rest_alike() -> None:

@@ -1,13 +1,13 @@
 """The README's "Rehearsing a SPAN firmware upgrade" procedure, followed on a template.
 
-Each step below is the README's own, applied to a copy of `default_MAIN_40.yaml` as
-a template clone copies it. The first config is the panel before the upgrade, with
+Each step below is the README's own, applied to a copy of `ref_MAIN_32_TANDEMS.yaml`
+as a template clone copies it. The first config is the panel before the upgrade, with
 its "Commissioned PV System" circuit unlocked; the second is the same panel on
 release 202639, with that circuit locked and, as "A second inverter" describes, a
 two-pole circuit turned into a second inverter, its circuit locked the same way: one
-the first config already models as a load, or one added to both configs on two free
-spaces. If a step stops producing the panel the README promises, this fails, rather
-than a user's rehearsal.
+the first config already models as a load, or one added to both configs on two spaces
+the step frees. If a step stops producing the panel the README promises, this fails,
+rather than a user's rehearsal.
 """
 
 from __future__ import annotations
@@ -48,6 +48,13 @@ if TYPE_CHECKING:
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
 
+# The two-pole load the step turns into the second inverter's circuit, as a clone of a
+# panel holds one. The template's carries no override, so the test gives it one a
+# panel's load can carry, for the step to remove.
+_HELD = "main_hvac"
+_HELD_OVERRIDES = {"typical_power": 1400.0}
+
+
 async def _started(path: Path) -> tuple[CloneRuntime, RecordingTransport]:
     runtime, recorder = await recorded_panel(path)
     await emitter_runtime.publish_tick(runtime)
@@ -83,10 +90,10 @@ async def test_the_first_config_is_the_panel_before_the_upgrade(tmp_path: Path) 
 
 @pytest.mark.parametrize(
     "second",
-    # The circuit a template clone adds on two free spaces, and a two-pole load the
+    # The circuit a template clone adds on two freed spaces, and a two-pole load the
     # clone already holds, whose override sets its typical power: whatever the load
     # carried has to go.
-    [_ADDED, "main_hvac"],
+    [_ADDED, _HELD],
 )
 @pytest.mark.asyncio
 async def test_the_second_config_is_the_same_panel_on_release_202639(
@@ -94,6 +101,8 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
 ) -> None:
     before = _before(second)
     [first_time] = [c for c in before["circuits"] if c["id"] == second]
+    if second == _HELD:
+        first_time["overrides"] = dict(_HELD_OVERRIDES)
     with caplog.at_level(logging.WARNING):
         runtime, recorder = await _started(
             write_config(tmp_path / "after.yaml", _after(before, second))
@@ -107,7 +116,7 @@ async def test_the_second_config_is_the_same_panel_on_release_202639(
         device.get_property("info", "model"): device for device in _inverters(recorder).values()
     }
     assert set(inverters) == {"IQ8PLUS-72-2-US", "SE3800H-US"}
-    assert inverters["IQ8PLUS-72-2-US"].get_property("info", "nominal-power") == "10000"
+    assert inverters["IQ8PLUS-72-2-US"].get_property("info", "nominal-power") == "8000"
     added = inverters["SE3800H-US"]
     assert added.get_property("info", "nominal-power") == "3800"
     assert added.get_property("info", "serial-number") == "sim-inv-0002"

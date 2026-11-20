@@ -22,9 +22,11 @@ from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.emitter_adapter.wire_capture import capture_retained, discovered_devices
 from panelbench.validation import validate_yaml_config
-from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, default_config, write_config
+from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE, panel_config, write_config
 
-_SERIAL = default_config()["panel_config"]["serial_number"]
+_SERIAL = panel_config()["panel_config"]["serial_number"]
+# The template of the panel's solar circuit, its "Commissioned PV System".
+_SOLAR = "solar_production"
 
 
 def _commissioned_config(
@@ -32,17 +34,17 @@ def _commissioned_config(
     system: Literal["pv", "backup"] | None = "pv",
     relay_behavior: str = "non_controllable",
 ) -> SimulationConfig:
-    """The default panel at r202639 with its solar circuit named and locked as the
+    """The working panel at r202639 with its solar circuit named and locked as the
     commissioned PV system.
 
     r202639, because SPAN locks these circuits only from that release, stated here
-    rather than left to the shipped default. *system* is written as the template's
+    rather than left to the template. *system* is written as the template's
     `commissioned_system` unless it is None, so a test can take the key away and see
     what the rest of the path does without it.
     """
-    config = default_config()
+    config = panel_config()
     config["firmware_version"] = CURRENT_FIRMWARE
-    solar = config["circuit_templates"]["solar"]
+    solar = config["circuit_templates"][_SOLAR]
     solar["priority"] = "NEVER"
     solar["relay_behavior"] = relay_behavior
     if system is None:
@@ -79,7 +81,7 @@ def test_a_contradictory_commissioned_template_is_refused(
     # Read back as plain YAML, so a test can write values the typed config forbids.
     path = write_config(tmp_path / "panel.yaml", _commissioned_config())
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    raw["circuit_templates"]["solar"][field] = value
+    raw["circuit_templates"][_SOLAR][field] = value
 
     with pytest.raises(ValueError, match=message):
         validate_yaml_config(raw)
@@ -92,7 +94,7 @@ def test_a_commissioned_circuit_on_a_release_before_202639_is_refused() -> None:
     config = _commissioned_config()
     config["firmware_version"] = EARLIER_FIRMWARE
 
-    with pytest.raises(ValueError, match=r"'solar'.*locked only from SPAN release 202639"):
+    with pytest.raises(ValueError, match=rf"'{_SOLAR}'.*locked only from SPAN release 202639"):
         validate_yaml_config(config)
 
 
@@ -171,7 +173,7 @@ async def test_a_never_backup_circuit_with_the_name_stays_never_backup(tmp_path:
     happens to carry the name and a locked relay keeps the lock it has.
     """
     source = _commissioned_config(system=None, relay_behavior="non_controllable")
-    solar = source["circuit_templates"]["solar"]
+    solar = source["circuit_templates"][_SOLAR]
     solar["priority"] = "OFF_GRID"
     solar["never_backup"] = True
     path = write_config(tmp_path / "panel.yaml", source)

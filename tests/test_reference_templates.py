@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import subprocess
 from pathlib import Path
 from typing import ClassVar
 
@@ -20,13 +21,17 @@ from ebus_panel_sim import load_reference_capture, reference_capture_names
 from panelbench import __main__ as panelbench_main
 from panelbench.dashboard.config_store import ConfigStore
 from panelbench.reference_templates import (
+    FIRST_TEMPLATE,
     TEMPLATE_PREFIX,
+    clone_name,
+    first_template,
     is_template,
     reference_template,
     template_capture_names,
     template_filename,
     write_reference_templates,
 )
+from tests._helpers import CONFIGS, SHIPPED_TEMPLATES, lay_every_template
 from tests.fidelity.reproduction import assert_reproduces
 
 
@@ -188,7 +193,7 @@ def test_each_write_stages_in_a_file_of_its_own(tmp_path: Path) -> None:
 def test_every_template_carries_the_marker_one_ignore_rule_covers() -> None:
     """Built at every start, never tracked: one rule in .gitignore covers each template
     by its marker, whatever a future capture is called, and the dashboard keeps it
-    read-only as it keeps a ``default_`` template."""
+    read-only by the same marker."""
     rule = "configs/ref_*.yaml"
     ignored = (Path(__file__).parents[1] / ".gitignore").read_text(encoding="utf-8").splitlines()
 
@@ -199,8 +204,73 @@ def test_every_template_carries_the_marker_one_ignore_rule_covers() -> None:
         assert is_template(filename)
 
 
-def test_only_the_shipped_and_reference_templates_are_templates() -> None:
-    assert is_template("default_MAIN_32.yaml")
+def test_only_a_ref_file_is_a_template() -> None:
+    """Tracked or generated, a template carries the marker. A ``default_`` file an
+    earlier release laid down is the user's now, as any other config is."""
+    assert is_template("ref_MAIN_32_TANDEMS.yaml")
     assert is_template("ref_MAIN_32.yaml")
+    assert is_template("default_MAIN_32.yaml") is False
     assert not is_template("my-panel.yaml")
     assert not is_template("main32_issue269.yaml")
+
+
+@pytest.mark.parametrize(
+    ("filename", "clone"),
+    [
+        ("ref_MAIN_32.yaml", "MAIN_32.yaml"),
+        ("ref_MLO_48_TANDEMS.yaml", "MLO_48_TANDEMS.yaml"),
+        ("default_MAIN_32.yaml", "default_MAIN_32.yaml"),
+        ("my-panel.yaml", "my-panel.yaml"),
+    ],
+)
+def test_a_clone_of_a_template_is_named_without_its_marker(filename: str, clone: str) -> None:
+    """So the clone is no template; any other config's clone starts from its own name."""
+    assert clone_name(filename) == clone
+    assert not is_template(clone)
+
+
+def test_the_first_template_is_ref_main_32(tmp_path: Path) -> None:
+    """The one the dashboard opens with no config to open: a real MAIN 32 as it
+    published itself, among every template a start lays down."""
+    lay_every_template(tmp_path)
+
+    assert FIRST_TEMPLATE == "ref_MAIN_32.yaml"
+    assert first_template(tmp_path) == tmp_path / "ref_MAIN_32.yaml"
+
+
+def test_without_ref_main_32_the_first_template_is_the_first_ref_one(tmp_path: Path) -> None:
+    """As when the emitter imported no capture or the directory refused the writes: the
+    first ``ref_`` file by name, never a user's clone or a ``default_`` file an earlier
+    release left, though both sort before it."""
+    for name in (*SHIPPED_TEMPLATES, "default_MAIN_16.yaml", "MAIN_32.yaml"):
+        (tmp_path / name).write_text("panel_config: {}\n", encoding="utf-8")
+
+    assert first_template(tmp_path) == tmp_path / "ref_MAIN_32_TANDEMS.yaml"
+
+
+def test_with_no_template_there_is_no_first_one(tmp_path: Path) -> None:
+    for name in ("default_MAIN_16.yaml", "MAIN_32.yaml"):
+        (tmp_path / name).write_text("panel_config: {}\n", encoding="utf-8")
+
+    assert first_template(tmp_path) is None
+
+
+@pytest.mark.parametrize("template", SHIPPED_TEMPLATES)
+def test_the_shipped_ref_templates_are_tracked(template: str) -> None:
+    """The hand-written ``ref_`` templates sit beside the generated ones, which the
+    ``ref_`` rule ignores: git must not ignore them."""
+    path = CONFIGS / template
+
+    assert path.is_file()
+    # --no-index evaluates the rules whether or not the file is tracked: 0 is ignored,
+    # 1 not ignored, 128 a git error.
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", str(path)], cwd=CONFIGS.parent, check=False
+    )
+    assert ignored.returncode == 1
+
+
+def test_a_generated_template_never_takes_a_shipped_name() -> None:
+    generated = {template_filename(n) for n in template_capture_names()}
+
+    assert generated.isdisjoint(SHIPPED_TEMPLATES)

@@ -18,7 +18,7 @@ import pytest
 from panelbench.engine import DynamicSimulationEngine
 from panelbench.recorder import RecorderDataSource
 from panelbench.sqlite_history import SCHEMA_SQL, SqliteHistoryProvider
-from tests._helpers import default_config
+from tests._helpers import panel_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -57,7 +57,7 @@ async def _history(tmp_path: Path) -> RecorderDataSource:
 async def test_the_model_view_s_after_pass_is_each_circuit_s_model_and_repeats(
     tmp_path: Path,
 ) -> None:
-    config = default_config()
+    config = panel_config()
     config["circuits"][0]["recorder_entity"] = _ENTITY
     engine = DynamicSimulationEngine(config_data=config, recorder=await _history(tmp_path))
     await engine.initialize_async()

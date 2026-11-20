@@ -30,14 +30,10 @@ on the first tick no time has elapsed, so both energy counters are legitimately 
 
 from __future__ import annotations
 
-import pathlib
-
 import pytest
 
 from panelbench.emitter_adapter.wire_capture import capture
-
-_REPO = pathlib.Path(__file__).resolve().parent.parent.parent
-_CONFIG = _REPO / "configs" / "default_MAIN_40.yaml"
+from tests._helpers import PANEL_CONFIG
 
 _METER = (
     "meter/active-power",
@@ -62,7 +58,7 @@ def _by_direction(captured: dict[str, dict[str, str]], direction: str) -> dict[s
 
 @pytest.mark.asyncio
 async def test_the_two_lugs_devices_publish_different_meters() -> None:
-    captured = await capture(_CONFIG)
+    captured = await capture(PANEL_CONFIG)
 
     upstream = _by_direction(captured, "UPSTREAM")
     downstream = _by_direction(captured, "DOWNSTREAM")

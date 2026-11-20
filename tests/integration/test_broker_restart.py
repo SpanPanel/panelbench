@@ -23,7 +23,7 @@ from panelbench.emitter_adapter.broker_link import BrokerLink
 from panelbench.emitter_adapter.runtime import BrokerConnection
 from panelbench.emitter_adapter.transport import BrokerUnavailable, LoopBoundTransport
 from panelbench.engine import DynamicSimulationEngine
-from tests._helpers import DEFAULT_CONFIG, relay_opened_by_command, settable_relays
+from tests._helpers import PANEL_CONFIG, relay_opened_by_command, settable_relays
 from tests.integration._mosquitto import Mosquitto, requires_mosquitto
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ async def test_a_panel_outlives_a_restart_of_its_broker(
     mosquitto: Mosquitto, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    engine = DynamicSimulationEngine(config_path=DEFAULT_CONFIG)
+    engine = DynamicSimulationEngine(config_path=PANEL_CONFIG)
     await engine.initialize_async()
     runtime = await emitter_runtime.start_clone(
         engine, broker=BrokerConnection(host="127.0.0.1", port=mosquitto.port)

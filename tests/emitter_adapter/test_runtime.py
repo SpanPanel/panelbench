@@ -16,7 +16,7 @@ from panelbench.emitter_adapter.runtime import (
     _panel_envelope,
     bess_config_from_engine,
 )
-from tests._helpers import default_config
+from tests._helpers import panel_config
 
 
 def testbess_config_from_engine_returns_none_when_disabled() -> None:
@@ -139,7 +139,7 @@ def test_panel_envelope_falls_back_rather_than_leaving_the_ssid_unvalued() -> No
 
 def test_an_ethernet_panel_publishes_no_wifi_and_no_ssid() -> None:
     """As the captured MAIN 32 does, and as a clone of it records."""
-    config = default_config()
+    config = panel_config()
     config["panel_config"]["wifi_link"] = False
     config["panel_config"]["ethernet_link"] = True
     config["panel_config"]["wifi_ssid"] = None
@@ -150,7 +150,7 @@ def test_an_ethernet_panel_publishes_no_wifi_and_no_ssid() -> None:
 
 
 def test_a_panel_with_wifi_down_and_no_ssid_named_gets_no_default_ssid() -> None:
-    config = default_config()
+    config = panel_config()
     config["panel_config"]["wifi_link"] = False
     config["panel_config"].pop("wifi_ssid", None)
 
@@ -160,7 +160,7 @@ def test_a_panel_with_wifi_down_and_no_ssid_named_gets_no_default_ssid() -> None
 def test_the_door_and_cloud_state_are_the_emulators_own() -> None:
     """Live state, not configuration: a config that still names them, as a clone made
     before they stopped being copied does, cannot freeze them."""
-    written = yaml.safe_dump(dict(default_config())).replace(
+    written = yaml.safe_dump(dict(panel_config())).replace(
         "panel_config:\n", "panel_config:\n  door_state: OPEN\n  cloud_connection: UNKNOWN\n", 1
     )
     config: SimulationConfig = yaml.safe_load(written)

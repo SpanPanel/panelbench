@@ -163,7 +163,7 @@ The other four buckets are the actually useful output. Together they are a **con
 parts are shared eBus vocabulary and which are SPAN's own. That is the contract someone writing a consumer codes against, and because it is derived from the
 wire it cannot drift the way hand-written integration notes always do.
 
-Current profile: 557 match, 4 divergence, 82 extension, 1486 omission, 0 violations. All four divergences are deliberate SPAN choices, such as `shed/policy`
+Current profile: 452 match, 4 divergence, 69 extension, 1327 omission, 0 violations. All four divergences are deliberate SPAN choices, such as `shed/policy`
 being read-only because a real SPAN panel does not accept policy writes.
 
 ### Running it
@@ -239,7 +239,7 @@ publish:
 | Cell         | Reference (`ebus-panel-sim`)                                   | PanelBench                                    |
 | ------------ | -------------------------------------------------------------- | --------------------------------------------- |
 | `example`    | the release's example definition and ticks                     | its import of that definition, run as a clone |
-| `panelbench` | the release's capture reading PanelBench's published tree      | `configs/default_MAIN_40.yaml`                |
+| `panelbench` | the release's capture reading PanelBench's published tree      | `configs/ref_MAIN_32_TANDEMS.yaml`            |
 | `captured`   | the release's reading of a real panel's capture on SPAN 202639 | its import of that definition, run as a clone |
 
 Every cell is at full structural parity and asserts it directly, and both producers must agree on what is settable. Identity values, device ids and the
@@ -291,7 +291,9 @@ detection logic.
 
 ### 2. Docker container
 
-Builds and runs the same image that CI pushes to GHCR. Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
+Builds and runs the same image that CI pushes to GHCR. `.dockerignore` keeps everything in `configs/` but the presets and the two tracked templates out of the
+build, so a working checkout's generated `ref_` templates, clones, history databases, `configs/.secrets/` and `configs/rates/` stay out of the image, as they do
+from CI's checkout, and it leaves local state and caches out of the context (`tests/test_dockerignore.py`). Useful for verifying the container works before pushing. mDNS auto-discovery won't work on macOS (VM
 networking), but the integration can connect by manual configuration. On Linux, Docker with host networking works.
 
 ```bash
@@ -347,7 +349,7 @@ ADVERTISE_ADDRESS=192.168.7.27 CONFIG_DIR=./configs/panel2 ./scripts/run-local.s
 ```yaml
 panel_config:
   serial_number: str # Unique panel serial (e.g., "SPAN-SIM-001")
-  total_tabs: int # Breaker tab count (8, 32, 64)
+  total_tabs: int # Highest breaker space (8, 16, 24, 32, 40, 48); a MAIN 16 clone has 24, a MAIN 40 clone 48
   main_size: int # Main breaker amps (100, 150, 200)
   latitude: float # Degrees north (default: 37.7)
   longitude: float # Degrees east (default: -122.4)

@@ -124,7 +124,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--config",
         default=os.environ.get("CONFIG_NAME"),
-        help="Name of a specific config file to load (e.g., default_MAIN_16.yaml). "
+        help="Name of a specific config file to load (e.g., ref_MAIN_32.yaml). "
         "When omitted, resumes the last config run, or starts with no panel running.",
     )
     parser.add_argument(

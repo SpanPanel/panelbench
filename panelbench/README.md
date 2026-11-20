@@ -17,9 +17,9 @@ This App emulates SPAN firmware `r202633+`, the first to publish the
 parent/child device tree (`data-model-version` `1.x`).
 
 Requires the SpanPanel/span integration **v2.1.2 or later**, which
-reads the SPAN firmware release 202639 the included configs publish.
-The `ref_` templates of real SPAN panels, and the included
-`default_MLO_48_TANDEMS` built from one, need **v2.2.0 or later**.
+reads the SPAN firmware release 202639 the shipped templates publish.
+The `ref_` templates of real SPAN panels, and
+`ref_MLO_48_TANDEMS` built from one, need **v2.2.0 or later**.
 Its tandem-quad is drawn and judged correctly from **v2.3.0**.
 
 Visit [SPAN PanelBench](https://github.com/SpanPanel/panelbench)

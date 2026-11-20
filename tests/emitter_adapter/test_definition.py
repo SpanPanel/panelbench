@@ -14,14 +14,14 @@ from panelbench.emitter_adapter.definition import (
 )
 from panelbench.emitter_adapter.instance_ids import bess_device_id
 from panelbench.emitter_adapter.spec_generator import build_manifest
-from tests._helpers import default_config
+from tests._helpers import panel_config
 
 if TYPE_CHECKING:
     from panelbench.config_types import BESSConfigYAML
 
 
 def test_the_definition_carries_the_manifest_battery_and_shed_policy() -> None:
-    config = default_config()
+    config = panel_config()
     serial = config["panel_config"]["serial_number"]
 
     definition = build_definition(config)
@@ -35,14 +35,14 @@ def test_the_definition_carries_the_manifest_battery_and_shed_policy() -> None:
 
 
 def test_a_panel_without_a_battery_has_no_native_battery() -> None:
-    config = default_config()
+    config = panel_config()
     config["bess"] = {"enabled": False}
 
     assert build_definition(config).bess_configs == ()
 
 
 def test_the_shed_threshold_defaults_to_twenty_percent() -> None:
-    panel = default_config()["panel_config"]
+    panel = panel_config()["panel_config"]
     panel.pop("soc_shed_threshold", None)
 
     assert load_shedding_config(panel) == LoadSheddingConfig(soc_threshold_pct=20.0)
