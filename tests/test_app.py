@@ -462,6 +462,65 @@ async def test_a_before_template_and_its_after_cannot_run_at_once(
                 await panel.stop()
 
 
+async def _reloaded(
+    tmp_path: Path, broker: tuple[str, int], captures: tuple[str, ...]
+) -> tuple[SimulatorApp, dict[str, list[str]]]:
+    """An app reloaded over *captures*' templates, each on the test broker."""
+    host, port = broker
+    for capture in captures:
+        config = reference_template(capture)
+        config["broker"] = {"host": host, "port": port}
+        (tmp_path / f"{capture}.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    app = SimulatorApp(config_dir=tmp_path)
+    app._schema = load_schema(_BUNDLED_SCHEMA)
+    app._certs = MagicMock(
+        ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+        ca_cert_path=None,
+    )
+    mock_server = MagicMock()
+    mock_server.start = AsyncMock()
+    mock_server.stop = AsyncMock()
+    with patch("panelbench.app.BootstrapHttpServer", return_value=mock_server):
+        result = await app.reload()
+    return app, result
+
+
+@pytest.mark.asyncio
+async def test_a_panel_whose_devices_another_running_panel_publishes_is_refused(
+    tmp_path: Path, amqtt_broker: tuple[str, int]
+) -> None:
+    """A hardware 3.0 panel before release 202645 names its circuits ``circuit-<n>``
+    under no serial, as its own broker lets a real one; on one shared broker, two such
+    panels would claim each other's circuits' topics."""
+    app, result = await _reloaded(tmp_path, amqtt_broker, ("r202639-a", "r202639-e"))
+
+    try:
+        assert len(result["started"]) == 1
+        [(refused, error)] = app._get_panel_start_errors().items()
+        assert refused in ("r202639-a.yaml", "r202639-e.yaml")
+        assert "circuit-3" in error
+        assert "already publishes" in error
+    finally:
+        for panel in list(app._panels.values()):
+            with contextlib.suppress(Exception):
+                await panel.stop()
+
+
+@pytest.mark.asyncio
+async def test_panels_that_scope_their_devices_by_serial_run_together(
+    tmp_path: Path, amqtt_broker: tuple[str, int]
+) -> None:
+    app, result = await _reloaded(tmp_path, amqtt_broker, ("r202645-a", "r202645-e"))
+
+    try:
+        assert sorted(result["started"]) == ["sim-r202639-a", "sim-r202639-e"]
+        assert not app._get_panel_start_errors()
+    finally:
+        for panel in list(app._panels.values()):
+            with contextlib.suppress(Exception):
+                await panel.stop()
+
+
 class TestApplyBessConfigLive:
     """A live battery change the panel cannot take is left to the reload watcher."""
 

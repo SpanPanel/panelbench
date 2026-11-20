@@ -299,6 +299,22 @@ async def test_feeds_tandem_lists_and_ticks_name_the_published_ids(tmp_path: Pat
         assert readings[drive.instance_id] == powers[drive.metadata["feed"]]
 
 
+@pytest.mark.parametrize("firmware", [_R202639, _R202645])
+def test_a_reason_names_the_circuit_whose_id_another_s_begins(firmware: str) -> None:
+    """``circuit-1`` begins ``circuit-12``, as ``…-1-16-1`` begins ``…-1-16-12``, so a
+    reason naming the second must name its circuit, not the first's."""
+    config = _numbered(_MLO_48, firmware=firmware)
+    first, second = _circuits(config)[:2]
+    first["circuit_number"] = 1
+    second["circuit_number"] = 12
+    second["unvalued"] = ["foo/bar"]
+
+    with pytest.raises(
+        ValueError, match=rf"refuses this panel: {re.escape(str(second['id']))} key 'unvalued'"
+    ):
+        validate_yaml_config(config)
+
+
 def test_the_emitter_s_reasons_name_a_numbered_circuit_by_its_config_id() -> None:
     config = _numbered(_MLO_48, firmware=_R202645)
     first = _circuits(config)[0]

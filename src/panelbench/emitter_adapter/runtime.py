@@ -86,6 +86,12 @@ class CloneRuntime:
     lifecycle, which is the same rule the SDK follows for an injected client."""
 
 
+def published_device_ids(engine: DynamicSimulationEngine) -> frozenset[str]:
+    """Every device id the panel *engine* runs would publish, its own serial first
+    among them: what another panel on the same broker must not publish too."""
+    return frozenset(d.instance_id for d in build_definition(engine.config).manifest.instances)
+
+
 def bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | None:
     """Build the emitter-side BESSConfig from the engine's loaded clone profile.
     Returns None when the profile has no BESS enabled."""

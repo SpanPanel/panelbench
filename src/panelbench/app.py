@@ -318,7 +318,11 @@ class SimulatorApp:
             broker=broker,
         )
         serial = await panel.start(
-            running={s: p.config_path for s, p in self._serial_to_panel.items()}
+            running={
+                device_id: p.config_path
+                for p in self._serial_to_panel.values()
+                for device_id in p.device_ids
+            }
         )
 
         # Render the schema before registering, the panel's size having passed

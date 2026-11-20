@@ -1143,8 +1143,13 @@ def validate_emitter_accepts(config_data: SimulationConfig) -> None:
                 for m in config.get("outside_meters") or []
             ),
         ]
-        for device_id, config_id in published:
-            reason = reason.replace(device_id, str(config_id))
+        # One pass over whole ids, longest first: `circuit-1` begins `circuit-12`, as
+        # `…-1-16-1` begins `…-1-16-12`, so replacing one id at a time would misname.
+        names = {device_id: str(config_id) for device_id, config_id in published}
+        if names:
+            ids = "|".join(re.escape(i) for i in sorted(names, key=len, reverse=True))
+            whole = re.compile(rf"(?<![\w-])(?:{ids})(?![\w-])")
+            reason = whole.sub(lambda match: names[match.group(0)], reason)
         raise ValueError(f"The emitter refuses this panel: {reason}") from exc
     finally:
         _VALIDATING.reset(validating)

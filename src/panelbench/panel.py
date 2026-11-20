@@ -40,6 +40,15 @@ class DuplicateSerialError(ValueError):
     """
 
 
+class SharedDeviceError(ValueError):
+    """A panel's devices are already published by another running panel.
+
+    A real panel has a broker of its own, so nothing scopes a hardware 3.0 panel's
+    circuits before release 202645 to it: they are ``circuit-<n>``. Two such panels
+    on PanelBench's one broker would claim each other's circuits' topics.
+    """
+
+
 class PanelInstance:
     """A single simulated panel: engine + emitter, with its own tick loop."""
 
@@ -133,6 +142,14 @@ class PanelInstance:
     def runtime(self) -> CloneRuntime | None:
         return self._runtime
 
+    @property
+    def device_ids(self) -> frozenset[str]:
+        """Every device id the running panel publishes, its serial among them; none
+        before it starts."""
+        if self._runtime is None:
+            return frozenset()
+        return frozenset(d.instance_id for d in self._runtime.manifest.instances)
+
     # ------------------------------------------------------------------
     # Battery state accessors — read-through to the emitter's last snapshot.
     # The simulator no longer models BESS state; the emitter's BESSDevice owns
@@ -225,25 +242,38 @@ class PanelInstance:
     async def start(self, *, running: Mapping[str, Path] | None = None) -> str:
         """Load the config, connect, publish the first tick and start ticking.
 
-        *running* maps the serials already running to their configs; a config
-        naming one of them is refused before anything connects.
+        *running* maps each device id the panels already running publish, their
+        serials among them, to its panel's config; a config publishing one of them is
+        refused before anything connects.
 
         Raises:
             DuplicateSerialError: the config's serial is already running.
+            SharedDeviceError: another of its devices' ids is already published.
         """
         engine = DynamicSimulationEngine(
             config_path=self._config_path,
             recorder=self._recorder,
         )
         await engine.initialize_async()
-        other = (running or {}).get(engine.serial_number)
+        running = running or {}
+        other = running.get(engine.serial_number)
         if other is not None:
             msg = (
                 f"{self._config_path.name} was not started: serial {engine.serial_number} "
                 f"is already running from {other.name}; give it its own "
-                "panel_config.serial_number"
+                "panel_config.serial_number, or stop that panel first"
             )
             raise DuplicateSerialError(msg)
+        shared = sorted(emitter_runtime.published_device_ids(engine) & running.keys())
+        if shared:
+            owners = ", ".join(sorted({running[device_id].name for device_id in shared}))
+            named = ", ".join(shared[:4]) + (", …" if len(shared) > 4 else "")
+            msg = (
+                f"{self._config_path.name} was not started: {owners} already publishes "
+                f"its devices {named} on this broker, as hardware 3.0 panels before "
+                "release 202645 name their circuits under no serial; stop that panel first"
+            )
+            raise SharedDeviceError(msg)
         self._engine = engine
 
         self._runtime = await emitter_runtime.start_clone(
