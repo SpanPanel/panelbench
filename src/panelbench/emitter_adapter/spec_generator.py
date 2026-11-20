@@ -347,6 +347,8 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
         "nameplate-capacity-kwh": str(bess_cfg.get("nameplate_capacity_kwh", 13.5)),
         "relative-position": str(bess_cfg.get("relative_position", "UPSTREAM")),
     }
+    if "inverter_type" in bess_cfg:
+        bess_meta["inverter-type"] = str(bess_cfg["inverter_type"])
     model = bess_cfg.get("model") or bess_cfg.get("product_name")
     if model is not None:
         bess_meta["model"] = str(model)

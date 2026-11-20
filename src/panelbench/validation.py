@@ -7,6 +7,7 @@ dashboard can validate configs without circular imports.
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any, Final
 
 from panelbench.breakers import breaker_misfit, crowded_spaces, crowding
@@ -68,6 +69,7 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_shared_circuits(config_data)
     validate_unvalued_lists(config_data)
     validate_downstream_lugs(config_data)
+    validate_battery_coupling(config_data)
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -633,6 +635,45 @@ def validate_downstream_lugs(config_data: dict[str, object]) -> None:
             "lugs.downstream commissions downstream lugs this panel does not publish: "
             "from SPAN release 202645 a hardware 3.0 panel with panel_config.feedthrough "
             "false publishes none. Remove lugs.downstream, or set feedthrough to true."
+        )
+
+
+_BATTERY_INVERTER_TYPES: Final = ("ac-coupled", "hybrid")
+
+
+def validate_battery_coupling(config_data: dict[str, object]) -> None:
+    """A battery's inverter type, and the array only a hybrid battery's inverter takes."""
+    bess = config_data.get("bess")
+    if not isinstance(bess, dict):
+        return
+    inverter_type = bess.get("inverter_type", "ac-coupled")
+    if inverter_type not in _BATTERY_INVERTER_TYPES:
+        raise ValueError(
+            f"bess.inverter_type must be one of {', '.join(_BATTERY_INVERTER_TYPES)}, "
+            f"not {inverter_type!r}"
+        )
+    if "pv_array" not in bess:
+        return
+    array = bess["pv_array"]
+    if inverter_type != "hybrid":
+        raise ValueError(
+            "bess.pv_array is the array a hybrid battery's own inverter takes; set "
+            "bess.inverter_type to hybrid, or remove it"
+        )
+    if not isinstance(array, dict):
+        raise ValueError(
+            f"bess.pv_array must be a section naming nameplate_capacity_w, not {array!r}"
+        )
+    nameplate = array.get("nameplate_capacity_w")
+    if (
+        isinstance(nameplate, bool)
+        or not isinstance(nameplate, int | float)
+        or not math.isfinite(nameplate)
+        or nameplate < 0
+    ):
+        raise ValueError(
+            "bess.pv_array.nameplate_capacity_w must be a finite number of watts, 0 or "
+            f"more, not {nameplate!r}"
         )
 
 

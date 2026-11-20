@@ -248,6 +248,7 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
         evse=_evse_tick_inputs(runtime.engine.config, raw.circuits),
         envelope=_panel_envelope(runtime.engine.config),
         bess_communication=_bess_communication(runtime.engine, raw.bess_link),
+        bess_pv=_bess_pv(runtime.engine, raw.bess_pv_w),
     )
     return runtime.emitter.publish_tick(tick)
 
@@ -264,6 +265,17 @@ def _bess_communication(
     """
     battery = bess_config_from_engine(engine)
     return {} if battery is None else {battery.instance_id: link}
+
+
+def _bess_pv(engine: DynamicSimulationEngine, watts: float) -> dict[str, float]:
+    """A hybrid battery's own array production, keyed by the battery the engine's
+    config enables now. Empty for any other battery, which the emitter refuses to
+    give PV, and with none."""
+    bess = engine.config.get("bess") or {}
+    if bess.get("inverter_type") != "hybrid":
+        return {}
+    battery = bess_config_from_engine(engine)
+    return {} if battery is None else {battery.instance_id: watts}
 
 
 async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:

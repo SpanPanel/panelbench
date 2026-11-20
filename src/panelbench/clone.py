@@ -213,7 +213,8 @@ def translate_panel_tree(
     bess_nodes = _devices_of_type(devices, panel_device_id, TYPE_BESS)
     pv_nodes = _devices_of_type(devices, panel_device_id, TYPE_PV)
     evse_nodes = _devices_of_type(devices, panel_device_id, TYPE_EVSE)
-    unvalued = _unvalued_by_device(_emitter_reading(devices, panel_device_id))
+    reading = _emitter_reading(devices, panel_device_id)
+    unvalued = _unvalued_by_device(reading)
     hardware = _get_prop(devices, panel_device_id, "info", "hardware-version") or ""
     inferred = variant_for(hardware)
     published = inferred if variant is None else variant
@@ -373,6 +374,8 @@ def translate_panel_tree(
             devices, panel_device_id, bess_id, mid_nodes, circuit_nodes, unvalued, keys
         )
         if bess_cfg is not None:
+            if bess_id in _hybrid_batteries(reading):
+                bess_cfg["inverter_type"] = "hybrid"
             config["bess"] = bess_cfg
 
     if host is not None:
@@ -1220,6 +1223,23 @@ def _as_tree(devices: Mapping[str, DiscoveredDevice]) -> Tree:
             },
         )
     return tree
+
+
+def _hybrid_batteries(reading: PanelDefinition | None) -> set[str]:
+    """The batteries the emitter's capture writes hybrid, by device id on the panel.
+
+    A panel does not publish its battery's coupling. The emitter's capture reads it
+    from the tree's topology: a panel publishing ``power-flows/pv`` with one battery
+    and nothing else that could bring it solar takes that solar through the battery.
+    The clone takes the emitter's reading rather than keeping a second rule.
+    """
+    if reading is None:
+        return set()
+    return {
+        instance.instance_id
+        for instance in reading.manifest.of_class("bess")
+        if instance.metadata.get("inverter-type") == "hybrid"
+    }
 
 
 def _unvalued_by_device(reading: PanelDefinition | None) -> dict[str, list[str]]:

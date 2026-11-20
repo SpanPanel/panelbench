@@ -108,6 +108,15 @@ def _overlay_emitter_options(config: dict[str, object], definition: PanelDefinit
                 "would silently drop the battery"
             )
         bess.update(bess_dispatch_yaml(definition.bess_configs[0], definition.manifest))
+        # The definition says what the panel is, so its battery's coupling outranks the
+        # one the clone reads from the tree's topology.
+        if any(
+            battery.metadata.get("inverter-type") == "hybrid"
+            for battery in definition.manifest.of_class("bess")
+        ):
+            bess["inverter_type"] = "hybrid"
+        else:
+            bess.pop("inverter_type", None)
     if definition.load_shedding is not None:
         panel = config["panel_config"]
         if not isinstance(panel, dict):

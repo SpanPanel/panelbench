@@ -159,6 +159,12 @@ class CircuitTemplate(TypedDict):
     priority: str  # "MUST_HAVE", "NON_ESSENTIAL"
 
 
+class PVArrayYAML(TypedDict):
+    """The PV array a hybrid battery's own inverter takes, on its DC side."""
+
+    nameplate_capacity_w: float  # the array's rating; it produces by the panel's sun
+
+
 class BESSConfigYAML(TypedDict, total=False):
     """Top-level BESS configuration in the simulator YAML."""
 
@@ -184,6 +190,10 @@ class BESSConfigYAML(TypedDict, total=False):
     firmware_version: str
     relative_position: Literal["UPSTREAM", "DOWNSTREAM", "IN_PANEL"]
     feed: str  # the `id` of the circuit feeding a battery in the panel
+    # Whether the battery's own inverter also takes PV (default ac-coupled); a hybrid's
+    # array, if rated, produces into power-flows/pv as the emitter's `bess_pv`.
+    inverter_type: Literal["ac-coupled", "hybrid"]
+    pv_array: PVArrayYAML
     nameplate_capacity_kwh: float
     max_charge_w: float
     max_discharge_w: float
