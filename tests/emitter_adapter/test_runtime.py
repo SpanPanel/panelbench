@@ -99,9 +99,9 @@ def test_evse_tick_inputs_include_each_evse_feed() -> None:
             "lighting": {},
         },
         "circuits": [
-            {"id": "span_drive_garage", "template": "span_drive"},
-            {"id": "span_drive_driveway", "template": "span_drive"},
-            {"id": "kitchen", "template": "lighting"},
+            {"id": "span_drive_garage", "template": "span_drive", "tabs": [1, 3]},
+            {"id": "span_drive_driveway", "template": "span_drive", "tabs": [5, 7]},
+            {"id": "kitchen", "template": "lighting", "tabs": [2]},
         ],
     }
     circuit_powers = {

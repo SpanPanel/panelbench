@@ -124,6 +124,18 @@ def test_downstream_lugs_commissioning_on_a_panel_that_publishes_none_is_refused
         validate_yaml_config(config)
 
 
+def test_a_battery_downstream_of_lugs_the_panel_does_not_publish_is_refused() -> None:
+    """A battery placed downstream hangs from the downstream lugs, which a hardware 3.0
+    panel without a feedthrough does not publish from release 202645."""
+    config = _hardware_3(firmware=_R202645, feedthrough=False)
+    battery = copy.deepcopy(panel_config()["bess"])
+    battery["relative_position"] = "DOWNSTREAM"
+    battery.pop("feed", None)
+    config["bess"] = battery
+    with pytest.raises(ValueError, match=r"DOWNSTREAM"):
+        validate_yaml_config(config)
+
+
 def test_on_release_202639_downstream_lugs_commissioning_stands_without_a_feedthrough() -> None:
     """That release publishes the downstream lugs whatever the panel has, so their
     commissioning still describes them."""

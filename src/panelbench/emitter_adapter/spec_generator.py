@@ -41,6 +41,7 @@ from panelbench.inverter import (
 )
 from panelbench.panel_models import DEFAULT_PANEL_SIZE, panel_model
 from panelbench.pv_section import UNFED_INVERTER_POSITION, bound_pv_circuit_id, unfed_inverters
+from panelbench.virtual_devices import on_the_panel
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -204,7 +205,8 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     panel_id = profile["panel_config"]["serial_number"]
     named_by_id = not predates(panel_firmware_version(profile), SPAN_RELEASE_202639)
     instances: list[DeviceInstance] = []
-    for idx, c in enumerate(profile.get("circuits") or [], start=1):
+    published = [c for c in profile.get("circuits") or [] if on_the_panel(c)]
+    for idx, c in enumerate(published, start=1):
         tabs = c.get("tabs") or [0]
         template_name = c.get("template", "")
         template: CircuitTemplateExtended | None = templates.get(template_name)
@@ -845,7 +847,11 @@ def _circuits_for_device_type(
     circuits: list[CircuitDefinitionExtended] = []
     for circuit in profile.get("circuits") or []:
         template = templates.get(circuit.get("template", ""))
-        if template is not None and template.get("device_type") == device_type:
+        if (
+            template is not None
+            and template.get("device_type") == device_type
+            and on_the_panel(circuit)
+        ):
             circuits.append(circuit)
     return circuits
 

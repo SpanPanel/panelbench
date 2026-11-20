@@ -423,6 +423,14 @@ class ConfigStore:
                 return circ
         return None
 
+    def get_breaker_mates(self, entity_id: str) -> list[str]:
+        """The other circuits on *entity_id*'s breaker, by id: those it names in
+        ``shared_with``, which a tandem's or quad's circuits share one relay with."""
+        circuit = self._find_circuit(entity_id)
+        if circuit is None:
+            raise KeyError(f"Entity not found: {entity_id}")
+        return [str(mate) for mate in circuit.get("shared_with") or []]
+
     def _mark_user_modified(self, template_name: str) -> None:
         """Flag a template as user-modified so recorder replay is bypassed."""
         template = self._templates().get(template_name)
@@ -615,10 +623,18 @@ class ConfigStore:
         # following" was not expressible at all.
         if "inverter_type" in data:
             template["inverter_type"] = normalise_inverter_type(str(data["inverter_type"]))
-        if "priority" in data:
-            template["priority"] = data["priority"]
-        if "relay_behavior" in data:
-            template["relay_behavior"] = data["relay_behavior"]
+        # A breaker's circuits share one relay and one priority, so an edit to either
+        # is the breaker's: every circuit on it takes it, through its own template.
+        breaker_edits = {key: data[key] for key in ("priority", "relay_behavior") if key in data}
+        breaker_templates = [template_name] + [
+            mate["template"]
+            for mate_id in self.get_breaker_mates(entity_id)
+            if (mate := self._find_circuit(mate_id)) is not None
+        ]
+        for name in dict.fromkeys(breaker_templates):
+            self._templates().get(name, {}).update(breaker_edits)
+            if breaker_edits and name != template_name and data.get("_dirty"):
+                self._mark_user_modified(name)
 
         overrides: dict[str, Any] = circuit.get("overrides", {})
         ep = template.get("energy_profile", {})

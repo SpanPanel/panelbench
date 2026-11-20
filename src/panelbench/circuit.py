@@ -11,6 +11,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import TYPE_CHECKING
 
+from panelbench.virtual_devices import on_the_panel
+
 if TYPE_CHECKING:
     from panelbench.config_types import (
         CircuitDefinitionExtended,
@@ -165,6 +167,12 @@ class SimulatedCircuit:
     @property
     def tabs(self) -> list[int]:
         return self._circuit_def.get("tabs", [])
+
+    @property
+    def on_the_panel(self) -> bool:
+        """Whether this circuit sits on a breaker space, and so is published; a virtual
+        device is modelled alone (``virtual_devices``)."""
+        return on_the_panel(self._circuit_def)
 
     @property
     def template_name(self) -> str:

@@ -1198,7 +1198,7 @@ def _emitter_reading(
         # unreadable to it as a malformed tree.
         _LOGGER.warning(
             "The emitter cannot read panel %s as a definition (%s); cloning it without "
-            "the properties it leaves unvalued",
+            "the properties it leaves unvalued, and its battery as ac-coupled",
             panel_device_id,
             exc,
         )

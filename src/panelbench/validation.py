@@ -6,11 +6,17 @@ dashboard can validate configs without circular imports.
 
 from __future__ import annotations
 
+import copy
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
+
+from ebus_panel_sim import EmitterError
+from ebus_panel_sim.manifest_physics import ManifestPhysicsView
+from ebus_panel_sim.shared_hardware import shared_breakers
 
 from panelbench.breakers import breaker_misfit, crowded_spaces, crowding
+from panelbench.config_defaults import normalize_config
 from panelbench.config_types import PVInverterYAML
 from panelbench.const import SHED_PRIORITIES
 from panelbench.emitter_adapter.spec_generator import relay_locked
@@ -33,6 +39,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from ebus_panel_sim import Variant
+
+    from panelbench.config_types import SimulationConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,6 +78,8 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_unvalued_lists(config_data)
     validate_downstream_lugs(config_data)
     validate_battery_coupling(config_data)
+    # Every check above has established the shape a SimulationConfig has.
+    validate_emitter_accepts(cast("SimulationConfig", config_data))
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -621,16 +631,25 @@ def validate_unvalued_lists(config_data: Mapping[str, object]) -> None:
 
 
 def validate_downstream_lugs(config_data: dict[str, object]) -> None:
-    """Refuse commissioning for downstream lugs the panel does not publish.
+    """Refuse what hangs from downstream lugs the panel does not publish.
 
     A hardware 3.0 panel with ``feedthrough: false`` publishes none from release
-    202645, so a ``lugs.downstream`` section would describe nothing; on an earlier
-    release it still describes the downstream lugs that release publishes.
+    202645, so a ``lugs.downstream`` section would describe nothing, and a battery
+    placed ``DOWNSTREAM`` would hang from no lugs; on an earlier release both still
+    describe the downstream lugs that release publishes.
     """
-    lugs = config_data.get("lugs")
-    if not isinstance(lugs, dict) or "downstream" not in lugs:
+    if publishes_downstream_lugs(config_data):
         return
-    if not publishes_downstream_lugs(config_data):
+    bess = config_data.get("bess")
+    if isinstance(bess, dict) and bess.get("relative_position") == "DOWNSTREAM":
+        raise ValueError(
+            "bess.relative_position DOWNSTREAM places the battery past downstream lugs this "
+            "panel does not publish: from SPAN release 202645 a hardware 3.0 panel with "
+            "panel_config.feedthrough false has none. Place it UPSTREAM or IN_PANEL, or set "
+            "feedthrough to true."
+        )
+    lugs = config_data.get("lugs")
+    if isinstance(lugs, dict) and "downstream" in lugs:
         raise ValueError(
             "lugs.downstream commissions downstream lugs this panel does not publish: "
             "from SPAN release 202645 a hardware 3.0 panel with panel_config.feedthrough "
@@ -675,6 +694,35 @@ def validate_battery_coupling(config_data: dict[str, object]) -> None:
             "bess.pv_array.nameplate_capacity_w must be a finite number of watts, 0 or "
             f"more, not {nameplate!r}"
         )
+
+
+def validate_emitter_accepts(config_data: SimulationConfig) -> None:
+    """Refuse a config whose definition the emitter refuses, with the emitter's reason.
+
+    PanelBench's own rules say why in its terms. This asks the emitter's: its parse of
+    the manifest, and, under a variant that publishes shared breakers, its rule that a
+    breaker's circuits agree in priority, relay lock, never-backup, placement and
+    energy seed (``ebus_panel_sim.shared_hardware``). So a config PanelBench accepts
+    is one the panel starts on, and the dashboard refuses an edit the emitter would.
+    The definition is built from a normalised copy, as the engine builds it, and the
+    reason names each circuit by its config ``id``.
+    """
+    from panelbench.emitter_adapter.definition import build_definition
+    from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
+
+    config: SimulationConfig = copy.deepcopy(config_data)
+    normalize_config(config, source="validation")
+    definition = build_definition(config)
+    try:
+        view = ManifestPhysicsView(definition.manifest)
+        if publishes_shared_breakers(definition.variant):
+            shared_breakers(view.all_circuits())
+    except EmitterError as exc:
+        reason = str(exc)
+        serial = config["panel_config"]["serial_number"]
+        for circuit in config.get("circuits") or []:
+            reason = reason.replace(stable_circuit_uuid(serial, circuit["id"]), circuit["id"])
+        raise ValueError(f"The emitter refuses this panel: {reason}") from exc
 
 
 def _listed(value: object) -> list[object]:

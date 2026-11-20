@@ -110,7 +110,7 @@ Each panel has a unique serial number, so there is no conflict between the auto-
 ## Rehearsing a SPAN firmware upgrade
 
 A SPAN panel reads its firmware once, when it starts, and an over-the-air upgrade takes it offline and brings it back reporting the new release. PanelBench
-rehearses an upgrade the same way: two configs for one panel, run one after the other. The upgrade rehearsed here is to SPAN release 202639. The shipped
+rehearses an upgrade the same way: two configs for one panel, run one after the other. The upgrade rehearsed here is to SPAN release 202639. The tracked
 templates name `spanos3/r202639/03` (see [Firmware Version](#firmware-version)) and so are panels after it, which is why the first config names an earlier
 release.
 
@@ -292,6 +292,9 @@ The dashboard adds one PV circuit per panel, and a panel has one battery. A pane
 config's YAML, as [Rehearsing a SPAN firmware upgrade](#rehearsing-a-span-firmware-upgrade) shows. Recorder-sourced entities preserve their original panel
 settings (priority, relay behavior) as read-only.
 
+A PV inverter or SPAN Drive the dashboard adds sits on no breaker space: it is a what-if device, which the Model view models and the panel does not publish,
+since a panel publishes only the circuits on its spaces. Give it spaces in the config's YAML to publish it.
+
 ### Relay Control and Load Shedding
 
 - Click status dots to toggle circuit relays
@@ -416,6 +419,9 @@ two `_TANDEMS` templates show one each:
   15-20" on space 32 past its 15 A to 24 A, well under the 35 A its two breakers carry.
 - **MAIN 16, MLO 24, MAIN 40 and MLO 48** publish one circuit per protected circuit, each with its own rating, and name each other in `meter/` and
   `switch/shared-with-device-ids`, which a circuit's `shared_with` sets. A single-pole circuit lists its own space and a two-pole circuit lists both.
+  The circuits of one breaker share its one reading and relay: each publishes the breaker's reading, and a relay or priority set on one over MQTT reaches them
+  all. In the dashboard a relay toggle, or an edit of the priority or relay behaviour, on one applies to every circuit on the breaker, and a config whose
+  circuits on one breaker differ in priority, relay lock, never-backup or energy seed is refused, as the emitter refuses it.
   `ref_MLO_48_TANDEMS.yaml` is the reference MLO 48 with synthetic names and loads. It keeps that panel's three tandems and adds a 15-20 tandem on space 37, a
   quad on 27 and 29, and a tandem-quad on 31 and 33.
 
@@ -472,7 +478,9 @@ A hybrid battery's own inverter also takes PV, on its DC side, as a Powerwall 3'
 and the solar the battery's dispatch sees, live and in the Model view; the emitter still dispatches the battery. Without a rating the array produces nothing,
 as a clone writes it, since a panel does not publish one. A clone writes `inverter_type: hybrid` where the emitter's capture reads the panel's battery as
 hybrid: the panel publishes `power-flows/pv`, and nothing but its one battery could bring it solar. An imported definition keeps its own battery's coupling.
-This `hybrid` is the battery's; a PV template's `inverter_type: hybrid` is a grid-forming inverter, which keeps producing off-grid.
+This `hybrid` is the battery's; a PV template's `inverter_type: hybrid` is a grid-forming inverter, which keeps producing off-grid. Off grid the array is not
+yet curtailed to what the panel's load and the battery can take, as PanelBench's PV circuits are not: the emitter's dispatch, which sees the load after
+shedding, is where that belongs.
 
 ```yaml
 bess:

@@ -223,13 +223,13 @@ class SimulatorApp:
         """Apply a fresh BESS config to the running panel for ``filename`` without
         restarting it. SOC/SOE persists across the swap. Refreshes the cached
         config hash so the reload watcher doesn't see the on-disk YAML change as
-        a restart trigger. Returns True when applied, False when no panel matches."""
+        a restart trigger. Returns True when applied, False when no panel matches
+        or the change needs a restart, which the caller then makes."""
         for path, panel in self._panels.items():
             if path.name != filename:
                 continue
-            if panel.runtime is None:
+            if panel.runtime is None or not panel.update_bess_config(bess_yaml):
                 return False
-            panel.update_bess_config(bess_yaml)
             # Refresh the cached hash so the reload watcher sees the file as
             # already-current.
             self._config_hashes[path] = _file_hash(path)

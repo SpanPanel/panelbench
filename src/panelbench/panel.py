@@ -212,14 +212,15 @@ class PanelInstance:
             summary["consumption_w"] = round(snap.power_flows.site or 0.0, 1)
         return summary
 
-    def update_bess_config(self, bess_yaml: BESSConfigYAML) -> None:
+    def update_bess_config(self, bess_yaml: BESSConfigYAML) -> bool:
         """Apply a fresh BESS configuration mid-run (e.g. dashboard edit). The
         emitter's BESSDevice swaps configs; SOC/SOE state persists across the
-        swap, the change takes effect on the next published tick."""
+        swap, the change takes effect on the next published tick. False when the
+        change needs a restart instead (``update_bess_config_live``)."""
         if self._runtime is None:
             msg = "Panel not initialised — call start() first"
             raise RuntimeError(msg)
-        emitter_runtime.update_bess_config_live(self._runtime, bess_yaml)
+        return emitter_runtime.update_bess_config_live(self._runtime, bess_yaml)
 
     async def start(self, *, running: Mapping[str, Path] | None = None) -> str:
         """Load the config, connect, publish the first tick and start ticking.

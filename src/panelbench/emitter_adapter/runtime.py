@@ -41,6 +41,7 @@ from panelbench.emitter_adapter.instance_ids import (
     stable_circuit_uuid,
 )
 from panelbench.emitter_adapter.transport import LoopBoundTransport
+from panelbench.virtual_devices import on_the_panel
 
 if TYPE_CHECKING:
     from panelbench.config_types import (
@@ -87,18 +88,35 @@ def bess_config_from_engine(engine: DynamicSimulationEngine) -> BESSConfig | Non
     return bess_config(engine.serial_number, engine.config.get("bess") or {})
 
 
-def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) -> None:
-    """Apply a fresh BESS config to a running emitter without restart.
+def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) -> bool:
+    """Apply a fresh BESS config to a running emitter without restart, or say it
+    cannot be.
 
     Mutates the engine's loaded config so subsequent reads see the new
     values, rebuilds the emitter-side ``BESSConfig`` from the YAML, and
     swaps it on the emitter (SOC/SOE state is preserved across the swap).
+
+    Returns False, changing nothing, for a battery the change makes hybrid that the
+    emitter did not start hybrid: it builds its battery at start and refuses PV for
+    one it was not, so the panel must restart on the saved config instead.
     """
+    makes_hybrid = bool(bess_yaml.get("enabled")) and bess_yaml.get("inverter_type") == "hybrid"
+    if makes_hybrid and not _hybrid_batteries(runtime.manifest):
+        return False
     runtime.engine.config["bess"] = bess_yaml
     new_cfg = bess_config_from_engine(runtime.engine)
-    if new_cfg is None:
-        return
-    runtime.emitter.update_bess_config(new_cfg)
+    if new_cfg is not None:
+        runtime.emitter.update_bess_config(new_cfg)
+    return True
+
+
+def _hybrid_batteries(manifest: DeviceManifest) -> set[str]:
+    """The batteries the emitter was started with that it takes PV for."""
+    return {
+        battery.instance_id
+        for battery in manifest.of_class("bess")
+        if battery.metadata.get("inverter-type") == "hybrid"
+    }
 
 
 def _resolve_broker(
@@ -248,7 +266,7 @@ async def publish_tick(runtime: CloneRuntime) -> EbusPanelSnapshot:
         evse=_evse_tick_inputs(runtime.engine.config, raw.circuits),
         envelope=_panel_envelope(runtime.engine.config),
         bess_communication=_bess_communication(runtime.engine, raw.bess_link),
-        bess_pv=_bess_pv(runtime.engine, raw.bess_pv_w),
+        bess_pv=_bess_pv(runtime, raw.bess_pv_w),
     )
     return runtime.emitter.publish_tick(tick)
 
@@ -267,15 +285,15 @@ def _bess_communication(
     return {} if battery is None else {battery.instance_id: link}
 
 
-def _bess_pv(engine: DynamicSimulationEngine, watts: float) -> dict[str, float]:
+def _bess_pv(runtime: CloneRuntime, watts: float) -> dict[str, float]:
     """A hybrid battery's own array production, keyed by the battery the engine's
-    config enables now. Empty for any other battery, which the emitter refuses to
-    give PV, and with none."""
-    bess = engine.config.get("bess") or {}
-    if bess.get("inverter_type") != "hybrid":
+    config enables now, where the emitter started that battery hybrid. Empty for any
+    other, which the emitter refuses to give PV, and with none. The engine produces
+    nothing for a battery its config does not make hybrid."""
+    battery = bess_config_from_engine(runtime.engine)
+    if battery is None or battery.instance_id not in _hybrid_batteries(runtime.manifest):
         return {}
-    battery = bess_config_from_engine(engine)
-    return {} if battery is None else {battery.instance_id: watts}
+    return {battery.instance_id: watts}
 
 
 async def stop_clone(runtime: CloneRuntime, *, graceful: bool = True) -> None:
@@ -367,7 +385,7 @@ def _feeds_for_device_type(config: SimulationConfig, device_type: str) -> list[s
     panel_id = config["panel_config"]["serial_number"]
     feeds: list[str] = []
     for item in circuits:
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or not on_the_panel(item):
             continue
         template_name = item.get("template")
         if template_name is None or not isinstance(template_name, str):

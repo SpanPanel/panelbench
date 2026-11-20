@@ -1458,7 +1458,9 @@ async def handle_set_relay(request: web.Request) -> web.Response:
             )
         )
     ctx = _ctx(request)
-    ctx.set_circuit_relay(entity_id, relay_state)
+    # A tandem's or quad's circuits sit behind one relay, so the breaker switches whole.
+    for circuit_id in [entity_id, *_store(request).get_breaker_mates(entity_id)]:
+        ctx.set_circuit_relay(circuit_id, relay_state)
     return web.json_response({"ok": True, "relay_state": relay_state})
 
 

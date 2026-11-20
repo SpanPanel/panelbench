@@ -984,6 +984,10 @@ class DynamicSimulationEngine:
         panel_id = self.serial_number
         circuit_powers: dict[str, float] = {}
         for cid, circuit in self._circuits.items():
+            # A virtual device is modelled but never published, so the emitter has no
+            # circuit to give its power to (`virtual_devices`).
+            if not circuit.on_the_panel:
+                continue
             mag = circuit.instant_power_w
             signed = -mag if circuit.energy_mode == "producer" else mag
             circuit_powers[stable_circuit_uuid(panel_id, cid)] = signed
@@ -995,6 +999,31 @@ class DynamicSimulationEngine:
             bess_link=self._bess_link,
             bess_pv_w=self._hybrid_array_w(self._config, current_time),
         )
+
+    def _baseline_array_config(
+        self, baseline: Mapping[str, object] | None
+    ) -> Mapping[str, object] | None:
+        """The config the Before pass takes a hybrid battery's array from.
+
+        The baseline's, or the live config's where there is none. A clone writes a
+        hybrid battery with no array rating, since a panel publishes none, so where
+        the baseline's hybrid battery has none and the live one is rated, rating it
+        filled in what the panel has: the Before pass takes the live rating too.
+        """
+        if not baseline:
+            return self._config
+        bess = baseline.get("bess")
+        live = self._config.get("bess") if self._config else None
+        if (
+            isinstance(bess, dict)
+            and bess.get("inverter_type") == "hybrid"
+            and "pv_array" not in bess
+            and isinstance(live, dict)
+            and live.get("inverter_type") == "hybrid"
+            and "pv_array" in live
+        ):
+            return {**baseline, "bess": {**bess, "pv_array": live["pv_array"]}}
+        return baseline
 
     def _hybrid_array_w(self, config: Mapping[str, object] | None, ts: float) -> float:
         """What the hybrid battery *config* describes takes from its own array at *ts*,
@@ -1168,7 +1197,7 @@ class DynamicSimulationEngine:
             inputs_b = self._powers_to_energy_inputs(powers_b)
             # A hybrid battery's own array, booked as the emitter books its PV: in the
             # solar, in what the battery's dispatch sees, and off the grid.
-            array_b = self._hybrid_array_w(baseline_config or self._config, ts)
+            array_b = self._hybrid_array_w(self._baseline_array_config(baseline_config), ts)
             if before_energy_system is not None:
                 state_b = before_energy_system.tick(ts, inputs_b)
                 pre_grid_before = state_b.grid_power_w

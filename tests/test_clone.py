@@ -931,7 +931,12 @@ class TestCircuitsSharingASpace:
         is on the breaker even where its own list is missing, and the clone loads."""
         devices = self._devices()
         devices["fff777"] = _circuit(
-            "fff777", "Bedroom Outlets", "44", rating="20", priority="NEVER", active_power="0.0"
+            "fff777",
+            "Bedroom Outlets",
+            "44",
+            rating="20",
+            priority="NICE_TO_HAVE",
+            active_power="0.0",
         )
 
         config = translate_scraped_panel(_make_scraped(devices))
