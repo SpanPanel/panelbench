@@ -34,7 +34,7 @@ import yaml
 from panelbench.engine import RealisticBehaviorEngine
 
 config = yaml.safe_load(open(sys.argv[1]))
-engine = RealisticBehaviorEngine(0.0, config)
+engine = RealisticBehaviorEngine(config)
 producer = next(
     t for t in config["circuit_templates"].values()
     if t["energy_profile"]["mode"] == "producer"

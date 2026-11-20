@@ -399,7 +399,7 @@ circuit_templates: # Reusable template definitions
       # it. The pinned emitter still requires one and publishes 20 for it until it accepts the absence.
 
     # Optional behavioral modules
-    cycling_pattern:
+    cycling_pattern: # On for the first part of each cycle of simulated time, counted from the epoch
       on_duration: int # Seconds on (explicit mode)
       off_duration: int # Seconds off (explicit mode)
       duty_cycle: float # 0.0-1.0 — fraction of cycle spent on (from HA stats)

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
+  next.
+
 ## 2.8.0 — 2026-11-15
 
 Two new templates model panels with tandem and quad breakers, circuits may share a breaker space only as one such breaker's, and several panels on one broker

@@ -25,7 +25,6 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from panelbench.behavior_mutable_state import BehaviorEngineMutableState
 from panelbench.bess_link import BESS_LINKS, is_bess_link
 from panelbench.circuit import SimulatedCircuit
 from panelbench.clock import SimulationClock
@@ -80,15 +79,11 @@ class RealisticBehaviorEngine:
 
     def __init__(
         self,
-        simulation_start_time: float,
         config: SimulationConfig,
         recorder: RecorderDataSource | None = None,
     ) -> None:
-        self._start_time = simulation_start_time
         self._config = config
         self._recorder = recorder
-        self._circuit_cycle_states: dict[str, dict[str, Any]] = {}
-        self._grid_offline: bool = False
         self._tz = self._resolve_timezone(config)
 
     # ------------------------------------------------------------------
@@ -134,29 +129,8 @@ class RealisticBehaviorEngine:
         """Return a timezone-aware datetime at the panel's location."""
         return datetime.fromtimestamp(timestamp, tz=self._tz)
 
-    def set_grid_offline(self, offline: bool) -> None:
-        """Propagate grid state so battery behaviour overrides schedules."""
-        self._grid_offline = offline
-
-    def capture_mutable_state(self) -> BehaviorEngineMutableState:
-        """Return a deep snapshot of tick-local mutable fields."""
-        return BehaviorEngineMutableState(
-            circuit_cycle_states=copy.deepcopy(self._circuit_cycle_states),
-            grid_offline=self._grid_offline,
-        )
-
-    def restore_mutable_state(self, state: BehaviorEngineMutableState) -> None:
-        """Restore fields previously captured with :meth:`capture_mutable_state`."""
-        self._circuit_cycle_states = copy.deepcopy(state.circuit_cycle_states)
-        self._grid_offline = state.grid_offline
-
-    def copy_mutable_state_from(self, other: RealisticBehaviorEngine) -> None:
-        """Replace this engine's mutable tick state with a copy of *other*'s."""
-        self.restore_mutable_state(other.capture_mutable_state())
-
     def get_circuit_power(
         self,
-        circuit_id: str,
         template: CircuitTemplateExtended,
         current_time: float,
         relay_state: str = "CLOSED",
@@ -164,7 +138,13 @@ class RealisticBehaviorEngine:
         modeling_recorder_baseline: bool = False,
         modeling_deterministic: bool = False,
     ) -> float:
-        """Get realistic power for a circuit based on its template and current conditions."""
+        """Get realistic power for a circuit based on its template and current conditions.
+
+        The behaviour engine keeps no state between calls, so any caller may share
+        one. Besides its arguments it reads the config, the recorder and the
+        process-wide weather cache, and, unless *modeling_deterministic*, draws its
+        noise from ``random``.
+        """
         if relay_state == "OPEN":
             return 0.0
 
@@ -178,7 +158,6 @@ class RealisticBehaviorEngine:
             return rec
 
         return self._synthetic_circuit_power(
-            circuit_id,
             template,
             current_time,
             stochastic_noise=not modeling_deterministic,
@@ -217,7 +196,6 @@ class RealisticBehaviorEngine:
 
     def _synthetic_circuit_power(
         self,
-        circuit_id: str,
         template: CircuitTemplateExtended,
         current_time: float,
         *,
@@ -247,9 +225,7 @@ class RealisticBehaviorEngine:
 
         # Apply cycling behavior
         if "cycling_pattern" in template:
-            base_power = self._apply_cycling_behavior(
-                circuit_id, base_power, template, current_time
-            )
+            base_power = self._apply_cycling_behavior(base_power, template, current_time)
 
         # Apply smart behavior
         if template.get("smart_behavior", {}).get("responds_to_grid", False):
@@ -367,7 +343,6 @@ class RealisticBehaviorEngine:
 
     def _apply_cycling_behavior(
         self,
-        circuit_id: str,
         base_power: float,
         template: CircuitTemplateExtended,
         current_time: float,
@@ -383,6 +358,10 @@ class RealisticBehaviorEngine:
         ``duty_cycle``, cycling is skipped because the hour_factors
         already incorporate the on/off behaviour from historical
         observations.  Applying duty_cycle on top would double-count.
+
+        The phase is the simulated time's position in the cycle, counted from
+        the epoch, so a load reads the same at a simulated moment however and
+        whenever the run began, live and in the Model view.
         """
         cycling = template.get("cycling_pattern", {})
 
@@ -406,15 +385,7 @@ class RealisticBehaviorEngine:
         cycle_length = on_duration + off_duration
         if cycle_length <= 0:
             return base_power
-        cycle_position = (current_time - self._start_time) % cycle_length
-
-        if circuit_id not in self._circuit_cycle_states:
-            self._circuit_cycle_states[circuit_id] = {
-                "last_cycle_start": self._start_time,
-                "is_on": True,
-            }
-
-        is_on_phase = cycle_position < on_duration
+        is_on_phase = current_time % cycle_length < on_duration
         return base_power if is_on_phase else 0.0
 
     def _apply_smart_behavior(
@@ -661,7 +632,6 @@ class DynamicSimulationEngine:
 
             self._initialize_tab_synchronizations()
             self._behavior_engine = RealisticBehaviorEngine(
-                self._clock.real_start_time,
                 self._config,
                 recorder=self._recorder,
             )
@@ -774,11 +744,8 @@ class DynamicSimulationEngine:
 
         The deterministic path the what-if model takes for its After pass: the
         circuit's template at *ts*, with no noise and no recorder baseline, so a
-        producer scales with its rating. Read-only: the behaviour engine's
-        tick-local state, such as a cycling circuit's phase, is restored after.
-
-        Call it on the engine's event loop. It is not thread-safe: from another
-        thread mid-tick, the restore would undo that tick's cycle updates.
+        producer scales with its rating. Read-only: the behaviour engine keeps no
+        state between calls, and a cycling circuit's phase follows *ts*.
 
         Raises:
             KeyError: the panel has no circuit *circuit_id*.
@@ -789,13 +756,9 @@ class DynamicSimulationEngine:
             raise RuntimeError("The engine is not initialised")
         if circuit_id not in self._circuits:
             raise KeyError(circuit_id)
-        checkpoint = behavior.capture_mutable_state()
-        try:
-            powers = self._collect_circuit_powers_at_ts(
-                ts, behavior, {circuit_id}, use_recorder_baseline=False
-            )
-        finally:
-            behavior.restore_mutable_state(checkpoint)
+        powers = self._collect_circuit_powers_at_ts(
+            ts, behavior, {circuit_id}, use_recorder_baseline=False
+        )
         return powers[circuit_id]
 
     # ------------------------------------------------------------------
@@ -810,8 +773,6 @@ class DynamicSimulationEngine:
     def set_grid_online(self, online: bool) -> None:
         """Force the grid online or offline."""
         self._forced_grid_offline = not online
-        if self._behavior_engine is not None:
-            self._behavior_engine.set_grid_offline(not online)
 
     @property
     def bess_link(self) -> BESSCommunication:
@@ -1048,7 +1009,6 @@ class DynamicSimulationEngine:
         for cid in circuit_ids:
             circuit = self._circuits[cid]
             power = behavior.get_circuit_power(
-                cid,
                 circuit.template,
                 ts,
                 modeling_recorder_baseline=use_recorder_baseline,
@@ -1127,20 +1087,9 @@ class DynamicSimulationEngine:
         if not timestamps:
             return {"error": "No recorder data available"}
 
-        # Clone behaviour engine for read-only pass.
-        # Cannot deepcopy the entire object because _recorder holds a
-        # HistoryProvider reference that contains unpicklable sockets.
-        # Instead, construct a fresh engine sharing the read-only fields
-        # (config, recorder, timezone) and deepcopy only the mutable state.
-        cloned_behavior: RealisticBehaviorEngine | None = None
-        if self._behavior_engine is not None:
-            be = self._behavior_engine
-            cloned_behavior = RealisticBehaviorEngine(
-                simulation_start_time=be._start_time,
-                config=be._config,
-                recorder=be._recorder,
-            )
-            cloned_behavior.copy_mutable_state_from(be)
+        # The live behaviour engine serves both passes: it keeps no state between
+        # calls, so reading it changes nothing the panel publishes.
+        behavior = self._behavior_engine
 
         # Partition circuits: baseline set (recorder-backed) vs full set
         baseline_circuit_ids = {
@@ -1159,7 +1108,7 @@ class DynamicSimulationEngine:
         )
         after_energy_system = self._build_energy_system()
 
-        if cloned_behavior is None or after_energy_system is None:
+        if behavior is None or after_energy_system is None:
             return {"error": "Simulation not initialised"}
 
         # Modeling-only BESS dispatchers — isolated from the live emitter's
@@ -1180,14 +1129,10 @@ class DynamicSimulationEngine:
         circuit_arrays_after: dict[str, list[float]] = {cid: [] for cid in self._circuits}
 
         for ts in timestamps:
-            # Restore mutable state between passes so cycling
-            # bookkeeping does not cross-contaminate.
-            modeling_checkpoint = cloned_behavior.capture_mutable_state()
-
             # --- Before pass: only recorder-backed circuits ---
             powers_b = self._collect_circuit_powers_at_ts(
                 ts,
-                cloned_behavior,
+                behavior,
                 baseline_circuit_ids,
                 use_recorder_baseline=True,
             )
@@ -1208,12 +1153,10 @@ class DynamicSimulationEngine:
             )
             grid_before = pre_grid_before - batt_before
 
-            cloned_behavior.restore_mutable_state(modeling_checkpoint)
-
             # --- After pass: all current circuits ---
             powers_a = self._collect_circuit_powers_at_ts(
                 ts,
-                cloned_behavior,
+                behavior,
                 all_circuit_ids,
                 use_recorder_baseline=False,
             )
@@ -1249,7 +1192,7 @@ class DynamicSimulationEngine:
                 "power_before": circuit_arrays_before[cid],
             }
 
-        tz_str = str(cloned_behavior.panel_timezone)
+        tz_str = str(behavior.panel_timezone)
 
         return {
             "horizon_start": int(horizon_start),

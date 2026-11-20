@@ -91,11 +91,6 @@ class SimulationClock:
             self._real_start_time = time.time()
         self._time_acceleration = value
 
-    @property
-    def real_start_time(self) -> float:
-        """Wall-clock time when the simulation was created."""
-        return self._real_start_time
-
     # ------------------------------------------------------------------
     # Runtime control
     # ------------------------------------------------------------------
