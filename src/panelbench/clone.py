@@ -20,7 +20,7 @@ import json
 import logging
 import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
@@ -428,6 +428,7 @@ def update_config_from_scrape(
 
     circuit_nodes = _devices_of_type(scraped.devices, scraped.serial_number, TYPE_CIRCUIT)
     keys = _circuit_keys(scraped.devices, circuit_nodes)
+    shared = _shared_with_by_circuit(config)
 
     changed = False
 
@@ -447,8 +448,10 @@ def update_config_from_scrape(
         # Update energy seeds. Enclosure frame: `exported-energy` is the
         # enclosure exporting to the circuit (consumption), `imported-energy` is
         # the circuit backfeeding the enclosure (production). See the seeding
-        # comment in `_translate_circuit`.
-        exported = _float_prop(scraped.devices, node_uuid, "meter", "exported-energy")
+        # comment in `_translate_circuit`. A breaker the config records takes its one
+        # register on each of its circuits.
+        breaker = _breaker_nodes(node_uuid, keys, shared.get(_circuit_id(keys[node_uuid]), ()))
+        exported = _breaker_register(scraped.devices, breaker, "exported-energy")
         if (
             exported is not None
             and exported > 0
@@ -457,7 +460,7 @@ def update_config_from_scrape(
             ep["initial_consumed_energy_wh"] = exported
             changed = True
 
-        imported = _float_prop(scraped.devices, node_uuid, "meter", "imported-energy")
+        imported = _breaker_register(scraped.devices, breaker, "imported-energy")
         if (
             imported is not None
             and imported > 0
@@ -1028,9 +1031,11 @@ def _translate_circuit(
     # (backfeed). The simulator's own accumulators are device-framed, so
     # consumption seeds from `exported-energy` and production from
     # `imported-energy`. Requires ebus-emitter >= 0.2.1, which publishes the
-    # enclosure frame on both power and energy.
-    imported_energy = _float_prop(devices, node_uuid, "meter", "imported-energy")
-    exported_energy = _float_prop(devices, node_uuid, "meter", "exported-energy")
+    # enclosure frame on both power and energy. A tandem's or quad's circuits each
+    # take the breaker's one register (`_breaker_register`).
+    breaker = _breaker_nodes(node_uuid, keys, siblings.get(node_uuid, ()))
+    imported_energy = _breaker_register(devices, breaker, "imported-energy")
+    exported_energy = _breaker_register(devices, breaker, "exported-energy")
 
     # Build template
     energy_profile: dict[str, object] = {
@@ -1561,6 +1566,44 @@ def _breaker_siblings(
         if ordered:
             siblings[node] = [_circuit_id(keys[peer]) for peer in ordered]
     return siblings
+
+
+def _breaker_nodes(
+    node_uuid: str, keys: Mapping[str, str], shared_with: Collection[str]
+) -> list[str]:
+    """The device ids of *node_uuid*'s breaker: the circuit, then the circuits
+    *shared_with* names by their ids in the clone (``_circuit_id``)."""
+    named = set(shared_with)
+    return [node_uuid, *(node for node, key in keys.items() if _circuit_id(key) in named)]
+
+
+def _breaker_register(
+    devices: Mapping[str, DiscoveredDevice], breaker: Collection[str], register: str
+) -> float | None:
+    """The energy *register* (``meter/`` property) the circuits of one *breaker*, by
+    their device ids, publish.
+
+    A tandem's or quad's circuits publish its one meter's register, each read a moment
+    apart, so the breaker's is the largest any of them publishes, as the emitter's own
+    capture takes it; and the emitter refuses circuits on one breaker whose seeds
+    differ. A circuit on a breaker of its own publishes its own.
+    """
+    values = [
+        value
+        for node in breaker
+        if (value := _float_prop(devices, node, "meter", register)) is not None
+    ]
+    return max(values) if values else None
+
+
+def _shared_with_by_circuit(config: Mapping[str, object]) -> dict[str, list[str]]:
+    """Each of *config*'s circuits' ``shared_with``, by the circuit's id."""
+    circuits = config.get("circuits")
+    return {
+        str(circuit["id"]): [str(peer) for peer in circuit.get("shared_with") or ()]
+        for circuit in (circuits if isinstance(circuits, list) else [])
+        if isinstance(circuit, dict) and "id" in circuit
+    }
 
 
 def _enrich_pv_template(

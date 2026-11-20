@@ -9,7 +9,8 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 - **`ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS` and `ref_MLO_48_HYBRID`**: a MAIN 32 fed by another panel, a MAIN 16 with a hybrid battery and an EVSE, and an
   MLO 48 whose battery's inverter takes its solar.
 - **A battery can take its own solar**: set `bess.inverter_type: hybrid` and rate its array with `bess.pv_array.nameplate_capacity_w`, and it produces into the
-  panel's solar, live and in the Model view. A clone of a panel with such a battery writes it hybrid. Making a battery hybrid restarts its panel.
+  panel's solar, live and in the Model view. A clone of a panel with such a battery writes it hybrid. Changing a running battery's coupling restarts its
+  panel.
 - **`panel_config.feedthrough: false`** for a panel without a feedthrough module: on SPAN release 202645 a hardware 3.0 one publishes no downstream lugs. A
   clone writes it.
 
@@ -27,7 +28,8 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 - **Runs on `ebus-panel-sim` 0.11.0**: the lugs' per-leg currents net each leg by the panel's rows; on hardware 3.0 a tandem's or quad's circuits each
   publish the breaker's one reading and share its relay over MQTT, and a battery's nameplate capacity has one decimal place.
 - **The dashboard switches and edits a tandem or quad as one breaker**: a relay toggle, or a priority or relay-behaviour change, on one of its circuits
-  applies to all of them, and a config the emitter would refuse, such as a PV rating of 0, is refused with its reason when edited or loaded.
+  applies to all of them. A config 0.11.0 refuses, such as a PV rating of 0, is refused with its reason when edited or loaded, and a clone gives a tandem's
+  circuits its one energy register.
 - **`ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48` are their panels' later captures, on release 202645.** `ref_MAIN_40` now has 38
   circuits and no battery, and `ref_UNKNOWN_16` an EVSE.
 - **A `pv` section listing `inverters` must set `enabled`, to `true` or `false`**: without it they published nothing, and a quoted `"false"` published them;
@@ -40,6 +42,7 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 - **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
   next.
 - **A PV inverter or SPAN Drive added in the dashboard no longer stops the panel starting**: it is modelled in the Model view and not published.
+- **A config the panel cannot start on is refused when loaded, edited or saved, saying why**, where it was saved and the panel then failed to start.
 
 ### Removed
 

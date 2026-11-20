@@ -34,9 +34,10 @@ from tests._helpers import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
-    from panelbench.config_types import SimulationConfig
+    from panelbench.config_types import BESSConfigYAML, SimulationConfig
 
 _NOON: Final = "2026-06-15T12:00:00"
 _MIDNIGHT: Final = "2026-06-15T00:00:00"
@@ -292,21 +293,70 @@ async def test_rating_a_cloned_hybrid_s_array_is_no_saving(tmp_path: Path) -> No
     assert added == pytest.approx(array, abs=0.2)
 
 
-@pytest.mark.asyncio
-async def test_a_battery_turned_hybrid_while_running_restarts_rather_than_changes(
-    tmp_path: Path,
-) -> None:
-    """The emitter's battery is built at start, and the emitter refuses PV for a battery
-    it was not started hybrid. So a live change of coupling is not applied, the caller
-    restarts the panel on its saved config instead, and ticks go on as they were."""
-    runtime, recorder = await recorded_panel(write_config(tmp_path / "panel.yaml", panel_config()))
-    del recorder
-    turned = copy.deepcopy(_hybrid()["bess"])
+def _reserve_raised(bess: BESSConfigYAML) -> None:
+    bess["backup_reserve_pct"] = 35.0
 
-    assert emitter_runtime.update_bess_config_live(runtime, turned) is False
-    assert runtime.engine.config["bess"].get("inverter_type") != "hybrid"
+
+def _made_hybrid(bess: BESSConfigYAML) -> None:
+    bess["inverter_type"] = "hybrid"
+    bess["pv_array"] = {"nameplate_capacity_w": _ARRAY_W}
+
+
+def _made_ac_coupled(bess: BESSConfigYAML) -> None:
+    bess["inverter_type"] = "ac-coupled"
+
+
+def _disabled(bess: BESSConfigYAML) -> None:
+    bess["enabled"] = False
+
+
+def _another_battery(bess: BESSConfigYAML) -> None:
+    bess["serial_number"] = "SIM-BESS-ANOTHER"
+
+
+@pytest.mark.parametrize(
+    ("started_hybrid", "change", "applied"),
+    [
+        pytest.param(False, _reserve_raised, True, id="a reserve change"),
+        pytest.param(True, _reserve_raised, True, id="a hybrid's reserve change"),
+        pytest.param(False, _made_hybrid, False, id="made hybrid"),
+        pytest.param(True, _made_ac_coupled, False, id="made ac-coupled"),
+        pytest.param(False, _disabled, False, id="disabled"),
+        pytest.param(False, _another_battery, False, id="another battery"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_live_change_applies_only_to_the_battery_the_panel_started_with(
+    tmp_path: Path,
+    started_hybrid: bool,
+    change: Callable[[BESSConfigYAML], None],
+    applied: bool,
+) -> None:
+    """The emitter builds its batteries at start and takes PV only for one it started
+    hybrid. A live change that keeps the battery, coupled as it was, is applied; any
+    other is not, the caller restarts the panel on its saved config, and ticks go on."""
+    config = _hybrid() if started_hybrid else panel_config()
+    runtime, recorder = await recorded_panel(write_config(tmp_path / "panel.yaml", config))
+    del recorder
+    before = copy.deepcopy(runtime.engine.config["bess"])
+    changed = copy.deepcopy(before)
+    change(changed)
+
+    assert emitter_runtime.update_bess_config_live(runtime, changed) is applied
+
+    assert runtime.engine.config["bess"] == (changed if applied else before)
     await emitter_runtime.publish_tick(runtime)
 
-    kept = copy.deepcopy(runtime.engine.config["bess"])
-    kept["backup_reserve_pct"] = 35.0
-    assert emitter_runtime.update_bess_config_live(runtime, kept) is True
+
+@pytest.mark.asyncio
+async def test_only_a_battery_the_emitter_started_hybrid_is_given_pv(tmp_path: Path) -> None:
+    """The emitter refuses PV for a battery it was not started hybrid, whatever the
+    engine's config has come to say."""
+    plain, _ = await recorded_panel(write_config(tmp_path / "plain.yaml", panel_config()))
+    plain.engine.config["bess"]["inverter_type"] = "hybrid"
+    hybrid, _ = await recorded_panel(write_config(tmp_path / "hybrid.yaml", _hybrid()))
+    battery = emitter_runtime.bess_config_from_engine(hybrid.engine)
+    assert battery is not None
+
+    assert emitter_runtime._bess_pv(plain, 500.0) == {}
+    assert emitter_runtime._bess_pv(hybrid, 500.0) == {battery.instance_id: 500.0}

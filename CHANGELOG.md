@@ -11,9 +11,9 @@
 - **A battery can take its own solar.** `bess.inverter_type: hybrid` (default `ac-coupled`) says the battery's own inverter also takes PV, on its DC side, and
   `bess.pv_array.nameplate_capacity_w` rates the array; it produces by the panel's location and weather and joins `power-flows/pv` and the solar the battery's
   dispatch sees, live and in the Model view. A clone writes a battery hybrid where the emitter's capture reads it so: the panel publishes `power-flows/pv`
-  and nothing but its one battery could bring it solar. An imported definition keeps its battery's coupling. A battery made hybrid while its panel runs
-  restarts the panel, since the emitter builds its battery at start. Off grid the array is not yet curtailed to what the load and battery can take, as the
-  PV circuits are not.
+  and nothing but its one battery could bring it solar. An imported definition keeps its battery's coupling. A battery change the running panel cannot
+  take, a coupling changed or the battery enabled, disabled or replaced, restarts the panel, since the emitter builds its battery at start. Off grid the
+  array is not yet curtailed to what the load and battery can take, as the PV circuits are not.
 - **`panel_config.feedthrough`** (default `true`). With `false`, a hardware 3.0 panel on SPAN release 202645, or on a firmware naming none, publishes no
   downstream lugs, as such a panel without a feedthrough module does; release 202639 and a MAIN 32 publish both. A clone of a panel publishing its upstream
   lugs alone writes `false`. A `lugs.downstream` section for lugs the panel does not publish is refused, and so is a battery placed `DOWNSTREAM` of them.
@@ -38,10 +38,12 @@
   `meter/current-b` take each space's leg from its row and net each leg's current. On hardware 3.0 the circuits of one tandem or quad each publish the
   breaker's one reading, and a relay or priority set on one over MQTT reaches them all. A battery's `info/nameplate-capacity` has one decimal place there (`27.0`).
   A hardware 3.0 panel on release 202645, or on a firmware naming none, publishes each circuit's `connection/connection-point`.
-- **A config the emitter would refuse is refused when PanelBench loads, edits or saves it**, with the emitter's reason and each circuit named by its `id`.
-  Under 0.11.0 that includes the circuits of one tandem or quad differing in priority, relay lock, never-backup or energy seed, and a PV rating that is not
-  above 0, both of which 0.10.0 started on. The dashboard applies a relay toggle, or a priority or relay-behaviour edit, on one circuit of a tandem or quad
-  to every circuit on it, since the breaker has one relay.
+- **0.11.0 refuses the circuits of one tandem or quad differing in priority, relay lock, never-backup or energy seed, and a PV rating that is not above 0**,
+  both of which 0.10.0 started on, and PanelBench refuses them when it loads, edits or saves a config, as it does all the emitter refuses (see Fixed). The
+  dashboard applies a relay toggle, or a priority or relay-behaviour edit, on one circuit of a tandem or quad to every circuit on it, since the breaker has
+  one relay; only a circuit whose own value changes leaves recorder replay. A clone, and a refresh of its energy from the source panel, writes a tandem's or
+  quad's one register to each of its circuits: the largest any of them publishes, as the emitter's capture takes it, since they read one meter a moment
+  apart.
 - **Four generated templates are their panels' later captures, on release 202645**: `ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48`, where
   they were the release 202639 captures of the same panels. `ref_MAIN_40` is that panel recommissioned, with 38 circuits and no battery, where it had 5 and
   a battery fed by a circuit, and `ref_UNKNOWN_16` adds an EVSE. Their serials follow the captures: `sim-main32_r202645`, `sim-r202645-a`, `sim-r202645-c` and
@@ -64,7 +66,13 @@
   keeps all but the presets and the two tracked templates out, as a build from git has it, and leaves local state and caches out of the build context; images
   built by CI were not affected.
 - **A PV inverter or SPAN Drive added in the dashboard no longer stops its panel starting.** It sits on no breaker space, and the emitter refuses a circuit
-  with none, so a panel with one would not start; it is now a what-if device, which the Model view models and the panel does not publish.
+  with none, so a panel with one would not start; it is now a what-if device, which the Model view models and the panel does not publish, nor anything it
+  would feed. A `pv.feed` or `bess.feed` naming one is refused.
+- **A config the panel cannot start on is refused when PanelBench loads, edits or saves it, saying why**, where it loaded and saved and the panel then
+  failed to start. PanelBench builds the emitter as a panel's start does, so whatever the emitter refuses, such as an `unvalued` path the device's profile
+  declares none of, is refused with its reason, each circuit and meter named by its `id`. A section or setting of the wrong shape, such as `lugs: x` or
+  `bess.charge_hours: 5`, is refused by name, where the panel failed with an error naming nothing. A `bess.feed` naming no circuit, which published a
+  battery fed by nothing, is refused, and deleting the circuit it names in the dashboard drops it, as it drops a `pv.feed`.
 - **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
   ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
   a panel no longer starts every cycling load at the start of its on phase.

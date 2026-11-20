@@ -207,7 +207,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     instances: list[DeviceInstance] = []
     published = [c for c in profile.get("circuits") or [] if on_the_panel(c)]
     for idx, c in enumerate(published, start=1):
-        tabs = c.get("tabs") or [0]
+        tabs = c["tabs"]
         template_name = c.get("template", "")
         template: CircuitTemplateExtended | None = templates.get(template_name)
         commissioned_system: str | None
@@ -246,7 +246,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                 display_name=c.get("name", c["id"]),
                 description_name=instance_id if named_by_id else None,
                 metadata={
-                    "tab-numbers": ",".join(str(int(t)) for t in tabs if t),
+                    "tab-numbers": ",".join(str(int(t)) for t in tabs),
                     "breaker-rating-a": str(breaker_rating),
                     "default-priority": priority,
                     "relay-behavior": relay_behavior,
@@ -816,9 +816,12 @@ def _islandable(profile: SimulationConfig) -> bool:
 
 
 def _first_producer_template(profile: SimulationConfig) -> CircuitTemplateExtended | None:
-    """The template of the first producer circuit, read for a PV device with no PV circuit."""
+    """The template of the first producer circuit on the panel, read for a PV device with
+    no PV circuit."""
     templates = profile.get("circuit_templates") or {}
     for circuit in profile.get("circuits") or []:
+        if not on_the_panel(circuit):
+            continue
         template = templates.get(circuit.get("template", ""))
         if template is None:
             continue

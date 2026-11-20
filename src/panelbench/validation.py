@@ -11,9 +11,7 @@ import logging
 import math
 from typing import TYPE_CHECKING, Any, Final, cast
 
-from ebus_panel_sim import EmitterError
-from ebus_panel_sim.manifest_physics import ManifestPhysicsView
-from ebus_panel_sim.shared_hardware import shared_breakers
+from ebus_panel_sim import EmitterError, SetterRegistry
 
 from panelbench.breakers import breaker_misfit, crowded_spaces, crowding
 from panelbench.config_defaults import normalize_config
@@ -34,6 +32,7 @@ from panelbench.hardware import (
 from panelbench.pv_rating import rating_conflicts
 from panelbench.pv_section import bound_pv_circuit_id, pv_circuit_ids
 from panelbench.registration_limit import registration_limit
+from panelbench.virtual_devices import on_the_panel
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -56,6 +55,8 @@ def validate_yaml_config(config_data: Any) -> None:
             raise ValueError(f"Missing required section: {section}")
 
     validate_panel_config(config_data["panel_config"])
+    validate_section_shapes(config_data)
+    validate_battery_settings(config_data)
     # A declared variant must be one PanelBench publishes; panel_variant says which.
     panel_variant(config_data)
     validate_circuit_templates(config_data["circuit_templates"])
@@ -78,7 +79,8 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_unvalued_lists(config_data)
     validate_downstream_lugs(config_data)
     validate_battery_coupling(config_data)
-    # Every check above has established the shape a SimulationConfig has.
+    # Every check above has established the shape a SimulationConfig has: each
+    # section the definition reads is the mapping, list or number its type says.
     validate_emitter_accepts(cast("SimulationConfig", config_data))
 
     if "panel_source" in config_data:
@@ -94,6 +96,23 @@ def validate_panel_config(panel_config: Any) -> None:
     for field in required_panel_fields:
         if field not in panel_config:
             raise ValueError(f"Missing required panel_config field: {field}")
+    serial = panel_config["serial_number"]
+    if isinstance(serial, bool) or not isinstance(serial, (str, int)) or not str(serial):
+        raise ValueError(f"panel_config.serial_number must be the panel's serial, not {serial!r}")
+    if not _is_int(panel_config["total_tabs"]):
+        raise ValueError(
+            f"panel_config.total_tabs must be a whole number of spaces, not "
+            f"{panel_config['total_tabs']!r}"
+        )
+    main_size = panel_config["main_size"]
+    if main_size is not None and not _is_finite_number(main_size):
+        raise ValueError(
+            f"panel_config.main_size must be the main breaker's amps, or null for none, "
+            f"not {main_size!r}"
+        )
+    site = panel_config.get("site")
+    if site is not None and not isinstance(site, dict):
+        raise ValueError(f"panel_config.site must be a mapping of its settings, not {site!r}")
     if "feedthrough" in panel_config and not isinstance(panel_config["feedthrough"], bool):
         raise ValueError(
             f"panel_config.feedthrough must be true or false, not {panel_config['feedthrough']!r}"
@@ -128,6 +147,24 @@ def validate_single_template(template_name: str, template: Any) -> None:
             raise ValueError(
                 f"Missing required field '{field}' in circuit template '{template_name}'"
             )
+    energy_profile = template["energy_profile"]
+    if not isinstance(energy_profile, dict):
+        raise ValueError(
+            f"Circuit template '{template_name}' energy_profile must be a mapping of its "
+            f"settings, not {energy_profile!r}"
+        )
+    nameplate = energy_profile.get("nameplate_capacity_w", 0.0)
+    if not _is_finite_number(nameplate):
+        raise ValueError(
+            f"Circuit template '{template_name}' energy_profile.nameplate_capacity_w must be "
+            f"a number of watts, not {nameplate!r}"
+        )
+    rating = template.get("breaker_rating")
+    if rating is not None and not _is_finite_number(rating):
+        raise ValueError(
+            f"Circuit template '{template_name}' breaker_rating must be the breaker's amps, "
+            f"or null where the panel publishes none, not {rating!r}"
+        )
     priority = str(template["priority"]).upper()
     if priority not in SHED_PRIORITIES:
         raise ValueError(
@@ -282,14 +319,14 @@ def validate_single_circuit(index: int, circuit: Any, circuit_templates: dict[st
             raise ValueError(f"Missing required field '{field}' in circuit {index}")
 
     template_name = circuit["template"]
-    if template_name not in circuit_templates:
+    if not isinstance(template_name, str) or template_name not in circuit_templates:
         raise ValueError(f"Circuit {index} references unknown template '{template_name}'")
 
     template = circuit_templates.get(template_name, {})
 
     tabs = circuit.get("tabs", [])
-    if not isinstance(tabs, list):
-        raise ValueError(f"Circuit {index} ('tabs') must be a list")
+    if not isinstance(tabs, list) or not all(_is_int(tab) for tab in tabs):
+        raise ValueError(f"Circuit {index} ('tabs') must be a list of space numbers, not {tabs!r}")
 
     # Infrastructure entities (PV, EVSE) may have empty tabs
     # when added as virtual devices for "what-if" modeling.
@@ -696,32 +733,120 @@ def validate_battery_coupling(config_data: dict[str, object]) -> None:
         )
 
 
-def validate_emitter_accepts(config_data: SimulationConfig) -> None:
-    """Refuse a config whose definition the emitter refuses, with the emitter's reason.
+# Sections a config may leave out or set null, each otherwise a mapping of settings.
+_MAPPING_SECTIONS: Final = ("bess", "pv", "evse", "lugs", "broker", "simulation_params")
 
-    PanelBench's own rules say why in its terms. This asks the emitter's: its parse of
-    the manifest, and, under a variant that publishes shared breakers, its rule that a
-    breaker's circuits agree in priority, relay lock, never-backup, placement and
-    energy seed (``ebus_panel_sim.shared_hardware``). So a config PanelBench accepts
-    is one the panel starts on, and the dashboard refuses an edit the emitter would.
-    The definition is built from a normalised copy, as the engine builds it, and the
-    reason names each circuit by its config ``id``.
+
+def validate_section_shapes(config_data: Mapping[str, object]) -> None:
+    """Refuse a section that is not the mapping of settings it must be.
+
+    Each is read setting by setting when the panel's definition is built, so a scalar
+    or a list there would otherwise fail there, with an error naming nothing.
     """
-    from panelbench.emitter_adapter.definition import build_definition
+    for section in _MAPPING_SECTIONS:
+        value = config_data.get(section)
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(f"{section} must be a mapping of its settings, not {value!r}")
+    lugs = config_data.get("lugs")
+    if isinstance(lugs, dict):
+        for direction in ("upstream", "downstream"):
+            value = lugs.get(direction)
+            if value is not None and not isinstance(value, dict):
+                raise ValueError(
+                    f"lugs.{direction} must be a mapping of its commissioning, not {value!r}"
+                )
+
+
+_BATTERY_NUMBERS: Final = (
+    "nameplate_capacity_kwh",
+    "max_charge_w",
+    "max_discharge_w",
+    "charge_efficiency",
+    "discharge_efficiency",
+    "backup_reserve_pct",
+    "initial_soe_kwh",
+)
+_BATTERY_HOURS: Final = ("charge_hours", "discharge_hours")
+
+
+def validate_battery_settings(config_data: Mapping[str, object]) -> None:
+    """Refuse a ``bess`` setting that is not the number, or list of hours, it must be."""
+    bess = config_data.get("bess")
+    if not isinstance(bess, dict):
+        return
+    for key in _BATTERY_NUMBERS:
+        if key in bess and not _is_finite_number(bess[key]):
+            raise ValueError(f"bess.{key} must be a finite number, not {bess[key]!r}")
+    for key in _BATTERY_HOURS:
+        hours = bess.get(key, [])
+        if not isinstance(hours, list) or not all(_is_int(hour) for hour in hours):
+            raise ValueError(f"bess.{key} must be a list of hours of the day, not {hours!r}")
+    if "feed" in bess:
+        _validate_battery_feed(str(bess["feed"]), config_data.get("circuits"))
+
+
+def _validate_battery_feed(feed: str, circuits: object) -> None:
+    """Refuse a ``bess.feed`` naming no circuit the panel publishes.
+
+    The emitter takes a feed naming nothing as it is, and a circuit on no breaker space
+    is a what-if device the panel does not publish, so no battery can hang from it.
+    """
+    named = [
+        circuit
+        for circuit in (circuits if isinstance(circuits, list) else [])
+        if isinstance(circuit, dict) and str(circuit.get("id")) == feed
+    ]
+    if not named:
+        raise ValueError(
+            f"bess.feed {feed!r} names no circuit: set it to the id of the circuit feeding "
+            "the battery, or remove it for a battery no circuit feeds"
+        )
+    if not on_the_panel(named[0]):
+        raise ValueError(
+            f"bess.feed names circuit {feed!r}, which sits on no breaker space: a what-if "
+            "device, which the panel does not publish, so no battery hangs from it"
+        )
+
+
+def _is_int(value: object) -> bool:
+    """A YAML integer: never a bool, which YAML also reads as one."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_finite_number(value: object) -> bool:
+    """A finite YAML number, integer or float, never a bool."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def validate_emitter_accepts(config_data: SimulationConfig) -> None:
+    """Refuse a config the emitter refuses to start a panel on, with its reason.
+
+    PanelBench's own rules say why in its terms. This asks the emitter by building
+    it, as a panel's start does (``construct_emitter``), on a transport that records
+    what it would publish: every rule the emitter applies to a definition then
+    applies here, such as a breaker's circuits agreeing in priority, relay lock,
+    never-backup, placement and energy seed, and a PV rating above 0. So a config
+    PanelBench accepts is one the panel starts on, and the dashboard refuses an edit
+    the emitter would. The definition is built from a normalised copy, as the engine
+    builds it, and the reason names each circuit by its config ``id``.
+    """
+    from panelbench.emitter_adapter.definition import build_definition, construct_emitter
     from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
+    from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
     config: SimulationConfig = copy.deepcopy(config_data)
     normalize_config(config, source="validation")
     definition = build_definition(config)
     try:
-        view = ManifestPhysicsView(definition.manifest)
-        if publishes_shared_breakers(definition.variant):
-            shared_breakers(view.all_circuits())
+        construct_emitter(definition, SetterRegistry(), RecordingTransport())
     except EmitterError as exc:
         reason = str(exc)
         serial = config["panel_config"]["serial_number"]
-        for circuit in config.get("circuits") or []:
-            reason = reason.replace(stable_circuit_uuid(serial, circuit["id"]), circuit["id"])
+        # A meter outside the panel takes its device id from its `id` as a circuit does.
+        named = [*(config.get("circuits") or []), *(config.get("outside_meters") or [])]
+        for device in named:
+            device_id = str(device["id"])
+            reason = reason.replace(stable_circuit_uuid(serial, device_id), device_id)
         raise ValueError(f"The emitter refuses this panel: {reason}") from exc
 
 

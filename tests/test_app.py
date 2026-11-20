@@ -422,3 +422,24 @@ class TestDuplicateSerial:
             for panel in list(app._panels.values()):
                 with contextlib.suppress(Exception):
                     await panel.stop()
+
+
+class TestApplyBessConfigLive:
+    """A live battery change the panel cannot take is left to the reload watcher."""
+
+    @pytest.mark.parametrize("applied", [True, False], ids=["applied", "needs a restart"])
+    def test_only_an_applied_change_marks_the_file_current(
+        self, tmp_path: Path, applied: bool
+    ) -> None:
+        path = tmp_path / "panel.yaml"
+        path.write_text("saved: true\n", encoding="utf-8")
+        panel = MagicMock(spec=PanelInstance)
+        panel.runtime = MagicMock()
+        panel.update_bess_config.return_value = applied
+        app = SimulatorApp(config_dir=tmp_path)
+        app._panels[path] = panel
+        app._config_hashes[path] = "before the save"
+
+        assert app.apply_bess_config_live("panel.yaml", {"enabled": True}) is applied
+
+        assert app._config_hashes[path] == (_file_hash(path) if applied else "before the save")

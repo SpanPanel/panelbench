@@ -16,7 +16,6 @@ from pathlib import Path
 
 import yaml
 from ebus_panel_sim import (
-    Emitter,
     EmitterError,
     PanelDefinition,
     SetterRegistry,
@@ -25,7 +24,11 @@ from ebus_panel_sim import (
 )
 
 from panelbench.clone import translate_panel_tree
-from panelbench.emitter_adapter.definition import bess_dispatch_yaml, load_shedding_yaml
+from panelbench.emitter_adapter.definition import (
+    bess_dispatch_yaml,
+    construct_emitter,
+    load_shedding_yaml,
+)
 from panelbench.emitter_adapter.wire_capture import RecordingTransport, discovered_devices
 from panelbench.hardware import published_variant
 
@@ -93,7 +96,7 @@ def config_from_definition(definition: PanelDefinition) -> dict[str, object]:
 def _render(definition: PanelDefinition) -> dict[str, bytes]:
     """The retained tree upstream's emitter publishes for *definition*."""
     transport = RecordingTransport()
-    emitter = Emitter.from_definition(definition, SetterRegistry(), mqttc=transport)
+    emitter = construct_emitter(definition, SetterRegistry(), transport)
     emitter.start()
     emitter.publish_tick(TickInputs(current_time=0.0, grid_online=True, circuits={}))
     return transport.retained

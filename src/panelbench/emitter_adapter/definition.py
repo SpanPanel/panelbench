@@ -15,6 +15,7 @@ from ebus_panel_sim import (
     BESSConfig,
     ChargeMode,
     DeviceManifest,
+    Emitter,
     LoadSheddingConfig,
     ManifestPhysicsView,
     PanelDefinition,
@@ -25,6 +26,8 @@ from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.hardware import panel_variant
 
 if TYPE_CHECKING:
+    from ebus_panel_sim import MqttDeviceTransport, SetterRegistry
+
     from panelbench.config_types import BESSConfigYAML, PanelConfig, SimulationConfig
 
 _DEFAULT_SOC_SHED_THRESHOLD_PCT = 20.0
@@ -41,6 +44,20 @@ def build_definition(config: SimulationConfig) -> PanelDefinition:
         bess_configs=() if battery is None else (battery,),
         load_shedding=load_shedding_config(config["panel_config"]),
     )
+
+
+def construct_emitter(
+    definition: PanelDefinition, setters: SetterRegistry, transport: MqttDeviceTransport
+) -> Emitter:
+    """The emitter for *definition*, publishing through *transport*.
+
+    The one place PanelBench builds one: a panel's start, an import's render and
+    validation all build it here, so a config validation accepts is one a panel
+    starts on. Construction applies every rule the emitter has for a definition and
+    publishes nothing until ``start``. The emitter registers its own default ``/set``
+    handlers from an empty *setters*, so no producer-side wiring is needed.
+    """
+    return Emitter.from_definition(definition, setters, mqttc=transport)
 
 
 def bess_config(serial_number: str, bess: BESSConfigYAML) -> BESSConfig | None:

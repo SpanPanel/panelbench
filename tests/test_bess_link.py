@@ -63,8 +63,8 @@ def test_an_unknown_link_health_is_refused() -> None:
 async def test_the_summary_reports_the_published_link(
     tmp_path: Path, amqtt_broker: tuple[str, int]
 ) -> None:
-    """The dashboard shows what the wire carries, not what was asked for: a battery
-    disabled mid-run is still published, out of the tick, as ``OK``."""
+    """The dashboard shows what the wire carries, not what was asked for: a link asked
+    for reads as the one last published until a tick publishes it."""
     host, port = amqtt_broker
     config = panel_config()
     config["broker"] = {"host": host, "port": port}
@@ -74,17 +74,15 @@ async def test_the_summary_reports_the_published_link(
         assert panel.engine is not None
         assert panel.runtime is not None
         panel.engine.set_bess_link("LOST")
-        await emitter_runtime.publish_tick(panel.runtime)
-        summary = panel.get_power_summary()
-        assert summary is not None
-        assert summary["bess_link"] == "LOST"
-
-        panel.update_bess_config({"enabled": False})
-        await emitter_runtime.publish_tick(panel.runtime)
         summary = panel.get_power_summary()
         assert summary is not None
         assert panel.engine.bess_link == "LOST"
         assert summary["bess_link"] == "OK"
+
+        await emitter_runtime.publish_tick(panel.runtime)
+        summary = panel.get_power_summary()
+        assert summary is not None
+        assert summary["bess_link"] == "LOST"
     finally:
         await panel.stop()
 

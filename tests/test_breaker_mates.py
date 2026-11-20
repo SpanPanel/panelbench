@@ -89,10 +89,10 @@ def test_a_pv_rating_that_is_not_above_zero_is_refused() -> None:
     ],
 )
 def test_editing_one_circuit_of_a_breaker_edits_the_breaker(
-    field: str, value: str, seen: str
+    tmp_path: Path, field: str, value: str, seen: str
 ) -> None:
     store = ConfigStore()
-    store.load_from_file(_TANDEMS)
+    store.load_from_file(_replayed(tmp_path))
 
     store.update_entity(_MATE, {field: value, "_dirty": "1"})
 
@@ -100,6 +100,52 @@ def test_editing_one_circuit_of_a_breaker_edits_the_breaker(
         entity = store.get_entity(circuit_id)
         shown = entity.priority if field == "priority" else entity.relay_behavior_option
         assert shown == seen, circuit_id
+        # Each circuit's own value changed, so each has left recorder replay.
+        assert entity.user_modified, circuit_id
+
+
+def test_renaming_one_circuit_of_a_breaker_leaves_the_other_on_recorder_replay(
+    tmp_path: Path,
+) -> None:
+    """The edit form posts the priority and relay behaviour with every save, so only a
+    mate whose own value changes leaves replay."""
+    store = ConfigStore()
+    store.load_from_file(_replayed(tmp_path))
+    template = _template_of(_raw(_TANDEMS), _MATE)
+
+    store.update_entity(
+        _MATE,
+        {
+            "name": "Renamed",
+            "priority": template["priority"],
+            "relay_behavior": template["relay_behavior"],
+            "_dirty": "1",
+        },
+    )
+
+    assert store.get_entity(_MATE).user_modified
+    assert not store.get_entity(_OTHER_MATE).user_modified
+
+
+def _replayed(tmp_path: Path) -> Path:
+    """The tandems template with both circuits of one breaker replaying a recorder
+    entity, as a clone's circuits do until edited."""
+    config = _raw(_TANDEMS)
+    for circuit_id in (_MATE, _OTHER_MATE):
+        _template_of(config, circuit_id)["recorder_entity"] = f"sensor.{circuit_id}_power"
+    path = tmp_path / "panel.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def _template_of(config: dict[str, object], circuit_id: str) -> dict[str, object]:
+    circuits = config["circuits"]
+    templates = config["circuit_templates"]
+    assert isinstance(circuits, list)
+    assert isinstance(templates, dict)
+    (circuit,) = [c for c in circuits if c["id"] == circuit_id]
+    template: dict[str, object] = templates[circuit["template"]]
+    return template
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final, Literal
 
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
+from panelbench.virtual_devices import on_the_panel
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -24,10 +25,12 @@ UNFED_INVERTER_POSITION: Final = "UPSTREAM"
 
 
 def pv_circuit_ids(config: Mapping[str, object]) -> list[str]:
-    """The ids of *config*'s PV circuits, those whose template says ``device_type: pv``.
+    """The ids of *config*'s PV circuits on the panel, those on a breaker space whose
+    template says ``device_type: pv``.
 
-    In list order. Anything malformed is skipped rather than refused: validation
-    names it.
+    In list order. A PV circuit on no space is a what-if device (``virtual_devices``),
+    which feeds no inverter the panel publishes, so it is none of them. Anything
+    malformed is skipped rather than refused: validation names it.
     """
     templates = config.get("circuit_templates")
     circuits = config.get("circuits")
@@ -35,7 +38,7 @@ def pv_circuit_ids(config: Mapping[str, object]) -> list[str]:
         return []
     ids: list[str] = []
     for circuit in circuits:
-        if not isinstance(circuit, dict) or "id" not in circuit:
+        if not isinstance(circuit, dict) or "id" not in circuit or not on_the_panel(circuit):
             continue
         template_name = circuit.get("template")
         template = templates.get(template_name) if isinstance(template_name, str) else None
@@ -82,13 +85,21 @@ def bound_pv_circuit_id(config: Mapping[str, object]) -> str | None:
 def _pv_circuit_named(config: Mapping[str, object], pv_ids: list[str], feed: str) -> str:
     """*feed*, once it is known to name a PV circuit by its config ``id``."""
     circuits = config.get("circuits")
-    named = isinstance(circuits, list) and any(
-        isinstance(circuit, dict) and str(circuit.get("id")) == feed for circuit in circuits
-    )
+    named = [
+        circuit
+        for circuit in (circuits if isinstance(circuits, list) else [])
+        if isinstance(circuit, dict) and str(circuit.get("id")) == feed
+    ]
     if not named:
         raise ValueError(
             f"pv.feed {feed!r} names no circuit: set it to the id of the PV circuit feeding "
             "the inverter the pv section describes"
+        )
+    if not on_the_panel(named[0]):
+        raise ValueError(
+            f"pv.feed names circuit {feed!r}, which sits on no breaker space: a what-if "
+            "device, which the panel does not publish, so it feeds no inverter the panel "
+            "does. Give it spaces, or name the PV circuit feeding the inverter"
         )
     if feed not in pv_ids:
         raise ValueError(

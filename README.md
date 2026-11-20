@@ -421,7 +421,8 @@ two `_TANDEMS` templates show one each:
   `switch/shared-with-device-ids`, which a circuit's `shared_with` sets. A single-pole circuit lists its own space and a two-pole circuit lists both.
   The circuits of one breaker share its one reading and relay: each publishes the breaker's reading, and a relay or priority set on one over MQTT reaches them
   all. In the dashboard a relay toggle, or an edit of the priority or relay behaviour, on one applies to every circuit on the breaker, and a config whose
-  circuits on one breaker differ in priority, relay lock, never-backup or energy seed is refused, as the emitter refuses it.
+  circuits on one breaker differ in priority, relay lock, never-backup or energy seed is refused, as the emitter refuses it. A clone gives each circuit the
+  breaker's one energy register, the largest any of them publishes, since they read one meter a moment apart.
   `ref_MLO_48_TANDEMS.yaml` is the reference MLO 48 with synthetic names and loads. It keeps that panel's three tandems and adds a 15-20 tandem on space 37, a
   quad on 27 and 29, and a tandem-quad on 31 and 33.
 
@@ -479,8 +480,9 @@ and the solar the battery's dispatch sees, live and in the Model view; the emitt
 as a clone writes it, since a panel does not publish one. A clone writes `inverter_type: hybrid` where the emitter's capture reads the panel's battery as
 hybrid: the panel publishes `power-flows/pv`, and nothing but its one battery could bring it solar. An imported definition keeps its own battery's coupling.
 This `hybrid` is the battery's; a PV template's `inverter_type: hybrid` is a grid-forming inverter, which keeps producing off-grid. Off grid the array is not
-yet curtailed to what the panel's load and the battery can take, as PanelBench's PV circuits are not: the emitter's dispatch, which sees the load after
-shedding, is where that belongs.
+yet curtailed to what the panel's load and the battery can take, as PanelBench's PV circuits are not: only the emitter knows which circuits it sheds and
+how much the battery can still charge, so its dispatch is where that belongs. A change to the battery that the running panel cannot take, making it hybrid
+or ac-coupled, or enabling, disabling or replacing it, restarts the panel, since the emitter builds its battery at start.
 
 ```yaml
 bess:

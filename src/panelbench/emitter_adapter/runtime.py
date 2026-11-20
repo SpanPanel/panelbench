@@ -35,7 +35,11 @@ from ebus_panel_sim import (
 
 from panelbench.const import DEFAULT_WIFI_SSID
 from panelbench.emitter_adapter.broker_link import BrokerLink
-from panelbench.emitter_adapter.definition import bess_config, build_definition
+from panelbench.emitter_adapter.definition import (
+    bess_config,
+    build_definition,
+    construct_emitter,
+)
 from panelbench.emitter_adapter.instance_ids import (
     evse_device_id,
     stable_circuit_uuid,
@@ -96,26 +100,28 @@ def update_bess_config_live(runtime: CloneRuntime, bess_yaml: BESSConfigYAML) ->
     values, rebuilds the emitter-side ``BESSConfig`` from the YAML, and
     swaps it on the emitter (SOC/SOE state is preserved across the swap).
 
-    Returns False, changing nothing, for a battery the change makes hybrid that the
-    emitter did not start hybrid: it builds its battery at start and refuses PV for
-    one it was not, so the panel must restart on the saved config instead.
+    Returns False, changing nothing, unless the change keeps the battery the emitter
+    was started with, coupled as it was. The emitter builds its batteries at start and
+    takes PV only for one it started hybrid, so a battery the change enables,
+    disables or renames, or makes hybrid or ac-coupled, needs the panel restarted on
+    the saved config instead.
     """
-    makes_hybrid = bool(bess_yaml.get("enabled")) and bess_yaml.get("inverter_type") == "hybrid"
-    if makes_hybrid and not _hybrid_batteries(runtime.manifest):
+    battery = bess_config(runtime.engine.serial_number, bess_yaml)
+    hybrid = bess_yaml.get("inverter_type") == "hybrid"
+    started = _started_batteries(runtime.manifest)
+    if battery is None or started.get(battery.instance_id) is not hybrid:
         return False
     runtime.engine.config["bess"] = bess_yaml
-    new_cfg = bess_config_from_engine(runtime.engine)
-    if new_cfg is not None:
-        runtime.emitter.update_bess_config(new_cfg)
+    runtime.emitter.update_bess_config(battery)
     return True
 
 
-def _hybrid_batteries(manifest: DeviceManifest) -> set[str]:
-    """The batteries the emitter was started with that it takes PV for."""
+def _started_batteries(manifest: DeviceManifest) -> dict[str, bool]:
+    """The batteries the emitter was started with, each mapped to whether it is
+    hybrid, which the emitter takes PV for."""
     return {
-        battery.instance_id
+        battery.instance_id: battery.metadata.get("inverter-type") == "hybrid"
         for battery in manifest.of_class("bess")
-        if battery.metadata.get("inverter-type") == "hybrid"
     }
 
 
@@ -181,8 +187,6 @@ async def start_clone(
         stable_circuit_uuid(panel_id, c["id"]): c["id"] for c in engine.config["circuits"]
     }
 
-    # The emitter registers internal default /set handlers from the empty
-    # SetterRegistry — no producer-side wiring required.
     setters = SetterRegistry()
 
     # The will rides the CONNECT packet, so it has to be registered on the client
@@ -220,7 +224,7 @@ async def start_clone(
         transport = loop_bound
 
     try:
-        emitter = Emitter.from_definition(definition, setters, mqttc=transport)
+        emitter = construct_emitter(definition, setters, transport)
         # Synchronous, and returns immediately for an injected client rather than
         # polling is_connected for the connect timeout: the SDK never starts a client
         # it did not build, so nothing would change during the wait.
@@ -291,7 +295,7 @@ def _bess_pv(runtime: CloneRuntime, watts: float) -> dict[str, float]:
     other, which the emitter refuses to give PV, and with none. The engine produces
     nothing for a battery its config does not make hybrid."""
     battery = bess_config_from_engine(runtime.engine)
-    if battery is None or battery.instance_id not in _hybrid_batteries(runtime.manifest):
+    if battery is None or not _started_batteries(runtime.manifest).get(battery.instance_id):
         return {}
     return {battery.instance_id: watts}
 

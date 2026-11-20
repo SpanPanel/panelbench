@@ -800,15 +800,35 @@ class TestCircuitsSharingASpace:
         assert outlets["shared_with"] == ["circuit_44"]
         validate_yaml_config(config)
 
-    def test_a_refresh_updates_each_ones_own_energy(self) -> None:
+    def _seeds(self, config: dict[str, object]) -> dict[str, object]:
+        templates = _templates(config)
+        return {
+            name: templates[name]["energy_profile"].get("initial_consumed_energy_wh")
+            for name in ("clone_44", "clone_44_2")
+        }
+
+    def test_a_tandem_read_a_moment_apart_is_cloned_with_its_one_register(self) -> None:
+        """Its circuits publish its one meter's register, each read a moment apart, so
+        each takes the largest, as the emitter's capture does: the emitter refuses
+        circuits on one breaker whose seeds differ."""
+        devices = self._devices()
+        devices["fff666"].update_property("meter", "exported-energy", "1000.5")
+        devices["fff777"].update_property("meter", "exported-energy", "1000.0")
+
+        config = translate_scraped_panel(_make_scraped(devices))
+
+        assert self._seeds(config) == {"clone_44": 1000.5, "clone_44_2": 1000.5}
+        validate_yaml_config(config)
+
+    def test_a_refresh_writes_the_breaker_s_one_register_to_each_circuit(self) -> None:
         devices = self._devices()
         config = translate_scraped_panel(_make_scraped(devices))
         devices["fff777"].update_property("meter", "exported-energy", "777.0")
 
         assert update_config_from_scrape(config, _make_scraped(devices))
 
-        energy = _templates(config)["clone_44_2"]["energy_profile"]
-        assert energy["initial_consumed_energy_wh"] == 777.0
+        assert self._seeds(config) == {"clone_44": 777.0, "clone_44_2": 777.0}
+        validate_yaml_config(config)
 
     def test_sharing_with_no_other_circuit_is_refused(self) -> None:
         config = translate_scraped_panel(_make_scraped(self._devices()))

@@ -632,8 +632,12 @@ class ConfigStore:
             if (mate := self._find_circuit(mate_id)) is not None
         ]
         for name in dict.fromkeys(breaker_templates):
-            self._templates().get(name, {}).update(breaker_edits)
-            if breaker_edits and name != template_name and data.get("_dirty"):
+            breaker_template = self._templates().get(name, {})
+            # The form posts both whatever was touched, so a mate leaves recorder
+            # replay only where its own value changes.
+            changed = any(breaker_template.get(k) != v for k, v in breaker_edits.items())
+            breaker_template.update(breaker_edits)
+            if changed and name != template_name:
                 self._mark_user_modified(name)
 
         overrides: dict[str, Any] = circuit.get("overrides", {})
@@ -805,9 +809,11 @@ class ConfigStore:
         if index is None:
             raise KeyError(f"Entity not found: {entity_id}")
         circuit = circuits.pop(index)
-        pv = self._state.get("pv")
-        if isinstance(pv, dict) and str(pv.get("feed")) == str(entity_id):
-            pv.pop("feed")
+        # A feed naming the circuit would name nothing once it is gone.
+        for section in ("pv", "bess"):
+            fed = self._state.get(section)
+            if isinstance(fed, dict) and str(fed.get("feed")) == str(entity_id):
+                fed.pop("feed")
         template_name = circuit["template"]
         still_used = any(c.get("template") == template_name for c in circuits)
         if not still_used:
