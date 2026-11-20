@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import re
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Final, cast
@@ -22,7 +21,6 @@ from ebus_panel_sim import load_reference_capture, reference_capture_names
 from panelbench import __main__ as panelbench_main
 from panelbench.config_defaults import normalize_config
 from panelbench.dashboard.config_store import ConfigStore
-from panelbench.device_numbers import number_of
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.reference_templates import (
     FIRST_TEMPLATE,
@@ -39,8 +37,6 @@ from tests._helpers import CONFIGS, SHIPPED_TEMPLATES, lay_every_template
 from tests.fidelity.reproduction import assert_reproduces
 
 if TYPE_CHECKING:
-    from ebus_panel_sim import DeviceInstance
-
     from panelbench.config_types import SimulationConfig
 
 
@@ -63,16 +59,6 @@ _SUCCESSORS: Final = {
 }
 
 
-# Each retired capture's release-named template: its panel before the upgrade, for the
-# pre-release.
-_BEFORE: Final = {
-    "main32_r202639": "ref_MAIN_32_R202639.yaml",
-    "r202639-a": "ref_UNKNOWN_16_R202639.yaml",
-    "r202639-c": "ref_MAIN_40_R202639.yaml",
-    "r202639-e": "ref_MLO_48_R202639.yaml",
-}
-
-
 def _panel_serial(name: str) -> str:
     """The masked serial *name*'s panel publishes, which it keeps from one capture to
     the next."""
@@ -81,22 +67,18 @@ def _panel_serial(name: str) -> str:
     return str(panel.value("info/serial-number"))
 
 
-def test_a_retired_capture_is_written_only_as_its_before_template(tmp_path: Path) -> None:
-    """A capture of a panel the emitter also ships a later capture of gives its name to
-    that later capture of the same panel, which keeps its masked serial. For this
-    pre-release it is written again under a release-named template, its panel before
-    the upgrade. ``main32_r202633``, masked before panels kept theirs, is a MAIN 32 on a
-    release before 202639, written as no template."""
-    written_names = {path.name for path in write_reference_templates(tmp_path)}
+def test_a_retired_capture_is_written_as_no_template(tmp_path: Path) -> None:
+    """A capture of a panel the emitter also ships a later capture of gets no template:
+    the later capture of the same panel, which keeps its masked serial, takes its name.
+    ``main32_r202633``, masked before panels kept theirs, is a MAIN 32 on a release
+    before 202639, whose name the later MAIN 32 capture takes."""
+    write_reference_templates(tmp_path)
 
     assert "main32_r202633" in reference_capture_names()
     assert "main32_r202633" not in template_capture_names()
     for retired, (successor, filename) in _SUCCESSORS.items():
         assert retired in reference_capture_names(), retired
-        assert retired in template_capture_names(), retired
-        assert template_filename(retired) == _BEFORE[retired], retired
-        assert template_filename(retired) in written_names, retired
-        assert template_filename(successor) == filename, retired
+        assert retired not in template_capture_names(), retired
         assert _panel_serial(retired) == _panel_serial(successor), retired
         written = yaml.safe_load((tmp_path / filename).read_text(encoding="utf-8"))
         # A panel keeps its serial through the upgrade, so the template keeps the
@@ -150,9 +132,7 @@ def test_a_current_template_is_left_alone_and_a_stale_one_refreshed(tmp_path: Pa
 
 
 def test_each_template_runs_on_a_serial_of_its_own(tmp_path: Path) -> None:
-    """So several can run on one broker without claiming each other's topics; a
-    before template alone shares its successor's, as one panel before and after its
-    upgrade."""
+    """So several can run on one broker without claiming each other's topics."""
     write_reference_templates(tmp_path)
 
     serials = [
@@ -162,10 +142,7 @@ def test_each_template_runs_on_a_serial_of_its_own(tmp_path: Path) -> None:
         for n in template_capture_names()
     ]
 
-    by_name = dict(zip(template_capture_names(), serials, strict=True))
-    for retired, (successor, _) in _SUCCESSORS.items():
-        assert by_name[retired] == by_name[successor], retired
-    assert len(set(serials)) == len(serials) - len(_SUCCESSORS)
+    assert len(set(serials)) == len(serials)
 
 
 @pytest.mark.asyncio
@@ -356,41 +333,3 @@ def test_a_hardware_3_template_publishes_its_capture_s_device_ids(name: str) -> 
         i.replace(root, serial, 1) for i, d in tree.items() if d.type in ("circuit", "lugs")
     }
     assert published == expected
-
-
-def _published(name: str) -> tuple[str, list[DeviceInstance]]:
-    """The serial and the circuit devices, remote CT included, of *name*'s template."""
-    config = cast("SimulationConfig", reference_template(name))
-    normalize_config(config, source="test")
-    manifest = build_manifest(config)
-    circuits = [*manifest.of_class("circuit"), *manifest.of_class("remote-ct")]
-    return config["panel_config"]["serial_number"], circuits
-
-
-@pytest.mark.parametrize("retired", sorted(_SUCCESSORS))
-def test_a_before_template_is_its_panel_before_the_upgrade(retired: str) -> None:
-    """The same panel, by serial, on each side; a hardware 3.0 panel's circuits under
-    the ids its release names them by, as the integration's migration pairs them."""
-    successor, _ = _SUCCESSORS[retired]
-    before_serial, before = _published(retired)
-    after_serial, after = _published(successor)
-
-    assert before_serial == after_serial
-    for side in (before, after):
-        ids = {device.instance_id for device in side}
-        listed = {
-            mate
-            for device in side
-            for mate in str(device.metadata.get("shared-with-device-ids", "")).split(",")
-            if mate
-        }
-        assert listed <= ids
-    before_ids = [device.instance_id for device in before]
-    after_ids = [device.instance_id for device in after]
-    if retired in ("r202639-e", "r202639-a"):
-        assert all(re.fullmatch(r"(circuit|remote-ct)-\d+", i) for i in before_ids)
-        assert all(re.fullmatch(r".+-1-(16|42)-\d+", i) for i in after_ids)
-    if retired == "r202639-e":
-        assert {number_of(i) for i in before_ids} == {number_of(i) for i in after_ids}
-    if retired == "main32_r202639":
-        assert set(before_ids) == set(after_ids)

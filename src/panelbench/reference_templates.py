@@ -80,20 +80,6 @@ running the earlier capture, from a PanelBench release that had it, and one runn
 the later are one panel upgraded, as Home Assistant sees it."""
 
 _RETIRED_CAPTURES: Final = frozenset({"main32_r202633", *_SUCCEEDS.values()})
-
-_BEFORE_TEMPLATES: Final[Mapping[str, str]] = {
-    "main32_r202639": "MAIN_32_R202639",
-    "r202639-a": "UNKNOWN_16_R202639",
-    "r202639-c": "MAIN_40_R202639",
-    "r202639-e": "MLO_48_R202639",
-}
-"""PRE-RELEASE ONLY: strip this table before a production release.
-
-The captures ``_SUCCEEDS`` retires, written again as templates named for their
-release: each is its panel before the upgrade to release 202645, with the serial
-its successor keeps, so running it and then its successor exercises a consumer's
-migration across the upgrade. Only one of a pair runs at a time, as PanelBench
-refuses a second panel with a running serial."""
 """Captures written as no template, whose names later captures take.
 
 ``main32_r202633`` is a MAIN 32 on a release before 202639, whose name would be
@@ -111,11 +97,7 @@ def is_template(filename: str) -> bool:
 
 def template_capture_names() -> tuple[str, ...]:
     """The reference captures written as templates, in the emitter's order."""
-    return tuple(
-        n
-        for n in reference_capture_names()
-        if n not in _RETIRED_CAPTURES or n in _BEFORE_TEMPLATES
-    )
+    return tuple(n for n in reference_capture_names() if n not in _RETIRED_CAPTURES)
 
 
 def template_filename(name: str) -> str:
@@ -124,8 +106,7 @@ def template_filename(name: str) -> str:
     A capture this release has no name for keeps its handle, so an emitter newer than
     the pinned one still brings its captures' templates with it.
     """
-    named = _BEFORE_TEMPLATES.get(name) or _TEMPLATE_NAMES.get(name, name)
-    return f"{TEMPLATE_PREFIX}{named}.yaml"
+    return f"{TEMPLATE_PREFIX}{_TEMPLATE_NAMES.get(name, name)}.yaml"
 
 
 FIRST_TEMPLATE: Final = template_filename("main32_r202645")
