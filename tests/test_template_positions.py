@@ -53,5 +53,5 @@ def test_every_shipped_template_places_its_circuits_within_its_models_positions(
             if not all(first <= tab <= last for tab in circuit["tabs"])
         )
 
-    assert skipped == {"ref_UNKNOWN_16.yaml"}, skipped
+    assert skipped == {"ref_UNKNOWN_16.yaml", "ref_UNKNOWN_16_R202639.yaml"}, skipped
     assert not outside, outside

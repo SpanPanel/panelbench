@@ -51,6 +51,11 @@ _TEMPLATE_HARDWARE: Final = {
     "ref_MAIN_40.yaml": "3.0",
     "ref_MLO_24.yaml": "3.0",
     "ref_MLO_48.yaml": "3.0",
+    # The pre-release's before templates, each its successor's panel.
+    "ref_MAIN_32_R202639.yaml": "1.2",
+    "ref_UNKNOWN_16_R202639.yaml": "3.0",
+    "ref_MAIN_40_R202639.yaml": "3.0",
+    "ref_MLO_48_R202639.yaml": "3.0",
 }
 
 

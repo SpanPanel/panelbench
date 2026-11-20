@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
 from aiohttp.test_utils import TestClient, TestServer
 
 from panelbench.app import SimulatorApp, _discover_configs, _file_hash
@@ -15,6 +16,7 @@ from panelbench.const import DEFAULT_FIRMWARE_VERSION
 from panelbench.emitter_adapter.runtime import start_clone as _real_start_clone
 from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.panel import PanelInstance
+from panelbench.reference_templates import reference_template
 from panelbench.schema import load_schema
 from tests._helpers import CURRENT_FIRMWARE, EARLIER_FIRMWARE
 
@@ -423,6 +425,41 @@ class TestDuplicateSerial:
             for panel in list(app._panels.values()):
                 with contextlib.suppress(Exception):
                     await panel.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_before_template_and_its_after_cannot_run_at_once(
+    tmp_path: Path, amqtt_broker: tuple[str, int]
+) -> None:
+    """One panel before and after its upgrade shares its serial, so the second of the
+    two to start is refused, as any second panel with a running serial is."""
+    host, port = amqtt_broker
+    for capture, filename in (("r202639-e", "before.yaml"), ("r202645-e", "after.yaml")):
+        config = reference_template(capture)
+        config["broker"] = {"host": host, "port": port}
+        (tmp_path / filename).write_text(yaml.safe_dump(config, sort_keys=False))
+    app = SimulatorApp(config_dir=tmp_path)
+    app._schema = load_schema(_BUNDLED_SCHEMA)
+    app._certs = MagicMock(
+        ca_cert_pem=b"-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+        ca_cert_path=None,
+    )
+    mock_server = MagicMock()
+    mock_server.start = AsyncMock()
+    mock_server.stop = AsyncMock()
+
+    with patch("panelbench.app.BootstrapHttpServer", return_value=mock_server):
+        result = await app.reload()
+
+    try:
+        assert result["started"] == ["sim-r202639-e"]
+        [(refused, error)] = app._get_panel_start_errors().items()
+        assert refused in ("before.yaml", "after.yaml")
+        assert "sim-r202639-e" in error
+    finally:
+        for panel in list(app._panels.values()):
+            with contextlib.suppress(Exception):
+                await panel.stop()
 
 
 class TestApplyBessConfigLive:
