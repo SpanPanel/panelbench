@@ -12,14 +12,16 @@ import fnmatch
 import logging
 import subprocess
 from pathlib import Path
-from typing import ClassVar, Final
+from typing import TYPE_CHECKING, ClassVar, Final, cast
 
 import pytest
 import yaml
 from ebus_panel_sim import load_reference_capture, reference_capture_names
 
 from panelbench import __main__ as panelbench_main
+from panelbench.config_defaults import normalize_config
 from panelbench.dashboard.config_store import ConfigStore
+from panelbench.emitter_adapter.spec_generator import build_manifest
 from panelbench.reference_templates import (
     FIRST_TEMPLATE,
     TEMPLATE_PREFIX,
@@ -33,6 +35,9 @@ from panelbench.reference_templates import (
 )
 from tests._helpers import CONFIGS, SHIPPED_TEMPLATES, lay_every_template
 from tests.fidelity.reproduction import assert_reproduces
+
+if TYPE_CHECKING:
+    from panelbench.config_types import SimulationConfig
 
 
 def test_every_reference_capture_is_written_as_a_template(tmp_path: Path) -> None:
@@ -295,3 +300,36 @@ def test_a_generated_template_never_takes_a_shipped_name() -> None:
     generated = {template_filename(n) for n in template_capture_names()}
 
     assert generated.isdisjoint(SHIPPED_TEMPLATES)
+
+
+# The hardware 3.0 captures whose trees carry their panels' own device ids: every one
+# but `r202639-f`, captured before captures kept them, whose ids are all masked.
+_NUMBERED_CAPTURES: Final = tuple(
+    name
+    for name in template_capture_names()
+    if load_reference_capture(name).definition.variant == "span-alpha-test-b2"
+    and name != "r202639-f"
+)
+
+
+@pytest.mark.parametrize("name", _NUMBERED_CAPTURES)
+def test_a_hardware_3_template_publishes_its_capture_s_device_ids(name: str) -> None:
+    """Its circuits, remote CT and lugs under the ids its panel published, the panel's
+    root id replaced by the template's serial."""
+    tree = load_reference_capture(name).tree
+    (root,) = [i for i, d in tree.items() if d.type == "distribution-enclosure"]
+    config = cast("SimulationConfig", reference_template(name))
+    serial = config["panel_config"]["serial_number"]
+    normalize_config(config, source="test")
+
+    manifest = build_manifest(config)
+
+    published = {
+        device.instance_id
+        for kind in ("circuit", "remote-ct", "lugs")
+        for device in manifest.of_class(kind)
+    }
+    expected = {
+        i.replace(root, serial, 1) for i, d in tree.items() if d.type in ("circuit", "lugs")
+    }
+    assert published == expected

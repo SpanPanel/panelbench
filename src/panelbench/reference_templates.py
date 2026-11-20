@@ -28,13 +28,17 @@ import os
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import yaml
 from ebus_panel_sim import EmitterError, load_reference_capture, reference_capture_names
 
 from panelbench.definition_import import config_from_definition
+from panelbench.device_numbers import hex_of, is_remote_ct, number_of
 from panelbench.validation import validate_yaml_config
+
+if TYPE_CHECKING:
+    from ebus_panel_sim.capture import Tree
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,13 +135,58 @@ def clone_name(filename: str) -> str:
 
 def reference_template(name: str) -> dict[str, object]:
     """The config for the reference capture *name*, one of ``reference_capture_names()``."""
-    config = config_from_definition(load_reference_capture(name).definition)
+    capture = load_reference_capture(name)
+    config = config_from_definition(capture.definition)
     panel = config["panel_config"]
     if not isinstance(panel, dict):
         raise ValueError(f"reference capture {name!r} imported with no panel_config")
     panel["serial_number"] = f"sim-{_SUCCEEDS.get(name, name)}"
+    _take_device_numbers(name, config, panel, capture.tree)
     validate_yaml_config(config)
     return config
+
+
+def _take_device_numbers(
+    name: str, config: dict[str, object], panel: dict[str, object], tree: Tree
+) -> None:
+    """Number the template's circuits, its remote CT and its panel as the panel the
+    capture *name* records names them, so the template publishes the ids it did.
+
+    A definition's ids are masked and renumbered in space order, so the numbers come
+    from the capture's tree: each circuit is matched by its spaces, and by its name
+    where several share them, as a tandem's do; a remote CT, on no space, is the
+    template's one meter outside the panel. A capture whose ids carry no numbers, a
+    MAIN 32's or one masked whole, numbers nothing.
+
+    Raises:
+        ValueError: a numbered device of the tree matches no one entry of the config.
+    """
+    circuits = [c for c in _entries(config.get("circuits"))]
+    meters = [m for m in _entries(config.get("outside_meters"))]
+    for device_id, device in tree.items():
+        number = number_of(device_id)
+        if device.type != "circuit" or number is None:
+            continue
+        if is_remote_ct(device_id):
+            matches = meters
+        else:
+            spaces = [int(s) for s in str(device.value("info/spaces") or "").split(",") if s]
+            matches = [c for c in circuits if c.get("tabs") == spaces]
+            if len(matches) > 1:
+                matches = [c for c in matches if c.get("name") == device.value("info/name")]
+        if len(matches) != 1:
+            raise ValueError(
+                f"reference capture {name!r} publishes {device_id}, which matches "
+                f"{len(matches)} of its template's entries, not one"
+            )
+        matches[0]["circuit_number"] = number
+    root = next(i for i, d in tree.items() if d.type == "distribution-enclosure")
+    if (segment := hex_of(root, tree)) is not None:
+        panel["device_id_hex"] = segment
+
+
+def _entries(value: object) -> list[dict[str, object]]:
+    return [e for e in value if isinstance(e, dict)] if isinstance(value, list) else []
 
 
 def write_reference_templates(config_dir: Path) -> list[Path]:

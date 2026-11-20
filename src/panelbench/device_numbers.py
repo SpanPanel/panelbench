@@ -31,6 +31,12 @@ def number_of(device_id: str) -> int | None:
     return int(match.group(1) or match.group(2))
 
 
+def is_remote_ct(device_id: str) -> bool:
+    """Whether *device_id* names a meter outside the panel: ``remote-ct-<n>``, or
+    ``…-1-42-<n>`` from release 202645."""
+    return re.fullmatch(r"remote-ct-\d+|.+-1-42-\d+", device_id) is not None
+
+
 def hex_of(root_id: str, device_ids: Iterable[str]) -> str | None:
     """The 16-hex segment the panel *root_id* publishes its numbered devices under, as
     the first of *device_ids* shaped ``{root_id}-{hex16}-1-<trait>-<n>`` has it; None
