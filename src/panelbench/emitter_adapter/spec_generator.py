@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from ebus_panel_sim import DeviceInstance, DeviceManifest
 
+from panelbench.circuit import effective_template
 from panelbench.emitter_adapter import commissioning
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
@@ -201,15 +202,13 @@ def _outside_meter_instances(profile: SimulationConfig) -> list[DeviceInstance]:
 
 
 def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
-    templates = profile.get("circuit_templates") or {}
     panel_id = profile["panel_config"]["serial_number"]
     named_by_id = not predates(panel_firmware_version(profile), SPAN_RELEASE_202639)
     instances: list[DeviceInstance] = []
     published = [c for c in profile.get("circuits") or [] if on_the_panel(c)]
     for idx, c in enumerate(published, start=1):
         tabs = c["tabs"]
-        template_name = c.get("template", "")
-        template: CircuitTemplateExtended | None = templates.get(template_name)
+        template = _template_of(profile, c)
         commissioned_system: str | None
         # What the circuit records as unpublished by a null rather than in `unvalued`.
         unpublished: list[str] = []
@@ -467,12 +466,11 @@ def _pv_instance(profile: SimulationConfig) -> DeviceInstance | None:
     relative_position = pv_cfg.get("relative_position")
     if relative_position is None:
         relative_position = "IN_PANEL" if circuit is not None else UNFED_INVERTER_POSITION
-    templates = profile.get("circuit_templates") or {}
     # With no PV circuit -- an inverter upstream of the panel, or a config written
     # before templates carried `device_type` -- the first producer's template is the
     # only one there is to read the inverter's type from.
     inverter_template = (
-        templates.get(circuit["template"])
+        _template_of(profile, circuit)
         if circuit is not None
         else _first_producer_template(profile)
     )
@@ -596,7 +594,7 @@ def _pv_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     The inverters no circuit feeds that the section's ``inverters`` lists follow,
     each its own device (``_unfed_pv_instances``).
     """
-    circuits = _circuits_for_device_type(profile, "pv")
+    circuits = circuits_for_device_type(profile, "pv")
     if len(circuits) < 2 or predates(panel_firmware_version(profile), SPAN_RELEASE_202639):
         single = _pv_instance(profile)
         fed = [] if single is None else [single]
@@ -612,7 +610,6 @@ def _fed_pv_instances(
     panel_id = profile["panel_config"]["serial_number"]
     pv_cfg = profile.get("pv") or {}
     section_circuit = pv_section_circuit(profile)
-    templates = profile.get("circuit_templates") or {}
     instances: list[DeviceInstance] = []
     for circuit in circuits:
         # The `pv` section describes one inverter, as it did when a panel had one.
@@ -623,7 +620,7 @@ def _fed_pv_instances(
             circuit,
             defaults,
             feed=circuit_id,
-            inverter_template=templates.get(circuit["template"]) or {},
+            inverter_template=_template_of(profile, circuit) or {},
             relative_position=str(defaults.get("relative_position", "IN_PANEL")),
             firmware=_circuit_firmware(circuit, pv_cfg),
         )
@@ -685,7 +682,7 @@ def _unfed_pv_instances(profile: SimulationConfig, *, numbered_after: int) -> li
 def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     evse_cfg = profile.get("evse") or {}
     panel_id = profile["panel_config"]["serial_number"]
-    feed_circuits = _circuits_for_device_type(profile, "evse")
+    feed_circuits = circuits_for_device_type(profile, "evse")
     explicit_feed = str(evse_cfg["feed"]) if "feed" in evse_cfg else None
     if explicit_feed:
         feeds = [explicit_feed]
@@ -818,11 +815,10 @@ def _islandable(profile: SimulationConfig) -> bool:
 def _first_producer_template(profile: SimulationConfig) -> CircuitTemplateExtended | None:
     """The template of the first producer circuit on the panel, read for a PV device with
     no PV circuit."""
-    templates = profile.get("circuit_templates") or {}
     for circuit in profile.get("circuits") or []:
         if not on_the_panel(circuit):
             continue
-        template = templates.get(circuit.get("template", ""))
+        template = _template_of(profile, circuit)
         if template is None:
             continue
         energy_profile = template.get("energy_profile")
@@ -842,14 +838,15 @@ def _circuit_device_id(
     return stable_circuit_uuid(profile["panel_config"]["serial_number"], circuit["id"])
 
 
-def _circuits_for_device_type(
+def circuits_for_device_type(
     profile: SimulationConfig,
     device_type: str,
 ) -> list[CircuitDefinitionExtended]:
-    templates = profile.get("circuit_templates") or {}
+    """The circuits on the panel whose template, as each has it, feeds a *device_type*
+    device, in list order: the one list the manifest and each tick's readings take."""
     circuits: list[CircuitDefinitionExtended] = []
     for circuit in profile.get("circuits") or []:
-        template = templates.get(circuit.get("template", ""))
+        template = _template_of(profile, circuit)
         if (
             template is not None
             and template.get("device_type") == device_type
@@ -865,13 +862,22 @@ def _evse_display_name(feed_circuits: list[CircuitDefinitionExtended], idx: int)
     return "EV Charger"
 
 
+def _template_of(
+    profile: SimulationConfig, circuit: CircuitDefinitionExtended
+) -> CircuitTemplateExtended | None:
+    """*circuit*'s template as the panel models it (``circuit.effective_template``),
+    or None where it names none."""
+    template = (profile.get("circuit_templates") or {}).get(circuit.get("template", ""))
+    return None if template is None else effective_template(template, circuit)
+
+
 def _circuit_nameplate_w(
     profile: SimulationConfig, circuit: CircuitDefinitionExtended | None, default: float
 ) -> float:
     """The nameplate rating of the device *circuit* feeds, from its template."""
     if circuit is None:
         return default
-    template = (profile.get("circuit_templates") or {}).get(circuit.get("template", ""))
+    template = _template_of(profile, circuit)
     if template is None:
         return default
     energy_profile = template.get("energy_profile", {})

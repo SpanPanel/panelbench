@@ -42,6 +42,7 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 - **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
   next.
 - **A PV inverter or SPAN Drive added in the dashboard no longer stops the panel starting**: it is modelled in the Model view and not published.
+- **A breaker rating edited in the dashboard is published**, where the panel went on publishing the template's.
 - **A config the panel cannot start on is refused when loaded, edited or saved, saying why**, where it was saved and the panel then failed to start.
 
 ### Removed

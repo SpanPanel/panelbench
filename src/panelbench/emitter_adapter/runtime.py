@@ -44,8 +44,8 @@ from panelbench.emitter_adapter.instance_ids import (
     evse_device_id,
     stable_circuit_uuid,
 )
+from panelbench.emitter_adapter.spec_generator import circuits_for_device_type
 from panelbench.emitter_adapter.transport import LoopBoundTransport
-from panelbench.virtual_devices import on_the_panel
 
 if TYPE_CHECKING:
     from panelbench.config_types import (
@@ -379,24 +379,13 @@ def _first_feed_for_device_type(config: SimulationConfig, device_type: str) -> s
 
 
 def _feeds_for_device_type(config: SimulationConfig, device_type: str) -> list[str]:
-    templates = config.get("circuit_templates")
-    circuits = config.get("circuits")
-    if not isinstance(templates, dict) or not isinstance(circuits, list):
-        return []
+    """The device ids of the circuits feeding *device_type* devices, from the one list
+    the manifest builds them from (``spec_generator.circuits_for_device_type``)."""
     # Read from the config being walked, not from a serial handed in beside it: a
     # feed id must be the id the *owner* of these circuits publishes, and taking
     # both from one mapping is what makes that true by construction.
     panel_id = config["panel_config"]["serial_number"]
-    feeds: list[str] = []
-    for item in circuits:
-        if not isinstance(item, dict) or not on_the_panel(item):
-            continue
-        template_name = item.get("template")
-        if template_name is None or not isinstance(template_name, str):
-            continue
-        template = templates.get(template_name)
-        if isinstance(template, dict) and template.get("device_type") == device_type:
-            circuit_id = item.get("id")
-            if circuit_id is not None:
-                feeds.append(stable_circuit_uuid(panel_id, str(circuit_id)))
-    return feeds
+    return [
+        stable_circuit_uuid(panel_id, str(circuit["id"]))
+        for circuit in circuits_for_device_type(config, device_type)
+    ]

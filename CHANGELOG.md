@@ -68,6 +68,9 @@
 - **A PV inverter or SPAN Drive added in the dashboard no longer stops its panel starting.** It sits on no breaker space, and the emitter refuses a circuit
   with none, so a panel with one would not start; it is now a what-if device, which the Model view models and the panel does not publish, nor anything it
   would feed. A `pv.feed` or `bess.feed` naming one is refused.
+- **A breaker rating edited in the dashboard is published.** The edit writes the circuit's own rating, which the dashboard showed while the panel went on
+  publishing its template's. The engine, the panel's definition and validation now all read a circuit by its template with the circuit's overrides and own
+  rating over it, so what is checked is what is modelled and published.
 - **A config the panel cannot start on is refused when PanelBench loads, edits or saves it, saying why**, where it loaded and saved and the panel then
   failed to start. PanelBench builds the emitter as a panel's start does, so whatever the emitter refuses, such as an `unvalued` path the device's profile
   declares none of, is refused with its reason, each circuit and meter named by its `id`. A section or setting of the wrong shape, such as `lugs: x`,

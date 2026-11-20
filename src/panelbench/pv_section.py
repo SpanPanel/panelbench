@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final, Literal
 
+from panelbench.circuit import effective_settings
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 from panelbench.virtual_devices import on_the_panel
 
@@ -42,7 +43,10 @@ def pv_circuit_ids(config: Mapping[str, object]) -> list[str]:
             continue
         template_name = circuit.get("template")
         template = templates.get(template_name) if isinstance(template_name, str) else None
-        if isinstance(template, dict) and template.get("device_type") == "pv":
+        if (
+            isinstance(template, dict)
+            and effective_settings(template, circuit).get("device_type") == "pv"
+        ):
             ids.append(str(circuit["id"]))
     return ids
 

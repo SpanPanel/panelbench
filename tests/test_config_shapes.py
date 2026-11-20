@@ -150,7 +150,7 @@ def _with(path: Path, at: tuple[str | int, ...], value: object) -> dict[str, obj
             PANEL_CONFIG,
             ("circuits", 0, "overrides"),
             {"typical_power": "x"},
-            r"as circuit 0 overrides it, energy_profile\.typical_power must be a number",
+            r"as circuit 0 has it, energy_profile\.typical_power must be a number",
         ),
         (
             PANEL_CONFIG,

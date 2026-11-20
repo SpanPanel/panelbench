@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 from ebus_panel_sim import EmitterError, SetterRegistry
 
 from panelbench.breakers import breaker_misfit, crowded_spaces, crowding
-from panelbench.circuit import OVERRIDDEN_PROFILE_KEYS
+from panelbench.circuit import effective_settings
 from panelbench.config_defaults import normalize_config
 from panelbench.config_types import PVInverterYAML
 from panelbench.const import SHED_PRIORITIES
@@ -189,28 +189,26 @@ def _validate_as_modelled(
 ) -> None:
     """Refuse a circuit whose template, as it is read for this circuit, cannot be.
 
-    The engine applies the circuit's ``overrides`` over its template as
-    ``SimulatedCircuit`` does, and its own ``breaker_rating`` over both, and models
-    and publishes what that leaves, so that is what is checked. A template no circuit
-    uses is read by nothing, so it is checked for its shape alone.
+    The engine models it, and the definition publishes it, by its template with the
+    circuit's ``overrides`` and own ``breaker_rating`` over it
+    (``circuit.effective_template``), so that is what is checked. A template no
+    circuit uses is read by nothing, so it is checked for its shape alone.
     """
-    effective = copy.deepcopy(dict(template))
-    profile = effective.get("energy_profile")
-    if not isinstance(profile, dict):
+    overrides = circuit.get("overrides", {})
+    if not isinstance(overrides, dict):
+        raise ValueError(f"Circuit {index} overrides must be a mapping, not {overrides!r}")
+    if not isinstance(template.get("energy_profile"), dict):
         return
     where = f"Circuit template '{template_name}'"
-    if "overrides" in circuit:
-        overrides = circuit["overrides"]
-        if not isinstance(overrides, dict):
-            raise ValueError(f"Circuit {index} overrides must be a mapping, not {overrides!r}")
-        for key, value in overrides.items():
-            if key in OVERRIDDEN_PROFILE_KEYS:
-                profile[key] = value
-            else:
-                effective[key] = value
-        where = f"{where}, as circuit {index} overrides it,"
-    if "breaker_rating" in circuit:
-        effective["breaker_rating"] = circuit["breaker_rating"]
+    if overrides or "breaker_rating" in circuit:
+        where = f"{where}, as circuit {index} has it,"
+    effective = effective_settings(template, circuit)
+    profile = effective["energy_profile"]
+    if not isinstance(profile, dict):
+        # An override named energy_profile replaces the template's whole profile.
+        raise ValueError(
+            f"{where} energy_profile must be a mapping of its settings, not {profile!r}"
+        )
     _validate_behaviour(where, effective, profile)
     _validate_profile_numbers(where, effective, profile)
 
