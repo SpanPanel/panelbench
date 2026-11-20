@@ -55,7 +55,7 @@ async def _published_lugs(tmp_path: Path, config: SimulationConfig) -> set[str]:
     runtime, recorder = await recorded_panel(write_config(tmp_path / "panel.yaml", config))
     del runtime
     serial = config["panel_config"]["serial_number"]
-    upstream, downstream = lugs_device_ids(serial)
+    upstream, downstream = lugs_device_ids(config)
     children = set(json.loads(recorder.retained[f"ebus/5/{serial}/$description"])["children"])
     published = {topic.split("/")[2] for topic in recorder.retained}
     return {

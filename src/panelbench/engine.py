@@ -598,6 +598,9 @@ class DynamicSimulationEngine:
         self._clock = SimulationClock()
         self._behavior_engine: RealisticBehaviorEngine | None = None
         self._circuits: dict[str, SimulatedCircuit] = {}
+        # Each circuit's published device id, by its config id: named once the serial
+        # is final, as the panel names it (`instance_ids.circuit_device_id`).
+        self._device_ids: dict[str, str] = {}
         self._energy_system: EnergySystem | None = None
 
         # Dynamic overrides (dispatched to circuits)
@@ -714,13 +717,17 @@ class DynamicSimulationEngine:
         if not self._config or not self._behavior_engine:
             raise SimulationConfigurationError("Configuration and behavior engine required")
 
+        from panelbench.emitter_adapter.instance_ids import circuit_device_id
+
         self._circuits = {}
+        self._device_ids = {}
         for circuit_def in self._config["circuits"]:
             template_name = circuit_def["template"]
             template = self._config["circuit_templates"][template_name]
             self._circuits[circuit_def["id"]] = SimulatedCircuit(
                 circuit_def, template, self._behavior_engine
             )
+            self._device_ids[circuit_def["id"]] = circuit_device_id(self._config, circuit_def)
 
     # ------------------------------------------------------------------
     # Clock delegation (preserves public API)
@@ -968,8 +975,6 @@ class DynamicSimulationEngine:
         if not self._config:
             raise SimulationConfigurationError("Configuration not loaded")
 
-        from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
-
         current_time = self._clock.current_time
         for _cid, circuit in self._circuits.items():
             # Tab-sync grouping currently has no override path — the
@@ -981,7 +986,6 @@ class DynamicSimulationEngine:
         # Apply the v0.3.0 sign convention: producers (PV) report negative
         # power; consumers report positive. SimulatedCircuit stores magnitudes
         # only; the energy_mode tells direction.
-        panel_id = self.serial_number
         circuit_powers: dict[str, float] = {}
         for cid, circuit in self._circuits.items():
             # A virtual device is modelled but never published, so the emitter has no
@@ -990,7 +994,7 @@ class DynamicSimulationEngine:
                 continue
             mag = circuit.instant_power_w
             signed = -mag if circuit.energy_mode == "producer" else mag
-            circuit_powers[stable_circuit_uuid(panel_id, cid)] = signed
+            circuit_powers[self._device_ids[cid]] = signed
 
         return EngineTick(
             current_time=current_time,

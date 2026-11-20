@@ -1121,7 +1121,10 @@ def validate_emitter_accepts(config_data: SimulationConfig) -> None:
     builds it, and the reason names each circuit by its config ``id``.
     """
     from panelbench.emitter_adapter.definition import build_definition, construct_emitter
-    from panelbench.emitter_adapter.instance_ids import stable_circuit_uuid
+    from panelbench.emitter_adapter.instance_ids import (
+        circuit_device_id,
+        outside_meter_device_id,
+    )
     from panelbench.emitter_adapter.wire_capture import RecordingTransport
 
     config: SimulationConfig = copy.deepcopy(config_data)
@@ -1132,12 +1135,15 @@ def validate_emitter_accepts(config_data: SimulationConfig) -> None:
         construct_emitter(definition, SetterRegistry(), RecordingTransport())
     except EmitterError as exc:
         reason = str(exc)
-        serial = config["panel_config"]["serial_number"]
-        # A meter outside the panel takes its device id from its `id` as a circuit does.
-        named = [*(config.get("circuits") or []), *(config.get("outside_meters") or [])]
-        for device in named:
-            device_id = str(device["id"])
-            reason = reason.replace(stable_circuit_uuid(serial, device_id), device_id)
+        published = [
+            *((circuit_device_id(config, c), c["id"]) for c in config.get("circuits") or []),
+            *(
+                (outside_meter_device_id(config, m), m["id"])
+                for m in config.get("outside_meters") or []
+            ),
+        ]
+        for device_id, config_id in published:
+            reason = reason.replace(device_id, str(config_id))
         raise ValueError(f"The emitter refuses this panel: {reason}") from exc
     finally:
         _VALIDATING.reset(validating)

@@ -41,8 +41,8 @@ from panelbench.emitter_adapter.definition import (
     construct_emitter,
 )
 from panelbench.emitter_adapter.instance_ids import (
+    circuit_device_id,
     evse_device_id,
-    stable_circuit_uuid,
 )
 from panelbench.emitter_adapter.spec_generator import circuits_for_device_type
 from panelbench.emitter_adapter.transport import LoopBoundTransport
@@ -182,9 +182,8 @@ async def start_clone(
     definition = build_definition(engine.config)
     manifest = definition.manifest
 
-    panel_id = engine.config["panel_config"]["serial_number"]
     uuid_to_circuit_id = {
-        stable_circuit_uuid(panel_id, c["id"]): c["id"] for c in engine.config["circuits"]
+        circuit_device_id(engine.config, c): c["id"] for c in engine.config["circuits"]
     }
 
     setters = SetterRegistry()
@@ -384,8 +383,7 @@ def _feeds_for_device_type(config: SimulationConfig, device_type: str) -> list[s
     # Read from the config being walked, not from a serial handed in beside it: a
     # feed id must be the id the *owner* of these circuits publishes, and taking
     # both from one mapping is what makes that true by construction.
-    panel_id = config["panel_config"]["serial_number"]
     return [
-        stable_circuit_uuid(panel_id, str(circuit["id"]))
+        circuit_device_id(config, circuit)
         for circuit in circuits_for_device_type(config, device_type)
     ]

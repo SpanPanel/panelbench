@@ -20,14 +20,15 @@ from panelbench.circuit import effective_template
 from panelbench.emitter_adapter import commissioning
 from panelbench.emitter_adapter.instance_ids import (
     bess_device_id,
+    circuit_device_id,
     evse_circuit_serial,
     evse_device_id,
     evse_serial_number,
     lugs_device_ids,
     mid_device_id,
+    outside_meter_device_id,
     pv_device_id,
     pv_inverter_device_id,
-    stable_circuit_uuid,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
 from panelbench.hardware import (
@@ -155,7 +156,7 @@ def _main_breaker(main_size: int | None) -> dict[str, str]:
 
 
 def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
-    upstream_id, downstream_id = lugs_device_ids(profile["panel_config"]["serial_number"])
+    upstream_id, downstream_id = lugs_device_ids(profile)
     lugs = profile.get("lugs") or {}
     # Named after their ids, as SPAN release 202639 names every device it proxies or
     # synthesizes: the captured MAIN 32 publishes its lugs, battery and MID that way.
@@ -186,10 +187,9 @@ def _outside_meter_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     Named after its device id, which scopes its config ``id`` to the panel as a
     circuit's is scoped, because the panel publishes no other name for it.
     """
-    panel_id = profile["panel_config"]["serial_number"]
     instances: list[DeviceInstance] = []
     for meter in profile.get("outside_meters") or []:
-        instance_id = stable_circuit_uuid(panel_id, meter["id"])
+        instance_id = outside_meter_device_id(profile, meter)
         instances.append(
             DeviceInstance(
                 entity_class="remote-ct",
@@ -202,7 +202,6 @@ def _outside_meter_instances(profile: SimulationConfig) -> list[DeviceInstance]:
 
 
 def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
-    panel_id = profile["panel_config"]["serial_number"]
     named_by_id = not predates(panel_firmware_version(profile), SPAN_RELEASE_202639)
     instances: list[DeviceInstance] = []
     published = [c for c in profile.get("circuits") or [] if on_the_panel(c)]
@@ -234,7 +233,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             if rating is None:
                 unpublished.append("breaker/rating")
         relay_behavior = normalise_relay_behavior(relay_behavior_raw)
-        instance_id = stable_circuit_uuid(panel_id, c["id"])
+        instance_id = circuit_device_id(profile, c)
         instances.append(
             DeviceInstance(
                 entity_class="circuit",
@@ -289,7 +288,7 @@ def _circuit_instances(profile: SimulationConfig) -> list[DeviceInstance]:
                     ),
                     **_solar_role(profile, template),
                     **commissioning.metadata(commissioning.CIRCUIT, c),
-                    **_shared_with(panel_id, c),
+                    **_shared_with(profile, c),
                     **commissioning.unvalued_metadata(c.get("unvalued"), unpublished),
                 },
             ),
@@ -313,12 +312,19 @@ def _solar_role(
     return {"feeds-role": "SOLAR"}  # eBus connection/feeds-role SOLAR
 
 
-def _shared_with(panel_id: str, circuit: CircuitDefinitionExtended) -> dict[str, str]:
+def _shared_with(profile: SimulationConfig, circuit: CircuitDefinitionExtended) -> dict[str, str]:
     """The circuits sharing *circuit*'s meter and relay, by device id, where it names any."""
     peers = circuit.get("shared_with") or []
     if not peers:
         return {}
-    return {"shared-with-device-ids": ",".join(stable_circuit_uuid(panel_id, p) for p in peers)}
+    return {"shared-with-device-ids": ",".join(_named_device_id(profile, p) for p in peers)}
+
+
+def _named_device_id(profile: SimulationConfig, circuit_id: str) -> str:
+    """The device id of the circuit whose config ``id`` is *circuit_id*, as a tandem's
+    lists and a battery's feed name it; validation has made sure there is one."""
+    circuit = next(c for c in profile.get("circuits") or [] if str(c["id"]) == circuit_id)
+    return circuit_device_id(profile, circuit)
 
 
 def _energy_seeds(template: CircuitTemplateExtended | None) -> dict[str, str]:
@@ -360,9 +366,7 @@ def _bess_instance(profile: SimulationConfig) -> DeviceInstance | None:
     if "firmware_version" in bess_cfg:
         bess_meta["firmware-version"] = str(bess_cfg["firmware_version"])
     if "feed" in bess_cfg:
-        bess_meta["feed"] = stable_circuit_uuid(
-            profile["panel_config"]["serial_number"], str(bess_cfg["feed"])
-        )
+        bess_meta["feed"] = _named_device_id(profile, str(bess_cfg["feed"]))
     if "initial_soe_kwh" in bess_cfg:
         bess_meta["initial-soe-kwh"] = str(bess_cfg["initial_soe_kwh"])
     bess_meta.update(commissioning.unvalued_metadata(bess_cfg.get("unvalued")))
@@ -614,7 +618,7 @@ def _fed_pv_instances(
     for circuit in circuits:
         # The `pv` section describes one inverter, as it did when a panel had one.
         defaults: PVConfigYAML = pv_cfg if circuit is section_circuit else {}
-        circuit_id = stable_circuit_uuid(panel_id, circuit["id"])
+        circuit_id = circuit_device_id(profile, circuit)
         metadata = _pv_metadata(
             profile,
             circuit,
@@ -687,7 +691,7 @@ def _evse_instances(profile: SimulationConfig) -> list[DeviceInstance]:
     if explicit_feed:
         feeds = [explicit_feed]
     else:
-        feeds = [stable_circuit_uuid(panel_id, circuit["id"]) for circuit in feed_circuits]
+        feeds = [circuit_device_id(profile, circuit) for circuit in feed_circuits]
     if not feeds and evse_cfg.get("enabled"):
         feeds = [""]
     if not feeds:
@@ -835,7 +839,7 @@ def _circuit_device_id(
     """The device id *circuit* publishes, which a DER it feeds names as its ``feed``."""
     if circuit is None:
         return None
-    return stable_circuit_uuid(profile["panel_config"]["serial_number"], circuit["id"])
+    return circuit_device_id(profile, circuit)
 
 
 def circuits_for_device_type(
