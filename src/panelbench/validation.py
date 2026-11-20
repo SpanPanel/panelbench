@@ -10,6 +10,7 @@ import contextvars
 import copy
 import logging
 import math
+from collections.abc import Hashable
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from ebus_panel_sim import EmitterError, SetterRegistry
@@ -104,11 +105,21 @@ def validate_panel_config(panel_config: Any) -> None:
         raise ValueError(
             f"panel_config.serial_number must be the panel's serial, a string, not {serial!r}"
         )
-    for key in ("latitude", "longitude"):
-        if key in panel_config and not _is_real(panel_config[key]):
-            raise ValueError(
-                f"panel_config.{key} must be a number of degrees, not {panel_config[key]!r}"
-            )
+    # The time-zone lookup refuses a place off the globe, as a swapped pair often is.
+    for key, bound in (("latitude", 90), ("longitude", 180)):
+        if key in panel_config:
+            degrees = panel_config[key]
+            if not _is_real(degrees) or not -bound <= degrees <= bound:
+                raise ValueError(
+                    f"panel_config.{key} must be degrees from -{bound} to {bound}, not {degrees!r}"
+                )
+    if "soc_shed_threshold" in panel_config and (
+        _as_number(panel_config["soc_shed_threshold"]) is None
+    ):
+        raise ValueError(
+            "panel_config.soc_shed_threshold must be a percentage, not "
+            f"{panel_config['soc_shed_threshold']!r}"
+        )
     if _as_whole_number(panel_config["total_tabs"]) not in PANEL_SIZE_TO_MODEL:
         sizes = ", ".join(str(size) for size in PANEL_SIZE_TO_MODEL)
         raise ValueError(
@@ -164,27 +175,6 @@ def validate_single_template(template_name: str, template: Any) -> None:
             f"Circuit template '{template_name}' energy_profile must be a mapping of its "
             f"settings, not {energy_profile!r}"
         )
-    _validate_behaviour(f"Circuit template '{template_name}'", template, energy_profile)
-    # Left empty it states none, which only a PV circuit's template cannot do without:
-    # its inverter's device publishes the rating.
-    nameplate = energy_profile.get("nameplate_capacity_w")
-    empty_for_pv = (
-        nameplate is None
-        and "nameplate_capacity_w" in energy_profile
-        and template.get("device_type") == "pv"
-    )
-    if empty_for_pv or (nameplate is not None and _as_number(nameplate) is None):
-        raise ValueError(
-            f"Circuit template '{template_name}' energy_profile.nameplate_capacity_w must be "
-            f"a number of watts, not {nameplate!r}"
-        )
-    for key in ("breaker_rating_a", "breaker_rating"):
-        rating = template.get(key)
-        if rating is not None and _as_number(rating) is None:
-            raise ValueError(
-                f"Circuit template '{template_name}' {key} must be the breaker's amps, or "
-                f"null where the panel publishes none, not {rating!r}"
-            )
     priority = str(template["priority"]).upper()
     if priority not in SHED_PRIORITIES:
         raise ValueError(
@@ -192,6 +182,37 @@ def validate_single_template(template_name: str, template: Any) -> None:
             f"it must be one of {', '.join(SHED_PRIORITIES)}"
         )
     _validate_commissioned_system(template_name, template)
+
+
+def _validate_as_modelled(
+    index: int, circuit: Mapping[str, object], template_name: str, template: Mapping[str, object]
+) -> None:
+    """Refuse a circuit whose template, as it is read for this circuit, cannot be.
+
+    The engine applies the circuit's ``overrides`` over its template as
+    ``SimulatedCircuit`` does, and its own ``breaker_rating`` over both, and models
+    and publishes what that leaves, so that is what is checked. A template no circuit
+    uses is read by nothing, so it is checked for its shape alone.
+    """
+    effective = copy.deepcopy(dict(template))
+    profile = effective.get("energy_profile")
+    if not isinstance(profile, dict):
+        return
+    where = f"Circuit template '{template_name}'"
+    if "overrides" in circuit:
+        overrides = circuit["overrides"]
+        if not isinstance(overrides, dict):
+            raise ValueError(f"Circuit {index} overrides must be a mapping, not {overrides!r}")
+        for key, value in overrides.items():
+            if key in OVERRIDDEN_PROFILE_KEYS:
+                profile[key] = value
+            else:
+                effective[key] = value
+        where = f"{where}, as circuit {index} overrides it,"
+    if "breaker_rating" in circuit:
+        effective["breaker_rating"] = circuit["breaker_rating"]
+    _validate_behaviour(where, effective, profile)
+    _validate_profile_numbers(where, effective, profile)
 
 
 def _validate_behaviour(
@@ -202,7 +223,7 @@ def _validate_behaviour(
 
     It indexes the profile's ``mode``, ``power_range`` and ``typical_power``, and does
     arithmetic on those numbers, the variation and a cycling load's durations; it
-    converts a duty cycle and the time-of-day factors with ``float()``.
+    converts a duty cycle and the time-of-day and monthly factors with ``float()``.
     """
     for key in ("mode", "power_range", "typical_power"):
         if key not in energy_profile:
@@ -250,39 +271,68 @@ def _validate_behaviour(
         raise ValueError(f"{where} time_of_day_profile must be a mapping, not {profile!r}")
     for key in ("hourly_multipliers", "hour_factors"):
         factors = profile.get(key)
-        if not factors:
-            continue
-        if not isinstance(factors, dict) or any(
-            _as_number(factor) is None for factor in factors.values()
-        ):
+        if factors and not _maps_to_factors(factors):
             raise ValueError(
                 f"{where} time_of_day_profile.{key} must map each hour to a factor, not "
                 f"{factors!r}"
             )
+    days = profile.get("active_days")
+    if days and (not isinstance(days, list) or not all(_is_whole(day) for day in days)):
+        raise ValueError(
+            f"{where} time_of_day_profile.active_days must list the days it runs, 0 for "
+            f"Monday, not {days!r}"
+        )
+    monthly = template.get("monthly_factors")
+    if monthly and not _maps_to_factors(monthly):
+        raise ValueError(
+            f"{where} monthly_factors must map each month to a factor, not {monthly!r}"
+        )
+    hvac = template.get("hvac_type")
+    if hvac and not isinstance(hvac, Hashable):
+        raise ValueError(f"{where} hvac_type must name an HVAC type, not {hvac!r}")
 
 
-def _validate_overrides(
-    index: int, circuit: Mapping[str, object], template_name: str, template: Mapping[str, object]
+def _maps_to_factors(factors: object) -> bool:
+    """A mapping whose every factor ``float()`` reads."""
+    return isinstance(factors, dict) and all(_as_number(f) is not None for f in factors.values())
+
+
+def _validate_profile_numbers(
+    where: str, template: Mapping[str, object], energy_profile: Mapping[str, object]
 ) -> None:
-    """Refuse a circuit's ``overrides`` whose template, as they leave it, the engine
-    cannot model: it applies them over the template (``SimulatedCircuit``), so they
-    are checked there, as the template's own settings are."""
-    if "overrides" not in circuit:
-        return
-    overrides = circuit["overrides"]
-    if not isinstance(overrides, dict):
-        raise ValueError(f"Circuit {index} overrides must be a mapping, not {overrides!r}")
-    effective = copy.deepcopy(dict(template))
-    profile = effective.get("energy_profile")
-    if not isinstance(profile, dict):
-        return
-    for key, value in overrides.items():
-        if key in OVERRIDDEN_PROFILE_KEYS:
-            profile[key] = value
-        else:
-            effective[key] = value
-    where = f"Circuit template '{template_name}', as circuit {index} overrides it,"
-    _validate_behaviour(where, effective, profile)
+    """Refuse a rating or energy seed the definition or the engine cannot read.
+
+    The definition converts each with ``float()``, so it may be quoted, but the engine
+    takes ``abs()`` of a producer's nameplate. Left empty, a nameplate states none,
+    which only a PV circuit's template cannot do without: its inverter's device
+    publishes the rating.
+    """
+    nameplate = energy_profile.get("nameplate_capacity_w")
+    producer = energy_profile.get("mode") == "producer"
+    if nameplate is None:
+        unrated_pv = (
+            "nameplate_capacity_w" in energy_profile and template.get("device_type") == "pv"
+        )
+    else:
+        unrated_pv = not (_is_real(nameplate) if producer else _as_number(nameplate) is not None)
+    if unrated_pv:
+        raise ValueError(
+            f"{where} energy_profile.nameplate_capacity_w must be a number of watts, not "
+            f"{nameplate!r}"
+        )
+    for key in ("initial_consumed_energy_wh", "initial_produced_energy_wh"):
+        seed = energy_profile.get(key)
+        if seed and _as_number(seed) is None:
+            raise ValueError(
+                f"{where} energy_profile.{key} must be a number of watt-hours, not {seed!r}"
+            )
+    for key in ("breaker_rating_a", "breaker_rating"):
+        rating = template.get(key)
+        if rating is not None and _as_number(rating) is None:
+            raise ValueError(
+                f"{where} {key} must be the breaker's amps, or null where the panel "
+                f"publishes none, not {rating!r}"
+            )
 
 
 _COMMISSIONED_SYSTEMS = ("pv", "backup")
@@ -429,7 +479,7 @@ def validate_single_circuit(index: int, circuit: Any, circuit_templates: dict[st
         if field not in circuit:
             raise ValueError(f"Missing required field '{field}' in circuit {index}")
     circuit_id = circuit["id"]
-    if isinstance(circuit_id, bool) or not isinstance(circuit_id, (str, int)):
+    if isinstance(circuit_id, bool) or not isinstance(circuit_id, (str, int, float)):
         raise ValueError(f"Circuit {index} id must be a name or a number, not {circuit_id!r}")
 
     template_name = circuit["template"]
@@ -437,7 +487,7 @@ def validate_single_circuit(index: int, circuit: Any, circuit_templates: dict[st
         raise ValueError(f"Circuit {index} references unknown template '{template_name}'")
 
     template = circuit_templates.get(template_name, {})
-    _validate_overrides(index, circuit, template_name, template)
+    _validate_as_modelled(index, circuit, template_name, template)
 
     tabs = circuit.get("tabs", [])
     if not isinstance(tabs, list) or not all(_is_whole(tab) for tab in tabs):
@@ -866,9 +916,20 @@ def validate_section_shapes(config_data: Mapping[str, object]) -> None:
     params = config_data.get("simulation_params", {})
     if not isinstance(params, dict):
         raise ValueError(f"simulation_params must be a mapping of its settings, not {params!r}")
-    if "noise_factor" in params and not _is_real(params["noise_factor"]):
+    for key in ("noise_factor", "time_acceleration"):
+        if key in params and not _is_real(params[key]):
+            raise ValueError(f"simulation_params.{key} must be a number, not {params[key]!r}")
+    syncs = config_data.get("tab_synchronizations", [])
+    if not isinstance(syncs, list) or not all(
+        isinstance(sync, dict)
+        and "behavior" in sync
+        and isinstance(sync.get("tabs"), list)
+        and all(isinstance(tab, (str, int, float)) for tab in sync["tabs"])
+        for sync in syncs
+    ):
         raise ValueError(
-            f"simulation_params.noise_factor must be a number, not {params['noise_factor']!r}"
+            "tab_synchronizations must list groups, each a mapping with its behavior and "
+            f"the tabs it syncs, not {syncs!r}"
         )
     lugs = config_data.get("lugs")
     if isinstance(lugs, dict):
@@ -905,6 +966,12 @@ def validate_battery_settings(config_data: Mapping[str, object]) -> None:
         raise ValueError(
             "bess.nameplate_capacity_kwh must be above 0, not "
             f"{bess['nameplate_capacity_kwh']!r}: a battery's charge is its energy over it"
+        )
+    discharge = _as_number(bess.get("discharge_efficiency", 0.95))
+    if discharge is not None and discharge <= 0:
+        raise ValueError(
+            "bess.discharge_efficiency must be above 0, not "
+            f"{bess['discharge_efficiency']!r}: a battery's discharge is divided by it"
         )
     for key in _BATTERY_HOURS:
         hours = bess.get(key, [])

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Final
 import pytest
 import yaml
 
+from panelbench import validation
 from panelbench.validation import validate_yaml_config
 from tests._helpers import CONFIGS, PANEL_CONFIG
 
@@ -103,6 +104,47 @@ def _with(path: Path, at: tuple[str | int, ...], value: object) -> dict[str, obj
         ),
         (PANEL_CONFIG, ("circuits", 0, "tabs"), ["x"], r"must be a list of space numbers"),
         (PANEL_CONFIG, ("circuits", 0, "id"), [], r"id must be a name or a number"),
+        (PANEL_CONFIG, ("panel_config", "latitude"), 122.4, r"latitude must be degrees from -90"),
+        (PANEL_CONFIG, ("panel_config", "longitude"), 181, r"longitude must be degrees from -180"),
+        (PANEL_CONFIG, ("panel_config", "soc_shed_threshold"), None, r"must be a percentage"),
+        (
+            PANEL_CONFIG,
+            ("bess", "discharge_efficiency"),
+            0,
+            r"discharge_efficiency must be above 0",
+        ),
+        (PANEL_CONFIG, ("simulation_params", "time_acceleration"), "", r"time_acceleration must"),
+        (PANEL_CONFIG, ("tab_synchronizations",), 0, r"tab_synchronizations must list groups"),
+        (
+            PANEL_CONFIG,
+            ("circuit_templates", _PV_TEMPLATE, "energy_profile", "nameplate_capacity_w"),
+            "6000",
+            r"nameplate_capacity_w must be a number of watts, not '6000'",
+        ),
+        (
+            PANEL_CONFIG,
+            ("circuit_templates", _TEMPLATE, "energy_profile", "initial_consumed_energy_wh"),
+            [1, 2],
+            r"initial_consumed_energy_wh must be a number of watt-hours",
+        ),
+        (
+            PANEL_CONFIG,
+            ("circuit_templates", _TEMPLATE, "monthly_factors"),
+            -1,
+            r"monthly_factors must map each month to a factor",
+        ),
+        (
+            PANEL_CONFIG,
+            ("circuit_templates", _TEMPLATE, "hvac_type"),
+            [1, 2],
+            r"hvac_type must name an HVAC type",
+        ),
+        (
+            PANEL_CONFIG,
+            ("circuit_templates", _TEMPLATE, "time_of_day_profile"),
+            {"enabled": True, "active_days": -1},
+            r"active_days must list the days it runs",
+        ),
         (PANEL_CONFIG, ("circuits", 0, "overrides"), "x", r"overrides must be a mapping"),
         (
             PANEL_CONFIG,
@@ -133,9 +175,14 @@ def _with(path: Path, at: tuple[str | int, ...], value: object) -> dict[str, obj
             PANEL_CONFIG,
             ("panel_config", "latitude"),
             None,
-            r"latitude must be a number of degrees",
+            r"latitude must be degrees from -90 to 90, not None",
         ),
-        (PANEL_CONFIG, ("panel_config", "longitude"), "x", r"longitude must be a number of"),
+        (
+            PANEL_CONFIG,
+            ("panel_config", "longitude"),
+            "x",
+            r"longitude must be degrees from -180 to 180, not 'x'",
+        ),
         (PANEL_CONFIG, ("simulation_params",), None, r"simulation_params must be a mapping"),
         (
             PANEL_CONFIG,
@@ -208,7 +255,8 @@ def test_a_setting_of_the_wrong_shape_is_refused_by_name(
         (("panel_config", "total_tabs"), "32"),
         (("circuit_templates", _TEMPLATE, "breaker_rating"), "20"),
         (("circuit_templates", _TEMPLATE, "energy_profile", "nameplate_capacity_w"), None),
-        (("circuit_templates", _PV_TEMPLATE, "energy_profile", "nameplate_capacity_w"), "6000"),
+        (("circuit_templates", _TEMPLATE, "energy_profile", "nameplate_capacity_w"), "600"),
+        (("circuits", 0, "id"), 1.5),
         (("bess", "max_charge_w"), "3500"),
         (("circuits", 0, "tabs"), [1.0]),
         (("circuit_templates", _TEMPLATE, "cycling_pattern"), {"duty_cycle": "0.5"}),
@@ -290,4 +338,38 @@ def test_the_emitter_validation_builds_and_drops_logs_nothing_below_warning(
 
     assert [r.getMessage() for r in caplog.records if r.name == "homie"] == [
         "a running panel's own record"
+    ]
+
+
+def test_a_template_no_circuit_uses_is_checked_for_its_shape_alone() -> None:
+    """Nothing reads it, so a profile it could not be modelled by is no failure."""
+    config = _with(
+        PANEL_CONFIG,
+        ("circuit_templates", "unused"),
+        {
+            "relay_behavior": "controllable",
+            "priority": "NICE_TO_HAVE",
+            "energy_profile": {"mode": "consumer", "power_range": {"min": 0, "max": 100}},
+        },
+    )
+
+    validate_yaml_config(config)
+
+
+def test_the_filter_drops_only_records_below_warning_and_only_while_validating(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    homie = logging.getLogger("homie")
+    marked = validation._VALIDATING.set(True)
+    try:
+        homie.debug("the discarded build's record")
+        homie.warning("a warning")
+    finally:
+        validation._VALIDATING.reset(marked)
+    homie.debug("a running panel's record")
+
+    assert [r.getMessage() for r in caplog.records if r.name == "homie"] == [
+        "a warning",
+        "a running panel's record",
     ]
