@@ -29,7 +29,12 @@ from panelbench.emitter_adapter.instance_ids import (
     stable_circuit_uuid,
 )
 from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
-from panelbench.hardware import panel_hardware_version, panel_variant, publishes_pv_devices
+from panelbench.hardware import (
+    panel_hardware_version,
+    panel_variant,
+    publishes_downstream_lugs,
+    publishes_pv_devices,
+)
 from panelbench.inverter import (
     normalise_inverter_type,
     template_inverter_type,
@@ -169,6 +174,7 @@ def _lugs_instances(profile: SimulationConfig) -> list[DeviceInstance]:
             (upstream_id, "upstream", lugs.get("upstream") or {}),
             (downstream_id, "downstream", lugs.get("downstream") or {}),
         )
+        if direction == "upstream" or publishes_downstream_lugs(profile)
     ]
 
 

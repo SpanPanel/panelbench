@@ -347,6 +347,10 @@ def translate_panel_tree(
     lugs = _lugs_config(devices, panel_device_id, unvalued)
     if lugs:
         config["lugs"] = lugs
+    # A panel publishing its upstream lugs alone has no feedthrough, as release 202645
+    # publishes a hardware 3.0 panel without one; earlier releases publish both.
+    if _lugs_directions(devices, panel_device_id) == {"upstream"}:
+        panel_config["feedthrough"] = False
 
     # The panel's firmware decides which side of SPAN release 202639 the clone
     # publishes (the BESS meter's sign, the EVSE limit), so a clone of a panel on an
@@ -1116,6 +1120,14 @@ def _outside_meter(ordinal: int, unvalued: list[str]) -> dict[str, object]:
     if unvalued:
         meter["unvalued"] = unvalued
     return meter
+
+
+def _lugs_directions(devices: Mapping[str, DiscoveredDevice], panel_device_id: str) -> set[str]:
+    """The directions of the lugs the panel publishes, ``upstream`` and ``downstream``."""
+    return {
+        (_get_prop(devices, lugs_id, "info", "direction") or "").lower()
+        for lugs_id in _devices_of_type(devices, panel_device_id, TYPE_LUGS)
+    }
 
 
 def _lugs_config(

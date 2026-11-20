@@ -69,6 +69,10 @@ class PanelConfig(TypedDict):
     service_voltage_v: NotRequired[float]  # service voltage (default 240.0)
     line_voltage_v: NotRequired[float]  # per-leg voltage (default 120.0)
     islandable: NotRequired[bool]  # Explicit override for whether the panel can island.
+    # Whether the panel has a feedthrough module (default true). From SPAN release 202645 a
+    # hardware 3.0 panel without one publishes no downstream lugs
+    # (`hardware.publishes_downstream_lugs`); a clone of such a panel writes false.
+    feedthrough: NotRequired[bool]
     vendor_name: NotRequired[str]  # info/vendor-name (default "Span"); a clone keeps its panel's
     model: NotRequired[str]  # info/model (default: from total_tabs); a clone keeps its panel's
     # The panel's network configuration, as a clone reads it from its panel. Defaults:

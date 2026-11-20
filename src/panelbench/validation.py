@@ -17,6 +17,7 @@ from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, pre
 from panelbench.hardware import (
     declares_variant,
     panel_variant,
+    publishes_downstream_lugs,
     publishes_outside_meters,
     publishes_pv_devices,
     publishes_shared_breakers,
@@ -66,6 +67,7 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_outside_meters(config_data)
     validate_shared_circuits(config_data)
     validate_unvalued_lists(config_data)
+    validate_downstream_lugs(config_data)
 
     if "panel_source" in config_data:
         validate_panel_source(config_data["panel_source"])
@@ -80,6 +82,10 @@ def validate_panel_config(panel_config: Any) -> None:
     for field in required_panel_fields:
         if field not in panel_config:
             raise ValueError(f"Missing required panel_config field: {field}")
+    if "feedthrough" in panel_config and not isinstance(panel_config["feedthrough"], bool):
+        raise ValueError(
+            f"panel_config.feedthrough must be true or false, not {panel_config['feedthrough']!r}"
+        )
     registration_limit(panel_config)
 
 
@@ -610,6 +616,24 @@ def validate_unvalued_lists(config_data: Mapping[str, object]) -> None:
             isinstance(path, str) and "/" in path for path in paths
         ):
             raise ValueError(f"{where} must be a list of node/property paths, got {paths!r}")
+
+
+def validate_downstream_lugs(config_data: dict[str, object]) -> None:
+    """Refuse commissioning for downstream lugs the panel does not publish.
+
+    A hardware 3.0 panel with ``feedthrough: false`` publishes none from release
+    202645, so a ``lugs.downstream`` section would describe nothing; on an earlier
+    release it still describes the downstream lugs that release publishes.
+    """
+    lugs = config_data.get("lugs")
+    if not isinstance(lugs, dict) or "downstream" not in lugs:
+        return
+    if not publishes_downstream_lugs(config_data):
+        raise ValueError(
+            "lugs.downstream commissions downstream lugs this panel does not publish: "
+            "from SPAN release 202645 a hardware 3.0 panel with panel_config.feedthrough "
+            "false publishes none. Remove lugs.downstream, or set feedthrough to true."
+        )
 
 
 def _listed(value: object) -> list[object]:

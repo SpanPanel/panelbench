@@ -16,7 +16,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from panelbench.firmware import SPAN_RELEASE_202639, panel_firmware_version, predates
+from panelbench.firmware import (
+    SPAN_RELEASE_202639,
+    SPAN_RELEASE_202645,
+    panel_firmware_version,
+    predates,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -146,6 +151,24 @@ def publishes_shared_breakers(variant: Variant) -> bool:
     as one circuit with one rating and no shared-with lists (SPAN-API-Client-Docs#21).
     """
     return variant == _EXTENDED_VARIANT
+
+
+def publishes_downstream_lugs(config: Mapping[str, object]) -> bool:
+    """Whether the panel *config* describes publishes its downstream lugs.
+
+    From SPAN release 202645 a hardware 3.0 panel without a feedthrough module
+    publishes its upstream lugs alone, as the emitter's r202645 captures show.
+    Earlier releases publish both whatever the panel has, and no capture shows a
+    span-variant panel leaving them out, so ``panel_config.feedthrough: false``
+    removes them only under the variant hardware 3.0 selects, on release 202645 or
+    a firmware naming no release.
+    """
+    panel = config.get("panel_config")
+    if not isinstance(panel, dict) or panel.get("feedthrough", True) is not False:
+        return True
+    return panel_variant(config) != _EXTENDED_VARIANT or predates(
+        panel_firmware_version(config), SPAN_RELEASE_202645
+    )
 
 
 def relay_locks_priority(variant: Variant) -> bool:

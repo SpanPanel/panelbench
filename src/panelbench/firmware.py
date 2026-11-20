@@ -35,6 +35,11 @@ Its panels also name each circuit's device after its id, keeping the circuit's o
 name in ``info/name``, as the emitter's captured MAIN 32 on the release shows.
 """
 
+SPAN_RELEASE_202645: Final = 202645
+"""The SPAN release from which a hardware 3.0 panel publishes each circuit's
+``connection/connection-point``, and one without a feedthrough module publishes its
+upstream lugs alone, as the emitter's r202645 captures show."""
+
 _RELEASE_SEGMENT: Final = re.compile(r"r(\d{6})")
 
 
