@@ -19,6 +19,7 @@ from ebus_panel_sim import load_reference_capture
 
 from panelbench.clone import translate_panel_tree
 from panelbench.config_defaults import normalize_config
+from panelbench.dashboard.config_store import ConfigStore
 from panelbench.definition_import import config_from_definition
 from panelbench.device_numbers import hex_of, next_number, number_of
 from panelbench.emitter_adapter import runtime as emitter_runtime
@@ -403,3 +404,53 @@ def test_an_import_records_no_numbers() -> None:
     panel = config["panel_config"]
     assert isinstance(panel, dict)
     assert "device_id_hex" not in panel
+
+
+def _store_with_a_free_space(tmp_path: Path, config: dict[str, object]) -> ConfigStore:
+    """*config* in a dashboard store, one circuit on a space of its own deleted, since
+    an MLO 48's tandems fill all its spaces."""
+    store = ConfigStore()
+    store.load_from_file(write_config(tmp_path / "panel.yaml", config))
+    (lone, *_) = [
+        c for c in _circuits(config) if len(c.get("tabs") or []) == 1 and not c.get("shared_with")
+    ]
+    store.delete_entity(str(lone["id"]))
+    assert store.get_unmapped_tabs()
+    return store
+
+
+def _exported(store: ConfigStore) -> dict[str, object]:
+    exported: dict[str, object] = yaml.safe_load(store.export_yaml())
+    return exported
+
+
+def _lowest_unused(config: dict[str, object]) -> int:
+    used = {c["circuit_number"] for c in _circuits(config) if "circuit_number" in c}
+    return min(set(range(1, len(used) + 2)) - used)
+
+
+@pytest.mark.parametrize("how", ["circuit", "from spaces"])
+def test_a_circuit_added_to_a_numbered_panel_takes_the_lowest_unused_number(
+    tmp_path: Path, how: str
+) -> None:
+    store = _store_with_a_free_space(tmp_path, reference_template("r202645-e"))
+    expected = _lowest_unused(_exported(store))
+    free = store.get_unmapped_tabs()
+
+    added = (
+        store.add_entity("circuit") if how == "circuit" else store.add_entity_from_tabs([free[0]])
+    )
+
+    exported = _exported(store)
+    (circuit,) = [c for c in _circuits(exported) if c["id"] == added.id]
+    assert circuit["circuit_number"] == expected
+    validate_yaml_config(exported)
+
+
+def test_a_circuit_added_to_an_unnumbered_panel_takes_none(tmp_path: Path) -> None:
+    store = _store_with_a_free_space(tmp_path, _raw(_MLO_48))
+
+    added = store.add_entity_from_tabs([store.get_unmapped_tabs()[0]])
+
+    (circuit,) = [c for c in _circuits(_exported(store)) if c["id"] == added.id]
+    assert "circuit_number" not in circuit

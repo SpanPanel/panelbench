@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Concatenate, cast
 import yaml
 
 from panelbench.circuit import effective_settings
+from panelbench.device_numbers import next_number
 from panelbench.inverter import AC_COUPLED, normalise_inverter_type, template_inverter_type
 from panelbench.pv_section import UNFED_INVERTER_POSITION, unfed_inverter_entries
 
@@ -724,6 +725,9 @@ class ConfigStore:
             circuit_dict["id"] = entity_id
             counter += 1
 
+        # A panel that numbers its circuits numbers this one too, as SPAN would.
+        if (number := next_number(self._state)) is not None:
+            circuit_dict["circuit_number"] = number
         self._templates()[template_name] = template_dict
         self._circuits().append(circuit_dict)
         self._dirty = True
@@ -786,6 +790,9 @@ class ConfigStore:
             circuit_dict["id"] = entity_id
             counter += 1
 
+        # A panel that numbers its circuits numbers this one too, as SPAN would.
+        if (number := next_number(self._state)) is not None:
+            circuit_dict["circuit_number"] = number
         self._templates()[template_name] = template_dict
         self._circuits().append(circuit_dict)
         self._dirty = True
