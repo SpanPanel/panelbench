@@ -433,9 +433,11 @@ leaves out. Each circuit still publishes its own reading, where a panel publishe
 
 `firmware_version` is the firmware string a panel reports over MQTT, its HTTP status endpoint and mDNS. It also decides which side of SPAN release 202639 the
 panel emulates: the battery's power sign, whether a SPAN Drive's user charge limit is published before a user sets one, one solar device per inverter, the
-status endpoint's hardware version, and commissioned-system circuits.
+status endpoint's hardware version, and commissioned-system circuits. From release 202645 a hardware 3.0 panel also publishes each circuit's
+`connection/connection-point`, and one without a feedthrough publishes no downstream lugs ([A panel without a feedthrough](#a-panel-without-a-feedthrough)).
 
-The shipped templates name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639.
+The two tracked templates name `spanos3/r202639/03`, as a SPAN panel on that release publishes it, and so are panels after the upgrade to release 202639;
+each template of a real panel names the release it was captured on ([Templates](#templates)).
 `ref_MAIN_32_TANDEMS.yaml`'s solar circuit is the locked "Commissioned PV System" circuit, and it reports hardware version `1.2`. Read it with the `span-panel`
 integration v2.1.2 or later; v2.1.1 shows the battery's Meter Power with its sign flipped. `ref_MLO_48_TANDEMS.yaml` reports hardware version `3.0`, as the
 reference MLO 48 does, and has no solar circuit; read it with v2.2.0 or later, and with v2.3.0 or later for its tandem-quad to be drawn and judged correctly.
@@ -447,8 +449,38 @@ remove `commissioned_system` from its solar template, which PanelBench refuses o
 firmware_version: spanos3/r202633/02
 ```
 
-A config naming no firmware reports `sim/v<package version>`, which names no SPAN release, and publishes r202639's conventions. A clone keeps its source panel's
-firmware.
+A config naming no firmware reports `sim/v<package version>`, which names no SPAN release, and publishes the conventions of the latest release, 202645. A
+clone keeps its source panel's firmware.
+
+### A panel without a feedthrough
+
+`panel_config.feedthrough` says whether the panel has a feedthrough module (default `true`). From SPAN release 202645 a hardware 3.0 panel without one
+publishes its upstream lugs alone, so with `feedthrough: false` such a panel, on that release or on a firmware naming none, publishes no downstream lugs. On
+release 202639 it publishes both, as panels on that release do, and a MAIN 32 publishes both whatever its feedthrough, since no capture shows one leaving them
+out. A clone of a panel that publishes its upstream lugs alone writes `feedthrough: false`, and a `lugs.downstream` section for lugs the panel does not
+publish is refused.
+
+```yaml
+panel_config:
+  feedthrough: false
+```
+
+### A battery that takes its own solar
+
+A hybrid battery's own inverter also takes PV, on its DC side, as a Powerwall 3's does. Set `bess.inverter_type: hybrid` and rate its array with
+`bess.pv_array.nameplate_capacity_w`. The array produces by the panel's location and weather, as a PV circuit does, and its production joins `power-flows/pv`
+and the solar the battery's dispatch sees, live and in the Model view; the emitter still dispatches the battery. Without a rating the array produces nothing,
+as a clone writes it, since a panel does not publish one. A clone writes `inverter_type: hybrid` where the emitter's capture reads the panel's battery as
+hybrid: the panel publishes `power-flows/pv`, and nothing but its one battery could bring it solar. An imported definition keeps its own battery's coupling.
+This `hybrid` is the battery's; a PV template's `inverter_type: hybrid` is a grid-forming inverter, which keeps producing off-grid.
+
+```yaml
+bess:
+  enabled: true
+  inverter_type: hybrid
+  pv_array:
+    nameplate_capacity_w: 7600
+```
 
 ## Environment Variables
 

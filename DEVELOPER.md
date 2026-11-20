@@ -363,6 +363,9 @@ panel_config:
   ethernet_link: bool # status/ethernet
   wifi_ssid: str | null # status/wifi-ssid (default: sim-wifi while Wi-Fi is up); null publishes none
   unvalued: [str] # node/property paths the panel declares and leaves unvalued, as a clone reads them
+  # Whether the panel has a feedthrough module (default: true). false publishes no downstream lugs under hardware 3.0
+  # from release 202645 (hardware.publishes_downstream_lugs); a clone of a panel publishing its upstream lugs alone writes it
+  feedthrough: bool
   registration_limit: # Absent, every registration succeeds
     per_minute: int # Registrations each client may make in a minute; past it, registration answers 429
     retry_after: bool # Whether the refusal carries Retry-After (default: true)
@@ -475,7 +478,7 @@ outside_meters: # A meter the panel reads that sits outside it, on no breaker sp
     unvalued: [str]
 
 lugs: # Each set of lugs as commissioned, published in its connection node
-  upstream: # downstream takes the same keys
+  upstream: # downstream takes the same keys, and is refused for lugs the panel does not publish (panel_config.feedthrough)
     feeds_role: str # What the lugs feed where it is not a device of its own
     service_rating_a: int # The utility service rating at a service entrance
     overcurrent_protection_a: int
@@ -728,6 +731,10 @@ The Battery Storage Energy Equipment tracks real state-of-energy by integrating 
 - **Discharging**: `SOE -= power * dt / discharge_efficiency`
 - **Backup reserve**: Normal discharge stops at `backup_reserve_pct` (default 20%); only grid-disconnect emergencies drain to the 5% hard floor
 - **Charge modes**: Custom (hour-based schedule), Solar Generation (tracks PV curve), Solar Excess (surplus after loads)
+- **A hybrid battery's own array**: `bess.inverter_type: hybrid` (default `ac-coupled`), with `bess.pv_array.nameplate_capacity_w`, gives the battery's
+  inverter an array. The engine produces it with the PV circuits' solar model (`RealisticBehaviorEngine.solar_output_w`), and the runtime hands it to the
+  emitter as the battery's `TickInputs.bess_pv`, which the emitter adds to `power-flows/pv`, its dispatch's solar and the grid. The Model view books it the
+  same way. A clone takes the coupling from the emitter's own reading of the tree (`clone._hybrid_batteries`); an import keeps its definition's.
 
 ### Energy Accumulation
 

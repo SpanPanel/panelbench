@@ -170,6 +170,12 @@ size, circuit names, solar/battery presence, and load profiles. Or
 simply clone your real panel from the dashboard — no manual config
 needed.
 
+A panel without a feedthrough module sets `panel_config.feedthrough:
+false`, and on SPAN release 202645 a hardware 3.0 one then publishes no
+downstream lugs. A battery whose own inverter takes solar, as a
+Powerwall 3's does, sets `bess.inverter_type: hybrid` and rates its
+array with `bess.pv_array.nameplate_capacity_w`. The README has both.
+
 ## Full documentation
 
 Dashboard features, configuration reference, MQTT topics, and

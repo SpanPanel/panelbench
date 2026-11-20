@@ -318,8 +318,8 @@ def translate_panel_tree(
     unmapped = [space for space in spaces if space not in used_tabs]
     outside = sorted(space for space in used_tabs if space not in spaces)
     if outside:
-        # The positions are the integration's client's, and the MAIN 40's an inference,
-        # so a real panel disagreeing with them is worth saying.
+        # The positions are the integration's client's, and only the MAIN 16's and MAIN
+        # 40's rest on a capture, so a real panel disagreeing with them is worth saying.
         _LOGGER.warning(
             "Panel %s reports model %s, whose spaces are %d to %d, but has circuits on %s",
             panel_device_id,

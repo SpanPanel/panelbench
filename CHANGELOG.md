@@ -8,6 +8,13 @@
 
 - **Three templates of real panels**, generated from the emitter's reference captures: `ref_MAIN_32_CASCADE`, a MAIN 32 fed by another panel, with a battery;
   `ref_MAIN_16_BESS`, a MAIN 16 with a hybrid battery and an EVSE; and `ref_MLO_48_HYBRID`, an MLO 48 whose battery's inverter takes its solar.
+- **A battery can take its own solar.** `bess.inverter_type: hybrid` (default `ac-coupled`) says the battery's own inverter also takes PV, on its DC side, and
+  `bess.pv_array.nameplate_capacity_w` rates the array; it produces by the panel's location and weather and joins `power-flows/pv` and the solar the battery's
+  dispatch sees, live and in the Model view. A clone writes a battery hybrid where the emitter's capture reads it so: the panel publishes `power-flows/pv`
+  and nothing but its one battery could bring it solar. An imported definition keeps its battery's coupling.
+- **`panel_config.feedthrough`** (default `true`). With `false`, a hardware 3.0 panel on SPAN release 202645, or on a firmware naming none, publishes no
+  downstream lugs, as such a panel without a feedthrough module does; release 202639 and a MAIN 32 publish both. A clone of a panel publishing its upstream
+  lugs alone writes `false`, and a `lugs.downstream` section for lugs the panel does not publish is refused.
 
 ### Changed
 
@@ -25,6 +32,10 @@
   badge naming the serial. Delete the leftover `default_*` files, or clone the `ref_` equivalent.
 - **The README lists every template in one table**, and the conformance profile in `DEVELOPER.md` is the regenerated one: 452 match, 4 divergence, 69 extension
   and 1327 omission.
+- **PanelBench runs on `ebus-panel-sim` 0.11.0**, which publishes some things differently, as its CHANGELOG records. The lugs' `meter/current-a` and
+  `meter/current-b` take each space's leg from its row and net each leg's current. On hardware 3.0 the circuits of one tandem or quad each publish the
+  breaker's one reading, and a relay or priority set on one over MQTT reaches them all. A battery's `info/nameplate-capacity` has one decimal place there (`27.0`).
+  A hardware 3.0 panel on release 202645 publishes each circuit's `connection/connection-point`.
 - **Four generated templates are their panels' later captures, on release 202645**: `ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48`, where
   they were the release 202639 captures of the same panels. `ref_MAIN_40` is that panel recommissioned, with 38 circuits and no battery, where it had 5 and
   a battery fed by a circuit, and `ref_UNKNOWN_16` adds an EVSE.
@@ -53,9 +64,8 @@
 
 - **`default_MAIN_16.yaml`, `default_MAIN_32.yaml` and `default_MAIN_40.yaml`**, which `ref_MAIN_16`, `ref_MAIN_32` and `ref_MAIN_40` cover. The SpanPanel
   integration's client, span-panel-api, places MAIN 16 at spaces 9 to 24 and MAIN 40 at 9 to 48, and `default_MAIN_16` and `default_MAIN_40` numbered their
-  spaces from 1, so the integration logged "Panel model ... has breaker positions ..., but its circuits occupy spaces ..." for both. The MAIN 16 range is the
-  one its reference capture shows, with circuits on spaces 9 to 24; the MAIN 40 range is the client's own choice, and its capture's circuits sit on spaces 9
-  to 45.
+  spaces from 1, so the integration logged "Panel model ... has breaker positions ..., but its circuits occupy spaces ..." for both. Each range is the one a
+  reference capture of that model shows: a MAIN 16's circuits on spaces 9 to 24, and a MAIN 40's on 9 to 48.
 
 
 ## 2.8.0 — Tandem and quad breakers, and several panels on one broker
