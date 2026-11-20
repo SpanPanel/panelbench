@@ -180,7 +180,8 @@ async def test_the_dashboard_starts_on_an_unloadable_active_config(tmp_path: Pat
     # The first template, read-only, rather than an empty panel, and never the refused
     # file, so nothing can be saved over it.
     assert app[APP_KEY_DASHBOARD_CONTEXT].config_filter == _FIRST_VIEW
-    assert "sim-main32_r202639" in html
+    first = yaml.safe_load((tmp_path / _FIRST_VIEW).read_text(encoding="utf-8"))
+    assert first["panel_config"]["serial_number"] in html
 
 
 def test_with_no_config_to_resume_the_dashboard_opens_the_first_template(

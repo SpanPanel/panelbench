@@ -12,7 +12,7 @@ import fnmatch
 import logging
 import subprocess
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Final
 
 import pytest
 import yaml
@@ -44,20 +44,39 @@ def test_every_reference_capture_is_written_as_a_template(tmp_path: Path) -> Non
     assert all(is_template(path.name) for path in written)
 
 
-def test_a_retired_capture_is_written_as_no_template(tmp_path: Path) -> None:
-    """The r202633 capture would take the r202639 one's name, so it gets none."""
-    assert "main32_r202633" in reference_capture_names()
-    assert "main32_r202633" not in template_capture_names()
+# Each capture retired for a later one of the same panel, that later capture, and the
+# name it takes.
+_SUCCESSORS: Final = {
+    "main32_r202639": ("main32_r202645", "ref_MAIN_32.yaml"),
+    "r202639-a": ("r202645-a", "ref_UNKNOWN_16.yaml"),
+    "r202639-c": ("r202645-c", "ref_MAIN_40.yaml"),
+    "r202639-e": ("r202645-e", "ref_MLO_48.yaml"),
+}
 
+
+def _panel_serial(name: str) -> str:
+    """The masked serial *name*'s panel publishes, which it keeps from one capture to
+    the next."""
+    tree = load_reference_capture(name).tree
+    (panel,) = [d for d in tree.values() if d.type == "distribution-enclosure"]
+    return str(panel.value("info/serial-number"))
+
+
+def test_a_retired_capture_is_written_as_no_template(tmp_path: Path) -> None:
+    """A capture of a panel the emitter also ships a later capture of gets no template:
+    the later capture of the same panel, which keeps its masked serial, takes its name.
+    ``main32_r202633``, masked before panels kept theirs, is a MAIN 32 on a release
+    before 202639, whose name the later MAIN 32 capture takes."""
     write_reference_templates(tmp_path)
 
-    assert (tmp_path / "ref_MAIN_32.yaml").exists()
-    assert (
-        yaml.safe_load((tmp_path / "ref_MAIN_32.yaml").read_text(encoding="utf-8"))[
-            "panel_config"
-        ]["serial_number"]
-        == "sim-main32_r202639"
-    )
+    assert "main32_r202633" in reference_capture_names()
+    assert "main32_r202633" not in template_capture_names()
+    for retired, (successor, filename) in _SUCCESSORS.items():
+        assert retired in reference_capture_names(), retired
+        assert retired not in template_capture_names(), retired
+        assert _panel_serial(retired) == _panel_serial(successor), retired
+        written = yaml.safe_load((tmp_path / filename).read_text(encoding="utf-8"))
+        assert written["panel_config"]["serial_number"] == f"sim-{successor}", retired
 
 
 @pytest.mark.parametrize("name", template_capture_names())

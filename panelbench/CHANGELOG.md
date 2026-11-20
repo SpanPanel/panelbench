@@ -4,6 +4,11 @@
 
 The shipped templates are now all `ref_` templates, and the three `default_MAIN_` templates are removed.
 
+### Added
+
+- **`ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS` and `ref_MLO_48_HYBRID`**: a MAIN 32 fed by another panel, a MAIN 16 with a hybrid battery and an EVSE, and an
+  MLO 48 whose battery's inverter takes its solar.
+
 ### Changed
 
 - **The tandem templates are now `ref_MAIN_32_TANDEMS` and `ref_MLO_48_TANDEMS`.**
@@ -15,6 +20,8 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
   integration's positions warning continues. A leftover `default_MAIN_32_TANDEMS.yaml` or `default_MLO_48_TANDEMS.yaml` keeps its `ref_` twin's serial
   (`sim-32t-tandems-001`, `sim-48t-tandems-001`), so running both starts one and the other shows an `error` badge naming the serial. Delete the leftover
   `default_*` files, or clone the `ref_` equivalent.
+- **`ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48` are their panels' later captures, on release 202645.** `ref_MAIN_40` now has 38
+  circuits and no battery, and `ref_UNKNOWN_16` an EVSE.
 - **A `pv` section listing `inverters` must set `enabled`, to `true` or `false`**: without it they published nothing, and a quoted `"false"` published them;
   now the config is refused, saying so.
 
@@ -22,16 +29,14 @@ The shipped templates are now all `ref_` templates, and the three `default_MAIN_
 
 - **A clone of a MAIN 16 or MAIN 40 offers only its model's spaces**, 9 to 24 or 9 to 48, where a circuit added to it could land on space 1 and the integration
   warned about its breaker positions.
+- **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
+  next.
 
 ### Removed
 
 - **`default_MAIN_16`, `default_MAIN_32` and `default_MAIN_40`**; use `ref_MAIN_16`, `ref_MAIN_32` and `ref_MAIN_40`. The first and last numbered their spaces
   from 1, where the SpanPanel integration's client places those models at 9 to 24 and 9 to 48, so the integration warned about their breaker positions.
 
-### Fixed
-
-- **A cycling load, such as a pool pump or a dryer, reads the same at a given simulated time on every run**, where it could read on in one run and off in the
-  next.
 
 ## 2.8.0 — 2026-11-15
 

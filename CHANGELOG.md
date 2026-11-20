@@ -4,6 +4,11 @@
 
 **The shipped templates are all `ref_` templates: the two tandem templates are renamed, and the three `default_MAIN_` templates are removed.**
 
+### Added
+
+- **Three templates of real panels**, generated from the emitter's reference captures: `ref_MAIN_32_CASCADE`, a MAIN 32 fed by another panel, with a battery;
+  `ref_MAIN_16_BESS`, a MAIN 16 with a hybrid battery and an EVSE; and `ref_MLO_48_HYBRID`, an MLO 48 whose battery's inverter takes its solar.
+
 ### Changed
 
 - **The tandem templates are now `ref_MAIN_32_TANDEMS.yaml` and `ref_MLO_48_TANDEMS.yaml`**, formerly `default_MAIN_32_TANDEMS.yaml` and
@@ -20,6 +25,9 @@
   badge naming the serial. Delete the leftover `default_*` files, or clone the `ref_` equivalent.
 - **The README lists every template in one table**, and the conformance profile in `DEVELOPER.md` is the regenerated one: 452 match, 4 divergence, 69 extension
   and 1327 omission.
+- **Four generated templates are their panels' later captures, on release 202645**: `ref_MAIN_32`, `ref_UNKNOWN_16`, `ref_MAIN_40` and `ref_MLO_48`, where
+  they were the release 202639 captures of the same panels. `ref_MAIN_40` is that panel recommissioned, with 38 circuits and no battery, where it had 5 and
+  a battery fed by a circuit, and `ref_UNKNOWN_16` adds an EVSE.
 - **A `pv` section listing `inverters` must set `enabled`, and `pv.enabled` must be `true` or `false`.** The inverters no circuit feeds publish only while
   `pv.enabled` is `true`, and a config listing them without it loaded and published none of them; it is now refused, saying to set `enabled` to `true` to
   publish them or `false` to keep them off. An `enabled` that is empty or quoted, such as `"false"`, which published the opposite of what it says, is refused
@@ -37,6 +45,9 @@
   generated `ref_` templates, clones, history databases, and `configs/.secrets/` and `configs/rates/`, which hold credentials and API keys. `.dockerignore` now
   keeps all but the presets and the two tracked templates out, as a build from git has it, and leaves local state and caches out of the build context; images
   built by CI were not affected.
+- **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
+  ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
+  a panel no longer starts every cycling load at the start of its on phase.
 
 ### Removed
 
@@ -46,11 +57,6 @@
   one its reference capture shows, with circuits on spaces 9 to 24; the MAIN 40 range is the client's own choice, and its capture's circuits sit on spaces 9
   to 45.
 
-### Fixed
-
-- **A cycling load reads the same at a given simulated time on every run.** Its on and off phases follow the panel's clock, counted from the epoch, where they
-  ran from the moment the panel started on the real clock. A panel set to a simulated time could read a cycling load on in one run and off in the next, and
-  a panel no longer starts every cycling load at the start of its on phase.
 
 ## 2.8.0 — Tandem and quad breakers, and several panels on one broker
 

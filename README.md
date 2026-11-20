@@ -390,15 +390,20 @@ leftover `default_*` files, or clone the `ref_` equivalent.
 | `ref_MAIN_32_TANDEMS.yaml`     | 1-32   | tracked   | MAIN 32 with solar, battery, 1 EVSE, 20-20 and 15-20 tandems and a 20-30 package |
 | `ref_MLO_48_TANDEMS.yaml`      | 1-48   | tracked   | Main-lug-only on hardware 3.0, 1 EVSE, four tandems, a quad and a tandem-quad    |
 | `ref_MAIN_32.yaml`             | 1-32   | generated | MAIN 32 with a battery                                                           |
+| `ref_MAIN_32_CASCADE.yaml`     | 1-32   | generated | MAIN 32 fed by another panel, with a battery                                     |
 | `ref_MAIN_32_UPSTREAM_PV.yaml` | 1-32   | generated | MAIN 32 with two inverters and a battery upstream of the panel                   |
 | `ref_MAIN_16.yaml`             | 9-24   | generated | MAIN 16 with a meter outside the panel                                           |
-| `ref_MAIN_40.yaml`             | 9-48   | generated | MAIN 40 with a battery fed by a circuit                                          |
+| `ref_MAIN_16_BESS.yaml`        | 9-24   | generated | MAIN 16 with a hybrid battery and 1 EVSE                                         |
+| `ref_MAIN_40.yaml`             | 9-48   | generated | MAIN 40 with 38 circuits and no battery                                          |
 | `ref_MLO_24.yaml`              | 1-24   | generated | MLO 24, with no main breaker and a battery fed by a circuit                      |
 | `ref_MLO_48.yaml`              | 1-48   | generated | MLO 48, with no main breaker and circuits sharing a meter and relay              |
-| `ref_UNKNOWN_16.yaml`          | 1-16   | generated | 16-space panel that publishes no model, with a meter outside it                  |
+| `ref_MLO_48_HYBRID.yaml`       | 1-48   | generated | MLO 48, with no main breaker, 1 EVSE and a hybrid battery                        |
+| `ref_UNKNOWN_16.yaml`          | 1-16   | generated | 16-space panel that publishes no model, with 1 EVSE and a meter outside it       |
 
-Each generated template is that panel as it published itself on `spanos3/r202639/03`, with serials, ids and site details masked. Read them with the `span-panel`
-integration v2.2.0 or later.
+Each generated template is that panel as it published itself, with serials, ids and site details masked, on the firmware it reports as `firmware_version`:
+`spanos3/r202645/02` for `ref_MAIN_32`, `ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS`, `ref_MAIN_40` and `ref_UNKNOWN_16`, `spanos3/r202645/01` for `ref_MLO_48`,
+`spanos3/r202639/04` for `ref_MLO_48_HYBRID`, and `spanos3/r202639/03` for the rest. Where a panel was captured on both releases, the template is its later
+capture. Read them with the `span-panel` integration v2.2.0 or later.
 
 #### Tandem and quad breakers
 

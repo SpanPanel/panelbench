@@ -45,13 +45,16 @@ tracked however a capture is named; the hand-written ones are excepted by name. 
 dashboard keeps every file under it read-only (``is_template``)."""
 
 _TEMPLATE_NAMES: Final[Mapping[str, str]] = {
-    "main32_r202639": "MAIN_32",
+    "main32_r202645": "MAIN_32",
+    "main32_r202645-cascade": "MAIN_32_CASCADE",
     "main32_r202639-upstream-pv": "MAIN_32_UPSTREAM_PV",
-    "r202639-a": "UNKNOWN_16",
+    "r202645-a": "UNKNOWN_16",
     "r202639-b": "MAIN_16",
-    "r202639-c": "MAIN_40",
+    "r202645-g": "MAIN_16_BESS",
+    "r202645-c": "MAIN_40",
     "r202639-d": "MLO_24",
-    "r202639-e": "MLO_48",
+    "r202645-e": "MLO_48",
+    "r202639-f": "MLO_48_HYBRID",
 }
 """What each reference capture's template is called, by the capture's handle: the model
 its panel publishes, or ``UNKNOWN`` and its spaces where it publishes none, then
@@ -60,9 +63,16 @@ name: the template carries it as ``firmware_version``. Written out rather than r
 from the capture, so publishing a capture again never renames the template a
 ``--config`` names."""
 
-_RETIRED_CAPTURES: Final = frozenset({"main32_r202633"})
-"""Captures written as no template: a panel on a release before 202639, whose name
-would be ``MAIN_32`` as the r202639 capture's is."""
+_RETIRED_CAPTURES: Final = frozenset(
+    {"main32_r202633", "main32_r202639", "r202639-a", "r202639-c", "r202639-e"}
+)
+"""Captures written as no template, whose names later captures take.
+
+``main32_r202633`` is a MAIN 32 on a release before 202639, whose name would be
+``MAIN_32`` as the later MAIN 32 capture's is. ``main32_r202639``, ``r202639-a``,
+``r202639-c`` and ``r202639-e`` give their names to the r202645 captures of the same
+panels, which keep their masked serials; ``r202645-c`` is that MAIN 40 recommissioned,
+with 38 circuits and no battery."""
 
 
 def is_template(filename: str) -> bool:
@@ -85,9 +95,9 @@ def template_filename(name: str) -> str:
     return f"{TEMPLATE_PREFIX}{_TEMPLATE_NAMES.get(name, name)}.yaml"
 
 
-FIRST_TEMPLATE: Final = template_filename("main32_r202639")
+FIRST_TEMPLATE: Final = template_filename("main32_r202645")
 """The template the dashboard opens when it has no config to open: a real MAIN 32 on
-release 202639, as it published itself."""
+release 202645, as it published itself."""
 
 
 def first_template(config_dir: Path) -> Path | None:

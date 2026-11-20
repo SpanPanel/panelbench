@@ -140,8 +140,11 @@ System, light, or dark theme via the header selector.
 
 ## Firmware version
 
-The shipped templates are SPAN panels on firmware release 202639 and
-report `spanos3/r202639/03`. On `ref_MAIN_32_TANDEMS` the battery's
+The two tracked templates report `spanos3/r202639/03`. Each template
+from a real panel reports the firmware it was captured on: release
+202645 for `ref_MAIN_32`, `ref_MAIN_32_CASCADE`, `ref_MAIN_16_BESS`,
+`ref_MAIN_40`, `ref_MLO_48` and `ref_UNKNOWN_16`, and 202639 for the
+rest. On `ref_MAIN_32_TANDEMS` the battery's
 power reading is positive while discharging, the solar circuit is the
 locked "Commissioned PV System" circuit, and the status endpoint
 reports hardware version `1.2`. Read it with the SpanPanel/span
