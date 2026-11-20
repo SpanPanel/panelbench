@@ -73,6 +73,9 @@ class PanelConfig(TypedDict):
     # hardware 3.0 panel without one publishes no downstream lugs
     # (`hardware.publishes_downstream_lugs`); a clone of such a panel writes false.
     feedthrough: NotRequired[bool]
+    # The 16 hex digits a hardware 3.0 panel's numbered devices are published under
+    # from release 202645, `{serial}-{hex16}-1-16-<n>` (`device_numbers`).
+    device_id_hex: NotRequired[str]
     vendor_name: NotRequired[str]  # info/vendor-name (default "Span"); a clone keeps its panel's
     model: NotRequired[str]  # info/model (default: from total_tabs); a clone keeps its panel's
     # The panel's network configuration, as a clone reads it from its panel. Defaults:
@@ -285,6 +288,9 @@ class OutsideMeterYAML(TypedDict):
 
     id: str
     unvalued: NotRequired[list[str]]
+    # SPAN's number for the meter, as a remote CT: `remote-ct-<n>`, or `…-1-42-<n>`
+    # from release 202645 (`device_numbers`).
+    circuit_number: NotRequired[int]
 
 
 class BrokerConfigYAML(TypedDict, total=False):
@@ -348,6 +354,9 @@ class CircuitDefinitionExtended(CircuitDefinition, total=False):
     overrides: dict[str, Any]
     breaker_rating: int  # Per-circuit breaker rating in Amps (overrides template)
     recorder_entity: str  # HA entity for recorder replay (also merged onto resolved template)
+    # SPAN's number for the circuit, kept across releases while the id around it
+    # changes: `circuit-<n>`, then `{serial}-{hex16}-1-16-<n>` (`device_numbers`).
+    circuit_number: int
     # The identity of the device this circuit feeds: a DER's identity belongs to the
     # circuit, not to its position in a list (see `instance_ids.evse_circuit_serial`).
     # Read for a PV circuit's inverter, where the top-level `pv` section is the

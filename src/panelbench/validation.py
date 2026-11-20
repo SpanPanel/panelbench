@@ -10,6 +10,7 @@ import contextvars
 import copy
 import logging
 import math
+import re
 from collections.abc import Hashable
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -79,6 +80,7 @@ def validate_yaml_config(config_data: Any) -> None:
     validate_unfed_inverters(config_data)
     validate_ratings(config_data)
     validate_outside_meters(config_data)
+    validate_device_numbers(config_data)
     validate_shared_circuits(config_data)
     validate_unvalued_lists(config_data)
     validate_downstream_lugs(config_data)
@@ -684,6 +686,45 @@ def validate_outside_meters(config_data: Mapping[str, object]) -> None:
             f"outside_meters are not published here: {variant_selection(config_data)}, which "
             "publishes no meter outside the panel"
         )
+
+
+def validate_device_numbers(config_data: Mapping[str, object]) -> None:
+    """SPAN's number for each circuit and meter outside the panel, and the panel's id
+    segment, as ``device_numbers`` reads them: a whole number above 0, used once on a
+    panel, and 16 lowercase hex digits."""
+    taken: dict[int, str] = {}
+    for kind, section in (("circuit", "circuits"), ("outside meter", "outside_meters")):
+        for entry in _listed(config_data.get(section)):
+            if not isinstance(entry, dict) or "circuit_number" not in entry:
+                continue
+            where = f"{kind} {entry.get('id')!r}"
+            number = _positive_whole(entry["circuit_number"])
+            if number is None:
+                raise ValueError(
+                    f"{where} circuit_number must be SPAN's number for the circuit, a whole "
+                    f"number above 0, not {entry['circuit_number']!r}"
+                )
+            if number in taken:
+                raise ValueError(
+                    f"{where} circuit_number {number} is taken by {taken[number]}: SPAN "
+                    "numbers each circuit of a panel once"
+                )
+            taken[number] = where
+    panel = config_data.get("panel_config")
+    segment = panel.get("device_id_hex") if isinstance(panel, dict) else None
+    if segment is not None and not (
+        isinstance(segment, str) and re.fullmatch(r"[0-9a-f]{16}", segment)
+    ):
+        raise ValueError(
+            f"panel_config.device_id_hex must be 16 lowercase hex digits, not {segment!r}"
+        )
+
+
+def _positive_whole(value: object) -> int | None:
+    """*value* as a whole YAML number above 0, never a bool; None where it is not one."""
+    if _is_whole(value) and isinstance(value, (int, float)) and value > 0:
+        return int(value)
+    return None
 
 
 def validate_shared_circuits(config_data: Mapping[str, object]) -> None:
